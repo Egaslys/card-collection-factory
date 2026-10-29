@@ -1,6 +1,6 @@
-# card-collection-factory — a factory of collectible card sets
+# card-collection-factory — a factory of collectible card collections
 
-An agentic pipeline with a web editor that produces sets of collectible card images "turnkey": it takes the theme of a set and free-form wishes of a producer, and returns several variants of the ordered set. The main mode is agentic: a person asks Claude Code or Codex for a set, the agent works autonomously and has access to every function a person has in the web editor, and more. The web editor is for the person: to check the work, change settings, rearrange cards, generate without an agent. The author's vision, which owns these decisions, is [docs/plans/VISION.md](docs/plans/VISION.md); the stages of the work are in [docs/plans/ROADMAP.md](docs/plans/ROADMAP.md).
+An agentic pipeline with a web editor that creates collections of collectible card images (style → collection → set → card) "turnkey". For a set, it takes the theme and free-form wishes of a producer, and returns several variants of the ordered set. The main mode is agentic: a person asks Claude Code or Codex for a set, the agent works autonomously and has access to every function a person has in the web editor, and more. The web editor is for the person: to check the work, change settings, rearrange cards, generate without an agent. The author's vision, which owns these decisions, is [docs/plans/VISION.md](docs/plans/VISION.md); the stages of the work are in [docs/plans/ROADMAP.md](docs/plans/ROADMAP.md).
 
 **State: preparation.** Only the agent setup exists; there is no application code yet. Not decided yet:
 
