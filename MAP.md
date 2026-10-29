@@ -14,7 +14,7 @@ Update this map in the same task when an area, an entry point, a system file or 
 
 ## Product
 
-- `styles/` — art styles the product generates in; one per folder. `styles/scapes/` — the first style: its style bible (being written) and showcase references; `research/` inside is local, ignored by Git.
+- `styles/` — art styles the product generates in; one per folder. `styles/scapes/` — the first style: its style bible (being written); `references/` — all 160 reference cards with an index (`references/README.md`); `research/` inside is local, ignored by Git.
 
 ## Agent setup
 
