@@ -1,0 +1,25 @@
+# Use LF for detected text on every OS; leave unrecognized binary formats intact.
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.sh text eol=lf
+*.svg text eol=lf
+
+# Images, fonts, archives and documents: preserve bytes, no textual diffs or merges.
+*.png binary !eol
+*.jpg binary !eol
+*.jpeg binary !eol
+*.gif binary !eol
+*.webp binary !eol
+*.avif binary !eol
+*.bmp binary !eol
+*.ico binary !eol
+*.psd binary !eol
+*.ttf binary !eol
+*.otf binary !eol
+*.woff binary !eol
+*.woff2 binary !eol
+*.zip binary !eol
+*.gz binary !eol
+*.pdf binary !eol

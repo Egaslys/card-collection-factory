@@ -1,0 +1,50 @@
+# Local working documents: they serve the work on the product, not the product (AGENTS.md).
+/docs/plans/task/
+/docs/plans/NEXT_SESSION.md
+/docs/plans/brainstorm_skill.md
+/docs/plans/*_storm.md
+
+# Project output and logs.
+/build/
+/dist/
+/coverage/
+/logs/
+
+# Claude Code: the whole .claude/ is shared (settings, hooks, status line, skills);
+# personal settings and session scratch stay local.
+/.claude/settings.local.json
+/.claude/runs/
+/.claude/worktrees/
+# Codex: only the shared config and native skills are tracked.
+/.agents/*
+!/.agents/skills/
+/.codex/*
+!/.codex/config.toml
+/.mcp.json
+/.playwright-mcp/
+/browser-output/
+
+# Local environment files: keys never go to Git.
+.env
+.env.*
+
+# Dependencies and tool caches.
+node_modules/
+.npm/
+.pnpm-store/
+.cache/
+*.tsbuildinfo
+npm-debug.log*
+pnpm-debug.log*
+
+# Personal IDE state.
+.vs/
+**/.idea/workspace.xml
+*.swp
+*~
+
+# OS metadata.
+.DS_Store
+._*
+Thumbs.db
+[Dd]esktop.ini

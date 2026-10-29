@@ -1,0 +1,13 @@
+# Append only the chosen server block to .codex/config.toml.
+# Keep project_doc_max_bytes = 131072 at the root, before any table.
+[mcp_servers.playwright]
+command = "npx"
+args = ["-y", "@playwright/mcp@0.0.83", "--isolated", "--config", "agents/browser/desktop.json"]
+
+[mcp_servers.context7]
+url = "https://mcp.context7.com/mcp/oauth"
+
+[mcp_servers.tavily]
+command = "npx"
+args = ["-y", "tavily-mcp@latest"]
+env_vars = ["TAVILY_API_KEY"]
