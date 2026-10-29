@@ -9,7 +9,7 @@ Update this map in the same task when an area, an entry point, a system file or 
 - `AGENTS.md` — the agent's rules, what the project is, the task → skill table, commands.
 - `README.md` — the purpose of the project for a person.
 - `docs/plans/VISION.md` — the author's accepted vision of the project (not a log).
-- `docs/plans/ROADMAP.md` — the stages of the work, their status and links to each stage's plan.
+- `docs/plans/ROADMAP.md` — the directions of the work on the product: what is done and what is left, with links to plans.
 - `docs/plans/` also holds local working documents ignored by Git (handoff, brainstorm logs, source materials): see «Local working documents» in `AGENTS.md`.
 
 ## Agent setup
