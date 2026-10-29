@@ -198,7 +198,11 @@ Reference: [Codex](https://learn.chatgpt.com/docs).
 - If behavior, internals, a command or structure has changed, fix the description (a document or a skill) in the same task. If you find an error in a record, fix it where it is stored.
 - Before writing, find where the subject is already described. Divide new documents by areas, not by sessions.
 - Keep what was measured separate from what is assumed. Do not leave something that has been disproved written down as fact.
-- Write documents for the author in Russian, understandable to anyone, without cutting thoughts short (the language of skills and comments is set by invariant 3). Keep the formatting simple: headings, paragraphs, lists. Tables only for comparisons. Do not break a paragraph with hard line breaks.
+- Three kinds of documents; choose by who will actually read it:
+  - **For a person** — in Russian, understandable to anyone, without cutting thoughts short; easy on the eyes: simple formatting (headings, paragraphs, lists; tables only for comparisons), no clutter, piles of links or decoration.
+  - **For agents only** (skills, agent instructions, notes nobody else opens) — in English, in whatever form is most convenient for an agent (invariant 3 for skills and comments).
+  - **Mixed**, read by both (for example, a style bible) — in Russian; fragments that go to a model as they are (prompts for image generation and the like) — in English.
+- Do not break a paragraph with hard line breaks.
 - Keep this file short: details go into skills and documents, with a link. Specifics of a single harness go in its section. An `@path` import loads the file into every session, so add one only by the author's decision.
 
 ## Keeping the changelog
