@@ -37,7 +37,7 @@ The agent setup needs only Node. Every script prints its options with `--help` a
 
 ## Local working documents
 
-Git holds only the product. Documents that serve the work on it are ignored by Git and exist only on the author's machine; in `docs/plans/`: the handoff `NEXT_SESSION.md`, brainstorm logs `*_storm.md` and their protocol `brainstorm_skill.md`, and the source materials in `task/` (start from its `README.md`). Read them when they exist and the work needs them; follow the protocol when the author starts or continues a logged brainstorm. Never add them to Git, and keep tracked files free of their content. `VISION.md` and `ROADMAP.md` are tracked: they describe the product.
+Git holds only the product. Documents that serve the work on it are ignored by Git and exist only on the author's machine; in `docs/plans/`: the handoff `NEXT_SESSION.md`, brainstorm logs `*_storm.md` and their protocol `brainstorm_skill.md`, and the source materials in `task/` (start from its `README.md`); in each style, `styles/<name>/research/` holds the working notes of its analysis. Read them when they exist and the work needs them; follow the protocol when the author starts or continues a logged brainstorm. Never add them to Git, and keep tracked files free of their content. `VISION.md` and `ROADMAP.md` are tracked: they describe the product.
 
 ## Invariants
 

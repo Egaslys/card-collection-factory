@@ -12,6 +12,10 @@ Update this map in the same task when an area, an entry point, a system file or 
 - `docs/plans/ROADMAP.md` — the directions of the work on the product: what is done and what is left, with links to plans.
 - `docs/plans/` also holds local working documents ignored by Git (handoff, brainstorm logs, source materials): see «Local working documents» in `AGENTS.md`.
 
+## Product
+
+- `styles/` — art styles the product generates in; one per folder. `styles/scapes/` — the first style: its style bible (being written) and showcase references; `research/` inside is local, ignored by Git.
+
 ## Agent setup
 
 - `agents/skills/` — editable sources of project skills (`ccf-<name>`); none yet. `.claude/skills/` and `.agents/skills/` are generated copies, `agents/manifest.json` records them.
