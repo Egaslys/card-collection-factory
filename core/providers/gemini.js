@@ -95,16 +95,24 @@ export async function generateImage({ endpoint, apiKey, model, prompt, reference
     generationConfig: over({ responseModalities: ['IMAGE'], ...(aspectRatio ? { imageConfig: { aspectRatio } } : {}) }, params),
   };
   const json = await generate({ endpoint, apiKey, model, body, net });
+  // the price first: an answer without an image is paid too, and the error carries what it cost
+  const cost = costOf(json.usageMetadata, priceOf(prices, model));
   const img = answerParts(json).filter(p => p.inlineData?.data).at(-1);
-  if (!img) throw new ProviderError(`Провайдер ответил без картинки (${redact(why(json), apiKey)}).`, { status: 200, providerMessage: redact(why(json), apiKey) });
-  return { bytes: Buffer.from(img.inlineData.data, 'base64'), mime: img.inlineData.mimeType, model, cost: costOf(json.usageMetadata, priceOf(prices, model)), usage: json.usageMetadata, raw: {} };
+  if (!img) throw new ProviderError(`Провайдер ответил без картинки (${redact(why(json), apiKey)}).`, { status: 200, providerMessage: redact(why(json), apiKey), cost });
+  return { bytes: Buffer.from(img.inlineData.data, 'base64'), mime: img.inlineData.mimeType, model, cost, usage: json.usageMetadata, raw: {} };
 }
 
-/** The text of an answer, or a ProviderError. @param {any} json @param {string} apiKey @param {string} what */
-function textOf(json, apiKey, what) {
+/**
+ * The text of an answer with its price, or a ProviderError that carries the price: an answer without text (its
+ * thinking used up maxOutputTokens, typically) is paid all the same.
+ * @param {any} json @param {string} apiKey @param {string} what @param {Prices|undefined} prices @param {string} model
+ * @returns {{text: string, model: string, cost: number|null}}
+ */
+function textOf(json, apiKey, what, prices, model) {
+  const cost = costOf(json.usageMetadata, priceOf(prices, model));
   const text = answerParts(json).map(p => p.text ?? '').join('');
-  if (!text.trim()) throw new ProviderError(`${what} ответила без текста (${redact(why(json), apiKey)}).`, { status: 200, providerMessage: redact(why(json), apiKey) });
-  return text;
+  if (!text.trim()) throw new ProviderError(`${what} ответила без текста (${redact(why(json), apiKey)}).`, { status: 200, providerMessage: redact(why(json), apiKey), cost });
+  return { text, model, cost };
 }
 
 /**
@@ -123,8 +131,7 @@ export async function askVision({ endpoint, apiKey, model, prompt, image, maxTok
     contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: i.mime, data: i.base64 } }] }],
     generationConfig: { maxOutputTokens: maxTokens, ...thinkingOf(reasoning) },
   };
-  const json = await generate({ endpoint, apiKey, model, body, net });
-  return { text: textOf(json, apiKey, 'Смотрящая модель'), model, cost: costOf(json.usageMetadata, priceOf(prices, model)) };
+  return textOf(await generate({ endpoint, apiKey, model, body, net }), apiKey, 'Смотрящая модель', prices, model);
 }
 
 /**
@@ -146,8 +153,7 @@ export async function complete({ endpoint, apiKey, model, messages, maxTokens, j
     contents: messages.filter(m => m.role !== 'system').map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
     generationConfig: { ...(maxTokens ? { maxOutputTokens: maxTokens } : {}), ...(json ? { responseMimeType: 'application/json' } : {}), ...thinkingOf(reasoning) },
   };
-  const answer = await generate({ endpoint, apiKey, model, body, net: { timeoutMs: 120000, ...net } });
-  return { text: textOf(answer, apiKey, 'Текстовая модель'), model, cost: costOf(answer.usageMetadata, priceOf(prices, model)) };
+  return textOf(await generate({ endpoint, apiKey, model, body, net: { timeoutMs: 120000, ...net } }), apiKey, 'Текстовая модель', prices, model);
 }
 
 /**

@@ -2,27 +2,31 @@
 // free-text brief, loose cards into the collection's pool, the whole collection with one button, and editing what the
 // collection is.
 import { call } from '../api.js';
-import { attempt, bindTextHelp, esc, I, openSheet, textHelp, toast, usd } from '../ui.js';
+import { attempt, bindTextHelp, count, esc, I, openSheet, textHelp, toast } from '../ui.js';
 import { app } from '../state.js';
 
-/** What a generation run will use and may spend, from the settings: one line for a person. */
-async function costLine(/** @type {'set'|'collection'|'cards'} */ what) {
+/** Places in a collection: the style's set-rules.json collection.sets (Scapes: 16), which the page does not load. */
+export const PLACES = 16;
+
+/**
+ * Which models a generation run will use, from the settings: one line for a person, and a warning when the key is
+ * missing. No spend caps here (the author's decision, 2026-10-31): the person limits spend on their provider's key;
+ * the caps of settings stay a safety net for agents and the command line, not a promise of the editor.
+ * @param {HTMLElement} sheet @param {'set'|'collection'|'cards'} what
+ */
+async function bindCost(sheet, what) {
+  const el = /** @type {HTMLElement} */ (sheet.querySelector('[data-cost]'));
   const r = await attempt(() => call('getSettings'));
-  if (!r) return '';
+  if (!r) return;
   const s = r.settings;
   const codex = s.provider.use === 'codex-cli';
   const p = s.provider[s.provider.preset];
   const service = r.keys[s.provider.preset].title;
   const model = codex ? 'Codex CLI (по подписке, без оплаты за картинку)' : `${p.model} (${service})`;
-  const cap = what === 'collection' ? s.set.maxSpendUsd * 16 : s.set.maxSpendUsd;
   const keyNeeded = app.key.source === 'none'
     ? `<p class="field__hint field__hint--fail">${I.alert} Нет ключа ${service}: ${what === 'cards' ? 'заказы карточек' : 'план набора'} пишет текстовая модель через ${service}. <button type="button" class="btn btn--text btn--s" data-open-key><span>Ввести ключ</span></button></p>` : '';
-  return `<div class="costline"><p class="field__hint">Картинки: ${esc(model)}${codex ? '' : ` · потолок расходов ${{ set: 'на набор', cards: 'на карточки', collection: 'на коллекцию' }[what]} ${usd(cap)}`}. План пишет ${esc(p.textModel)} (до ${usd(s.set.plan.maxSpendUsd)}). Изменить — в настройках.</p>${keyNeeded}</div>`;
-}
-
-/** @param {HTMLElement} sheet */
-function bindKeyLink(sheet) {
-  sheet.querySelector('[data-open-key]')?.addEventListener('click', async () => { (await import('./settings.js')).openSettings(); });
+  el.innerHTML = `<div class="costline"><p class="field__hint">Картинки: ${esc(model)}. План пишет ${esc(p.textModel)}. Изменить — в настройках.</p>${keyNeeded}</div>`;
+  el.querySelector('[data-open-key]')?.addEventListener('click', async () => { (await import('./settings.js')).openSettings(); });
 }
 
 /** @param {number} n */
@@ -56,10 +60,12 @@ export async function openCreateCollection() {
   const form = /** @type {HTMLFormElement} */ (sheet.querySelector('[data-form]'));
   bindTextHelp(form, () => ({ context: { collection: String(new FormData(form).get('title') ?? ''), description: String(new FormData(form).get('description') ?? '') } }));
   const costEl = /** @type {HTMLElement} */ (sheet.querySelector('[data-cost]'));
-  costEl.innerHTML = await costLine('collection');
-  bindKeyLink(sheet);
-  sheet.querySelector('[data-seg="how"]')?.addEventListener('click', () => {
-    const all = segValue(sheet, 'how') === 1;
+  await bindCost(sheet, 'collection');
+  sheet.querySelector('[data-seg="how"]')?.addEventListener('click', e => {
+    // the clicked button, not aria-pressed: bindSegs (on the sheet) updates that only after this listener
+    const b = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-v]'));
+    if (!b) return;
+    const all = b.dataset.v === '1';
     /** @type {HTMLElement} */ (sheet.querySelector('[data-how-hint]')).textContent = all
       ? 'Модель разделит описание на 16 наборов и сделает все карточки. Это долго; ход виден в очереди.'
       : 'Коллекция создаётся пустой; наборы вы создаёте сами, по одному.';
@@ -97,8 +103,7 @@ export async function openCreateSet(col) {
   bindSegs(sheet);
   const form = /** @type {HTMLFormElement} */ (sheet.querySelector('[data-form]'));
   bindTextHelp(form, () => ({ collectionId: col.id, context: { collection: col.title, description: col.description, set: String(new FormData(form).get('theme') ?? '') } }));
-  /** @type {HTMLElement} */ (sheet.querySelector('[data-cost]')).innerHTML = await costLine('set');
-  bindKeyLink(sheet);
+  await bindCost(sheet, 'set');
   sheet.querySelector('[data-submit]')?.addEventListener('click', async () => {
     const f = new FormData(form);
     const theme = String(f.get('theme') ?? '').trim();
@@ -131,8 +136,7 @@ export async function openCreateCards(col) {
   });
   const form = /** @type {HTMLFormElement} */ (sheet.querySelector('[data-form]'));
   bindTextHelp(form, () => ({ collectionId: col.id, context: { collection: col.title, description: col.description } }));
-  /** @type {HTMLElement} */ (sheet.querySelector('[data-cost]')).innerHTML = await costLine('cards');
-  bindKeyLink(sheet);
+  await bindCost(sheet, 'cards');
   const countEl = /** @type {HTMLInputElement} */ (form.elements.namedItem('count'));
   const scenesEl = /** @type {HTMLInputElement} */ (form.elements.namedItem('scenes'));
   // scenes are some of the cards: never more than the count
@@ -152,12 +156,24 @@ export async function openCreateCards(col) {
   });
 }
 
-/** @param {any} col @param {number} have  sets the collection already has */
+/** @param {any} col @param {number} have  places of the collection its sets already hold (variants count once) */
 export async function openBuildCollection(col, have) {
+  const missing = PLACES - have;
+  // a collection that has sets: only its missing places, or one more variant of every place (the author's decision,
+  // 2026-10-31); the core's buildCollection `mode`
+  const hints = {
+    missing: `Модель спланирует ${count(missing, 'недостающий набор', 'недостающих набора', 'недостающих наборов')} под их номерами, не повторяя то, что есть, и сделает их карточки. Готовые наборы не трогаются.`,
+    variants: `Модель сделает ещё по варианту каждого из ${PLACES} наборов: у каждого места появится новый вариант рядом с тем, что есть${missing ? ', а пустые места получат свой набор' : ''}. Ничего не заменяется — лучший вариант места вы выберете сами.`,
+  };
+  const first = missing ? 'missing' : 'variants';
+  const choice = have ? `<div class="field"><span class="field__label">Что собрать</span>
+      <div class="seg" role="group" data-seg="mode"><button type="button" data-v="missing" aria-pressed="${first === 'missing'}"${missing ? '' : ' disabled'}>Только недостающие (${missing})</button><button type="button" data-v="variants" aria-pressed="${first === 'variants'}">Ещё по варианту каждого из ${PLACES}</button></div>
+      <span class="field__hint" data-mode-hint>${hints[first]}</span></div>` : '';
   const { sheet, close } = openSheet({
     title: 'Собрать все наборы',
     body: `<form class="form" data-form>
-      <p class="ink-2">${have ? `В коллекции уже ${have} — модель допишет недостающие до 16, не повторяя то, что есть.` : 'Модель разделит тему на 16 наборов (последний — гранд-набор) и сделает все карточки.'}</p>
+      <p class="ink-2">${have ? `В коллекции уже ${count(have, 'набор', 'набора', 'наборов')} из ${PLACES}.` : `Модель разделит тему на ${PLACES} наборов (последний — гранд-набор) и сделает все карточки.`}</p>
+      ${choice}
       <label class="field"><span class="field__label">Видение коллекции</span><textarea class="input" name="theme" rows="5" autofocus>${esc(col.description || col.title)}</textarea>${textHelp('collection')}<span class="field__hint">Описание коллекции; поправьте, если хотите сказать иначе.</span></label>
       <label class="field"><span class="field__label">Пожелания</span><textarea class="input" name="wishes" rows="2">${esc(col.fields?.['Пожелания'] ?? '')}</textarea>${textHelp('wishes')}</label>
       <div class="field"><span class="field__label">Вариантов каждого набора</span>${variantsSeg(1)}</div>
@@ -168,11 +184,16 @@ export async function openBuildCollection(col, have) {
   bindSegs(sheet);
   const form = /** @type {HTMLFormElement} */ (sheet.querySelector('[data-form]'));
   bindTextHelp(form, () => ({ collectionId: col.id, context: { collection: col.title, description: String(new FormData(form).get('theme') ?? '') } }));
-  /** @type {HTMLElement} */ (sheet.querySelector('[data-cost]')).innerHTML = await costLine('collection');
-  bindKeyLink(sheet);
+  await bindCost(sheet, 'collection');
+  const mode = () => /** @type {HTMLElement|null} */ (sheet.querySelector('[data-seg="mode"] [aria-pressed="true"]'))?.dataset.v ?? first;
+  sheet.querySelector('[data-seg="mode"]')?.addEventListener('click', e => {
+    // the clicked button, not aria-pressed: bindSegs (on the sheet) updates that only after this listener
+    const b = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-v]'));
+    if (b) /** @type {HTMLElement} */ (sheet.querySelector('[data-mode-hint]')).textContent = hints[/** @type {'missing'|'variants'} */ (b.dataset.v)];
+  });
   sheet.querySelector('[data-submit]')?.addEventListener('click', async () => {
     const f = new FormData(form);
-    const r = await attempt(() => call('buildCollection', { collectionId: col.id, theme: String(f.get('theme') ?? '').trim(), wishes: String(f.get('wishes') ?? '').trim(), variants: segValue(sheet, 'variants') }));
+    const r = await attempt(() => call('buildCollection', { collectionId: col.id, theme: String(f.get('theme') ?? '').trim(), wishes: String(f.get('wishes') ?? '').trim(), variants: segValue(sheet, 'variants'), ...(have ? { mode: mode() } : {}) }));
     if (!r) return;
     close();
     toast('Коллекция собирается: наборы будут появляться здесь по мере готовности.');

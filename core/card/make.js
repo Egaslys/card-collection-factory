@@ -37,13 +37,13 @@ import { encodePng, prepareCard } from '../image/prepare.js';
 import * as codexCli from '../providers/codex-cli.js';
 import { modelIds, profileOf, requestFor } from '../providers/models.js';
 import { loadApiKey } from '../providers/openrouter.js';
-import { apiOf, presetOf } from '../providers/preset.js';
+import { apiOf, keyEnvVars, presetOf } from '../providers/preset.js';
 import { ROOT } from '../settings.js';
 import { orderOutput, validateOrder } from '../style/card-order.js';
 import { OrderError, buildPrompt as styleBuildPrompt } from '../style/prompt.js';
 import { loadStyle, styleDirOf } from '../style/style.js';
 import * as factoryStore from '../store/index.js';
-import { ATTEMPT_FILES, FINAL_IMAGE, attemptCost, attemptDir, readCardFile, writeCardFile } from './card-file.js';
+import { ATTEMPT_FILES, FINAL_IMAGE, attemptCost, attemptDir, markBusy, readCardFile, reserveAttempt, updateCardFile } from './card-file.js';
 import { checkAttempt, styleChecker, styleDir, withLook } from './check.js';
 import { findHero, locateHero, readOutline, readPixels as heroPixels, writeOutline } from './hero.js';
 import { lookAtCard } from './look.js';
@@ -84,11 +84,29 @@ import { tuneProcessing } from './tune.js';
 
 /**
  * Why a run stopped: passed = no blocking FAIL; attempts = the attempt limit; budget = the next call could pass
- * the spend cap; provider-error = the provider failed (recorded in the attempt); cost-unknown = the provider did
- * not report the price, so the cap cannot be kept; cancelled = the caller's signal was aborted (checked before every
- * call: a call already sent is not interrupted).
- * @typedef {'passed'|'attempts'|'budget'|'provider-error'|'cost-unknown'|'cancelled'} StopReason
+ * the spend cap; provider-error = the provider failed (recorded in the attempt); key = the service refused the key or
+ * wants money (ProviderError kind auth or billing, from the image call or the vision model's): no later call can
+ * succeed, so no fallback model is tried, and a run over many cards (a set, a collection) stops too — the report's
+ * `keyProblem` says what a person must do; cost-unknown = the provider did not report the price, so the cap cannot be
+ * kept; cancelled = the caller's signal was aborted (checked before every call: a call already sent is not interrupted).
+ * @typedef {'passed'|'attempts'|'budget'|'provider-error'|'key'|'cost-unknown'|'cancelled'} StopReason
  */
+
+/**
+ * What stopped a run on the key: `kind` auth (the key is not accepted) or billing (no money, no billing, a used-up
+ * daily quota), `message` in Russian for a person, starting «С ключом проблема:».
+ * @typedef {{kind: 'auth'|'billing', message: string}} KeyProblem
+ */
+
+/**
+ * A key problem from a provider's failure (its ErrorKind), or null.
+ * @param {{kind?: string, message?: string}|null|undefined} e @returns {KeyProblem|null}
+ */
+export function keyProblemOf(e) {
+  if (e?.kind !== 'auth' && e?.kind !== 'billing') return null;
+  const what = e.kind === 'billing' ? 'на счёте сервиса кончились деньги, не включена оплата или исчерпана дневная квота' : 'сервис не принял ключ (неверный, отозван или без доступа)';
+  return { kind: e.kind, message: `С ключом проблема: ${what}. Ответ сервиса: ${e.message ?? ''} Пополните счёт или замените ключ и запустите снова.` };
+}
 
 /**
  * A run's progress for the caller (the editor's queue): stage of attempt `n`, attempts finished (`done`) of at most `of`,
@@ -121,6 +139,7 @@ import { tuneProcessing } from './tune.js';
  * @property {AttemptReport[]} attempts
  * @property {string[]} warnings
  * @property {StopReason} [stop]  make only
+ * @property {KeyProblem} [keyProblem]  with stop "key"
  * @property {number} [spent]  make only: USD spent by this run (known costs)
  * @property {{attempts: number, maxSpendUsd: number}} [limits]  make only
  */
@@ -241,7 +260,7 @@ export function providerFrom(settings, { apiKey: held, model: chosen } = {}) {
     return {
       model: 'codex-cli' + (c.model ? `/${c.model}` : ''), free: true,
       generate: async ({ prompt, references, aspectRatio, legend, crop }) => codexCli.generateImage({
-        settings: c, prompt: withFraming(prompt, profile), references, legend,
+        settings: c, prompt: withFraming(prompt, profile), references, legend, withoutEnv: keyEnvVars(settings),
         aspectRatio: requestFor(profile, { model: CODEX_PROFILE, aspectRatio: aspectRatio ?? c.aspectRatio, references: references.length, crop }).aspectRatio,
       }),
       ...(vision ? { vision } : {}),
@@ -435,6 +454,29 @@ function copyChosen(dir, card) {
 }
 
 /**
+ * Writes an operation's part of a card into card.json as it is now (card-file.js updateCardFile: another operation,
+ * here or in another process, may have added attempts or chosen meanwhile): its own attempts, replaced by n or added,
+ * and whatever `also` decides on the current card (the order, the choice). `card`, the operation's copy, then takes
+ * the file's state, keeping the operation's own attempt objects.
+ * @param {string} dir @param {CardFile} card @param {Attempt[]} own @param {(current: CardFile) => void} [also]
+ */
+function saveCard(dir, card, own, also) {
+  const fresh = updateCardFile(dir, file => {
+    const c = file ?? { order: card.order, attempts: [], chosen: null };
+    for (const a of own) {
+      const i = c.attempts.findIndex(x => x.n === a.n);
+      if (i >= 0) c.attempts[i] = a; else c.attempts.push(a);
+    }
+    c.attempts.sort((x, y) => x.n - y.n);
+    also?.(c);
+    return c;
+  });
+  const mine = /** @type {Record<string, unknown>} */ (/** @type {unknown} */ (card));
+  for (const k of Object.keys(mine)) if (!(k in fresh)) delete mine[k];
+  Object.assign(card, fresh);
+}
+
+/**
  * @param {string} dir @param {CardFile} card @param {number[]} ns  attempts to report
  * @returns {CardReport}
  */
@@ -470,9 +512,16 @@ export function cardReport(dir, card, ns) {
  * @param {import('../settings.js').Settings} o.settings
  * @param {{attempts: number, maxSpendUsd: number}} o.limits
  * @param {RunControl} [o.control]
- * @returns {Promise<{ns: number[], spent: number, stop: StopReason, warnings: string[]}>}
+ * @param {string} o.what  the operation, for the card's busy marker (card-file.js markBusy)
+ * @returns {Promise<{ns: number[], spent: number, stop: StopReason, warnings: string[], keyProblem?: KeyProblem}>}
  */
-async function runAttempts({ dir, card, request, mark = {}, provider, settings, limits, control = {} }) {
+async function runAttempts({ what, ...o }) {
+  const release = markBusy(o.dir, what);
+  try { return await attemptsRun(o); } finally { release(); }
+}
+
+/** runAttempts without the busy marker. @param {Omit<Parameters<typeof runAttempts>[0], 'what'>} o */
+async function attemptsRun({ dir, card, request, mark = {}, provider, settings, limits, control = {} }) {
   const { order } = card;
   const output = outputOf(order);
   const ask = askOf(provider.vision, settings);
@@ -485,9 +534,14 @@ async function runAttempts({ dir, card, request, mark = {}, provider, settings, 
     ...(output.crop ? { crop: (await styleChecker(order.style)).CARD_SIZE } : {}),
   };
   /** @param {any} e */
-  const failure = e => ({ message: String(e?.message ?? e), ...(e?.status ? { status: e.status } : {}) });
+  const failure = e => ({ message: String(e?.message ?? e), ...(e?.status ? { status: e.status } : {}), ...(keyProblemOf(e) ? { kind: e.kind } : {}) });
+  /** @type {KeyProblem|null} */
+  let keyProblem = null;
   /** @type {number[]} */
   const ns = [];
+  /** @type {Attempt[]} this run's attempts: its part of card.json */
+  const own = [];
+  const save = () => saveCard(dir, card, own);
   let spent = 0;
   /** @type {StopReason|undefined} */
   let stop;
@@ -496,20 +550,26 @@ async function runAttempts({ dir, card, request, mark = {}, provider, settings, 
   for (;;) {
     const limit = control.signal?.aborted ? 'cancelled' : nextStep({ done: ns.length, spent, limits, priceHint: priceHint(provider.model) });
     if (limit) { stop = limit; break; }
-    const n = Math.max(0, ...card.attempts.map(a => a.n)) + 1;
+    const n = reserveAttempt(dir, Math.max(0, ...card.attempts.map(a => a.n)));
     /** @type {Attempt} */
     const attempt = { n, at: new Date().toISOString(), model: provider.model, ...mark, prompt: request.prompt, references: request.references.map(r => path.relative(ROOT, r.path)), cost: null };
     card.attempts.push(attempt);
+    own.push(attempt);
     ns.push(n);
     tell('generate', n);
     const adir = attemptDir(dir, n);
-    fs.mkdirSync(adir, { recursive: true });
     let answer, used = provider;
+    /** @type {number|null} USD of this attempt's failed calls that were paid all the same (their errors carry it) */
+    let failedUsd = null;
+    /** @param {any} e */
+    const paid = e => { if (typeof e?.cost === 'number') { failedUsd = (failedUsd ?? 0) + e.cost; spent += e.cost; } };
     try {
       answer = await provider.generate(req);
     } catch (/** @type {any} */ e) {
+      paid(e);
       const fallback = provider.fallback;
       if (control.signal?.aborted) { attempt.error = { stage: 'generate', ...failure(e) }; stop = 'cancelled'; }
+      else if ((keyProblem = keyProblemOf(e))) { attempt.error = { stage: 'generate', ...failure(e) }; stop = 'key'; }
       else if (!fallback) { attempt.error = { stage: 'generate', ...failure(e) }; stop = 'provider-error'; }
       else if (spent + priceHint(fallback.model) > limits.maxSpendUsd + EPSILON_USD) { attempt.error = { stage: 'generate', ...failure(e) }; stop = 'budget'; }
       else {
@@ -517,21 +577,27 @@ async function runAttempts({ dir, card, request, mark = {}, provider, settings, 
         attempt.fallbackFrom = { model: provider.model, error: failure(e) };
         attempt.model = fallback.model;
         used = fallback;
-        try { answer = await fallback.generate(req); } catch (/** @type {any} */ e2) { attempt.error = { stage: 'generate', ...failure(e2) }; stop = 'provider-error'; }
+        try { answer = await fallback.generate(req); } catch (/** @type {any} */ e2) {
+          paid(e2);
+          attempt.error = { stage: 'generate', ...failure(e2) };
+          stop = (keyProblem = keyProblemOf(e2)) ? 'key' : 'provider-error';
+        }
       }
-      if (!answer) { writeCardFile(dir, card); break; }
+      if (!answer) { attempt.cost = failedUsd; save(); break; }
     }
-    attempt.cost = used.free ? 0 : answer.cost;
-    spent += attempt.cost ?? 0;
+    attempt.cost = used.free ? 0 : answer.cost == null ? null : answer.cost + (failedUsd ?? 0);
+    spent += used.free ? 0 : answer.cost ?? 0;
     tell('process', n);
     for (const w of await processInto({ order, attempt, dir: adir, bytes: answer.bytes, mime: answer.mime, settings, output, ask })) warnings.add(w);
     spent += attemptCost(attempt) - (attempt.cost ?? 0);
-    writeCardFile(dir, card);
+    save();
+    // the vision model's service refused the key: the next attempts could not be looked at either
+    if ((keyProblem = keyProblemOf(attempt.look?.error ? { kind: attempt.look.errorKind, message: attempt.look.error } : null))) { stop = 'key'; break; }
     if (attempt.cost == null) { stop = 'cost-unknown'; break; }
     if (attempt.check && attempt.check.blocking === 0) { stop = 'passed'; break; }
   }
   tell('done', null);
-  return { ns, spent, stop: /** @type {StopReason} */ (stop), warnings: [...warnings] };
+  return { ns, spent, stop: /** @type {StopReason} */ (stop), warnings: [...(keyProblem ? [keyProblem.message] : []), ...warnings], ...(keyProblem ? { keyProblem } : {}) };
 }
 
 /**
@@ -571,10 +637,10 @@ function cardFolder({ store, collection, card, order }) {
 
 /**
  * @param {string} dir @param {CardFile} card @param {number[]} ns
- * @param {{stop: StopReason, spent: number, warnings: string[]}} run @param {{attempts: number, maxSpendUsd: number}} limits
+ * @param {{stop: StopReason, spent: number, warnings: string[], keyProblem?: KeyProblem}} run @param {{attempts: number, maxSpendUsd: number}} limits
  * @returns {CardReport}
  */
-const runReport = (dir, card, ns, run, limits) => ({ ...cardReport(dir, card, ns), stop: run.stop, spent: run.spent, limits, warnings: run.warnings });
+const runReport = (dir, card, ns, run, limits) => ({ ...cardReport(dir, card, ns), stop: run.stop, spent: run.spent, limits, warnings: run.warnings, ...(run.keyProblem ? { keyProblem: run.keyProblem } : {}) });
 
 /** @param {string} dir @returns {CardFile} */
 function needCard(dir) {
@@ -624,11 +690,10 @@ export async function makeCard({ order, collection, card: cardId, place, setting
   const { id, dir } = cardFolder({ store, collection, card: cardId, order });
   /** @type {CardFile} */
   const card = readCardFile(dir) ?? { order, attempts: [], chosen: null };
-  card.order = order;
+  saveCard(dir, card, [], c => { c.order = order; });
   const lim = { attempts: limits.attempts ?? settings.card.attempts, maxSpendUsd: limits.maxSpendUsd ?? settings.card.maxSpendUsd };
-  const run = await runAttempts({ dir, card, request: { prompt, references, ...(legend ? { legend } : {}) }, provider, settings, limits: lim, control: { signal, onProgress } });
-  choose(dir, card, 'checks');
-  writeCardFile(dir, card);
+  const run = await runAttempts({ what: 'make', dir, card, request: { prompt, references, ...(legend ? { legend } : {}) }, provider, settings, limits: lim, control: { signal, onProgress } });
+  saveCard(dir, card, [], c => choose(dir, c, 'checks'));
   if (place) await store.moveCard(collection, id, place);
   return runReport(dir, card, run.ns, run, lim);
 }
@@ -673,9 +738,8 @@ export async function regenerateCard({ dir, wish, settings, provider, buildPromp
   const key = order.promptOverride ? 'promptOverride' : 'promptExtra';
   const { prompt, references, legend } = await buildPrompt({ ...order, [key]: [order[key], text].filter(Boolean).join(' ') });
   const lim = { attempts: limits.attempts ?? REQUEST_ATTEMPTS, maxSpendUsd: limits.maxSpendUsd ?? settings.card.maxSpendUsd };
-  const run = await runAttempts({ dir, card, request: { prompt, references, ...(legend ? { legend } : {}) }, mark: { wish: text }, provider, settings, limits: lim, control: { signal, onProgress } });
-  choose(dir, card, 'request', run.ns);
-  writeCardFile(dir, card);
+  const run = await runAttempts({ what: 'regenerate', dir, card, request: { prompt, references, ...(legend ? { legend } : {}) }, mark: { wish: text }, provider, settings, limits: lim, control: { signal, onProgress } });
+  saveCard(dir, card, [], c => choose(dir, c, 'request', run.ns));
   return runReport(dir, card, run.ns, run, lim);
 }
 
@@ -699,9 +763,8 @@ export async function editCard({ dir, wish, n, settings, provider, limits = {}, 
   const { attempt, file } = sourceAttempt(dir, card, n, ATTEMPT_FILES.original);
   const request = { prompt: settings.card.editPrompt.replace('{wish}', () => text), references: [{ path: file }], legend: settings.card.editLegend };
   const lim = { attempts: limits.attempts ?? REQUEST_ATTEMPTS, maxSpendUsd: limits.maxSpendUsd ?? settings.card.maxSpendUsd };
-  const run = await runAttempts({ dir, card, request, mark: { wish: text, editOf: attempt.n }, provider, settings, limits: lim, control: { signal, onProgress } });
-  choose(dir, card, 'request', run.ns);
-  writeCardFile(dir, card);
+  const run = await runAttempts({ what: 'edit', dir, card, request, mark: { wish: text, editOf: attempt.n }, provider, settings, limits: lim, control: { signal, onProgress } });
+  saveCard(dir, card, [], c => choose(dir, c, 'request', run.ns));
   return runReport(dir, card, run.ns, run, lim);
 }
 
@@ -753,8 +816,7 @@ export async function adjustCard({ dir, n, saturation, brightness, sharpen, shad
   }
   fs.writeFileSync(path.join(adir, ATTEMPT_FILES.card), await encodePng(adjust(pic.pixels, pic.width, pic.height, /** @type {AdjustSettings} */ (a.processing)), pic.width, pic.height));
   a.check = await checkOrSkip({ order: card.order, dir: adir, attempt: a, output: outputOf(card.order), hero });
-  if (card.chosen === a.n) copyChosen(dir, card);
-  writeCardFile(dir, card);
+  saveCard(dir, card, [a], c => { if (c.chosen === a.n) copyChosen(dir, c); });
   return cardReport(dir, card, [a.n]);
 }
 
@@ -790,10 +852,7 @@ export async function chooseAttempt({ dir, n }) {
   if (!fs.existsSync(path.join(attemptDir(dir, n), ATTEMPT_FILES.card))) {
     throw new Error(`Версия ${n} не может стать карточкой: у неё нет готовой картинки${a.error ? ` (${a.error.message})` : ''}.`);
   }
-  card.chosen = n;
-  card.chosenBy = 'choice';
-  copyChosen(dir, card);
-  writeCardFile(dir, card);
+  saveCard(dir, card, [], c => { c.chosen = n; c.chosenBy = 'choice'; copyChosen(dir, c); });
   return cardReport(dir, card, [n]);
 }
 
@@ -830,17 +889,20 @@ export async function importImage({ image, dir, order, collection, place, settin
     ({ id, dir } = cardFolder({ store, collection, order }));
     card = { order, attempts: [], chosen: null };
   }
-  const n = Math.max(0, ...card.attempts.map(a => a.n)) + 1;
-  /** @type {Attempt} */
-  const attempt = { n, at: new Date().toISOString(), model: AGENT_MODEL, prompt: '', references: [], cost: 0 };
-  card.attempts.push(attempt);
-  const adir = attemptDir(dir, n);
-  fs.mkdirSync(adir, { recursive: true });
-  const ask = askOf(vision, settings);
-  const warnings = await processInto({ order: card.order, attempt, dir: adir, bytes, mime, settings, output: outputOf(card.order), ask });
-  if (!ask) warnings.unshift(NO_VISION);
-  choose(dir, card, 'request', [n]);
-  writeCardFile(dir, card);
+  const release = markBusy(dir, 'import');
+  let n = 0, warnings = /** @type {string[]} */ ([]);
+  try {
+    n = reserveAttempt(dir, Math.max(0, ...card.attempts.map(a => a.n)));
+    /** @type {Attempt} */
+    const attempt = { n, at: new Date().toISOString(), model: AGENT_MODEL, prompt: '', references: [], cost: 0 };
+    card.attempts.push(attempt);
+    const ask = askOf(vision, settings);
+    warnings = await processInto({ order: card.order, attempt, dir: attemptDir(dir, n), bytes, mime, settings, output: outputOf(card.order), ask });
+    if (!ask) warnings.unshift(NO_VISION);
+    saveCard(dir, card, [attempt], c => choose(dir, c, 'request', [attempt.n]));
+  } finally {
+    release();
+  }
   if (place && id) await store.moveCard(/** @type {string} */ (collection), id, place);
   return { ...cardReport(dir, card, [n]), warnings };
 }
@@ -892,8 +954,9 @@ export async function recheckCard({ dir, n, review }) {
     }
     a.check = await checkOrSkip({ order: card.order, dir: adir, attempt: a, output, hero });
   }
-  if (card.chosenBy === 'request' || card.chosenBy === 'choice') copyChosen(dir, card);
-  else choose(dir, card, 'checks');
-  writeCardFile(dir, card);
+  saveCard(dir, card, targets, c => {
+    if (c.chosenBy === 'request' || c.chosenBy === 'choice') copyChosen(dir, c);
+    else choose(dir, c, 'checks');
+  });
   return cardReport(dir, card, targets.map(a => a.n));
 }

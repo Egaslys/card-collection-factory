@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { ROOT } from './root.mjs';
-import { lakePlan } from './set-fixtures.mjs';
+import { lakePlan, tagged, withReview } from './set-fixtures.mjs';
 import { parseFragments } from '../core/style/fragments.js';
 import { checkOrder } from '../core/style/card-order.js';
 import { expandStaging, kindKey, loadSetRules, stagingRow, windowSkeleton } from '../core/set/rules.js';
@@ -243,12 +243,12 @@ test('planSet: запрос из фрагментов SETS.md; ошибки пл
   /** @type {any[][]} */
   const seen = [];
   const answers = [answerOf(bad), '```json\n' + answerOf(good) + '\n```'];
-  const model = async (/** @type {any[]} */ messages) => { seen.push(structuredClone(messages)); return { text: /** @type {string} */ (answers.shift()), cost: 0.001 }; };
+  const model = withReview(async (/** @type {any[]} */ messages) => { seen.push(structuredClone(messages)); return { text: /** @type {string} */ (answers.shift()), cost: 0.001 }; });
   const r = await planSet({ style: 'scapes', theme: 'Рыбалка на озере', wishes: 'без лодок с мотором', scenes: 2, model, limits: { repairs: 2, maxSpendUsd: 1 } });
-  assert.equal(r.calls, 2);
+  assert.equal(r.calls, 3, 'два ответа плана и самопроверка');
   assert.equal(r.spent, 0.002);
   assert.deepEqual(r.plans[0].errors, []);
-  assert.equal(r.plans[0].rounds, 2);
+  assert.equal(r.plans[0].rounds, 3);
   assert.equal(r.plans[0].plan.window.layout, 'large');
   const prompt = seen[0][1].content;
   assert.match(prompt, /Plan a set of 10 collectible cards on the theme "Рыбалка на озере"/);
@@ -264,13 +264,20 @@ test('planSet: запрос из фрагментов SETS.md; ошибки пл
 test('planSet: варианты видят виды друг друга; потолок расходов и неизвестная цена останавливают', async () => {
   /** @type {string[]} */
   const prompts = [];
-  const model = async (/** @type {any[]} */ m) => { prompts.push(m[1].content); return { text: answerOf(lakePlan()), cost: 0.01 }; };
+  const model = withReview(async (/** @type {any[]} */ m) => { prompts.push(m[1].content); return { text: answerOf(lakePlan()), cost: 0.01 }; });
   const r = await planSet({ style: 'scapes', theme: 'Lake', scenes: 2, variants: 2, model, limits: { repairs: 0, maxSpendUsd: 1 } });
   assert.equal(r.plans.length, 2);
   assert.match(prompts[1], /This is variant 2 of the set; the other variants already use these item kinds with these stagings: .*fishing bobber — field/);
   has(r.plans[1].errors, /общих видов предметов/);
-  await assert.rejects(planSet({ style: 'scapes', theme: 'Lake', scenes: 2, variants: 3, model, limits: { repairs: 0, maxSpendUsd: 0.015 } }), /потолке \$0.015/);
-  await assert.rejects(planSet({ style: 'scapes', theme: 'Lake', scenes: 2, model: async () => ({ text: '{}', cost: null }), limits: { repairs: 0, maxSpendUsd: 1 } }), /не сообщила цену/);
+  // the cap and an answer without a price stop planning: what was planned before is kept, the spend is counted
+  const capped = await planSet({ style: 'scapes', theme: 'Lake', scenes: 2, variants: 3, model, limits: { repairs: 0, maxSpendUsd: 0.015 } });
+  assert.match(String(capped.stopped), /потолке \$0.015/);
+  assert.equal(capped.plans.length, 2);
+  assert.equal(capped.calls, 3, 'план, самопроверка, план второго варианта');
+  assert.ok(Math.abs(capped.spent - 0.02) < 1e-9);
+  const priceless = await planSet({ style: 'scapes', theme: 'Lake', scenes: 2, model: async () => ({ text: '{}', cost: null }), limits: { repairs: 0, maxSpendUsd: 1 } });
+  assert.match(String(priceless.stopped), /не сообщила цену/);
+  assert.deepEqual([priceless.calls, priceless.unknown, priceless.plans.length], [1, 1, 0]);
   assert.throws(() => parseAnswer('no json here'), /не JSON/);
   assert.ok(setPrompt({ style: 'scapes', theme: 'x', layout: 'grand', grand: true, scenes: 10, registry: [], variants: [], n: 1 }).at(-1)?.content.includes('Write 10 moments of one celebration'));
 });
@@ -279,17 +286,64 @@ test('planCollection: тема делится на 16 наборов, окна �
   const themes = Array.from({ length: 16 }, (_, i) => ({ title: `Theme ${i + 1}`, kind: 'place', angle: `angle ${i + 1}`, examples: [] }));
   /** @type {string[]} */
   const prompts = [];
-  const model = async (/** @type {any[]} */ m) => {
+  const model = withReview(async (/** @type {any[]} */ m) => {
     prompts.push(m[1].content);
     if (prompts.length === 1) return { text: JSON.stringify({ sets: themes }), cost: 0.001 };
     return { text: answerOf(lakePlan()), cost: 0.001 };
-  };
+  });
   const r = await planCollection({ style: 'scapes', theme: 'Summer', only: [10, 13], model, limits: { repairs: 0, maxSpendUsd: 1 } });
   assert.match(prompts[0], /Split the collection theme "Summer" into 16 set themes/);
   assert.equal(r.plans.length, 2);
   assert.deepEqual(r.plans.map(p => [p.plan.number, p.plan.window.layout, p.plan.slots.filter(s => s.frame === 'gold').length]), [[10, 'large', 2], [13, 'large', 3]]);
   has(r.plans[1].errors, /уже есть в наборе/);
   assert.match(prompts[2], /within the collection "Summer"/);
+});
+
+test('planSet: пустой или оборванный ответ спрашивается заново (retries), в разговор не попадает', async () => {
+  /** @type {any[][]} */
+  const seen = [];
+  const answers = ['', '{"title": "Lake", "cards": [', answerOf(lakePlan())];
+  const model = withReview(async (/** @type {any[]} */ m) => { seen.push(structuredClone(m)); return { text: /** @type {string} */ (answers.shift()), cost: 0.01 }; });
+  const r = await planSet({ style: 'scapes', theme: 'Lake', scenes: 2, model, limits: { repairs: 0, retries: 2, maxSpendUsd: 1 } });
+  assert.deepEqual(r.plans[0].errors, []);
+  assert.equal(seen.length, 3);
+  assert.equal(seen[2].length, 2, 'третий запрос — тот же, без нечитаемых ответов');
+  assert.ok(Math.abs(r.spent - 0.03) < 1e-9, 'повторы оплачены и посчитаны');
+  // retries spent: the unreadable answer is an error of the plan, cleanly
+  const none = await planSet({ style: 'scapes', theme: 'Lake', scenes: 2, model: withReview(async () => ({ text: '{}', cost: 0.01 })), limits: { repairs: 0, retries: 1, maxSpendUsd: 1 } });
+  assert.equal(none.calls, 2);
+  assert.equal(none.plans[0].plan, null);
+  assert.match(none.plans[0].errors[0], /без карточек плана/);
+});
+
+test('planSet: самопроверка — отдельный вызов; её замечания уходят на одну починку или становятся предупреждениями', async () => {
+  /** @type {any[][]} */
+  const reviews = [];
+  // repairs left: the self-check's problem goes back to the planner, the corrected plan is taken
+  const fixed = tagged('Fix');
+  const answers = [answerOf(lakePlan()), answerOf(fixed)];
+  const model = async (/** @type {any[]} */ m) => {
+    if (m.at(-1).content.startsWith('Check a finished set plan')) { reviews.push(m); return { text: JSON.stringify({ problems: ['slot 2: the caption does not name the tackle box'] }), cost: 0.002 }; }
+    return { text: /** @type {string} */ (answers.shift()), cost: 0.01 };
+  };
+  const r = await planSet({ style: 'scapes', theme: 'Lake', scenes: 2, model, limits: { repairs: 1, maxSpendUsd: 1 } });
+  assert.equal(reviews.length, 1, 'самопроверка — один раз на вариант');
+  assert.equal(reviews[0].length, 2, 'отдельный разговор: система и запрос');
+  assert.match(reviews[0][1].content, /Plan a set of 10 collectible cards/, 'проверяет по тому же запросу к модели');
+  assert.match(reviews[0][1].content, /"Bobber"/, 'и сам план');
+  assert.equal(r.plans[0].plan?.title, 'Lake Fix');
+  assert.deepEqual(r.plans[0].errors, []);
+  assert.equal(r.calls, 3);
+  // no repairs left: the problems become warnings of the plan, which is kept
+  const kept = await planSet({ style: 'scapes', theme: 'Lake', scenes: 2, model: async (/** @type {any[]} */ m) => (m.at(-1).content.startsWith('Check a finished set plan') ? { text: '{"problems": ["slot 9: the scene plays no item"]}', cost: 0 } : { text: answerOf(lakePlan()), cost: 0.01 }), limits: { repairs: 0, maxSpendUsd: 1 } });
+  assert.deepEqual(kept.plans[0].errors, []);
+  assert.ok(kept.plans[0].warnings.includes('самопроверка: slot 9: the scene plays no item'));
+  // the repair asked by the self-check breaks the rules: the plan that passed stands, with the self-check's note
+  const breaks = [answerOf(lakePlan()), 'still not json'];
+  const back = await planSet({ style: 'scapes', theme: 'Lake', scenes: 2, model: async (/** @type {any[]} */ m) => (m.at(-1).content.startsWith('Check a finished set plan') ? { text: '{"problems": ["slot 1: x"]}', cost: 0 } : { text: /** @type {string} */ (breaks.shift()), cost: 0.01 }), limits: { repairs: 1, maxSpendUsd: 1 } });
+  assert.equal(back.plans[0].plan?.title, 'Lake Fishing');
+  assert.deepEqual(back.plans[0].errors, []);
+  assert.ok(back.plans[0].warnings.includes('самопроверка: slot 1: x'));
 });
 
 test('ccf.mjs: команды наборов и коллекций — справка и отказ от неверной строки до работы', async () => {

@@ -57,3 +57,5 @@ export function windowTemplates(style, kind) {
 export const DEFAULT_STYLE = 'scapes';
 /** The folder of chosen single cards inside an export. */
 export const EXPORT_CARDS_FOLDER = 'Карточки';
+/** The folder of the pool's cards (the cards in no set) inside an export: the editor calls the pool «Хранилище». */
+export const EXPORT_POOL_FOLDER = 'Хранилище';

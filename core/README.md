@@ -36,8 +36,8 @@ moveCard(collectionId, cardId, { setId, slot } | { pool: true }) → CardSummary
 deleteCard(collectionId, cardId)                     // OS trash; its slot becomes empty
 newCardId(collectionId, base) → id                   // sync; unique, readable (from the card's title); creates the folder
 cardDir(collectionId, cardId) → absolute path        // sync; where core/card writes the card
-listCards(collectionId, { setId? , pool? }) → CardSummary[]   // id, title, image, status, checks, cost, setId, slot
-exportItems({ collectionId, setIds?, cardIds?, format: 'png' | 'zip', name? }) → { path, files, skipped }
+listCards(collectionId, { setId? , pool? }) → CardSummary[]   // id, title, image, status, checks, cost, setId, slot, busy
+exportItems({ collectionId, setIds?, cardIds?, pool?, format: 'png' | 'zip', name? }) → { path, files, skipped }   // nothing chosen = every set and the pool
 recordSpend(collectionId | null, { kind: 'images'|'vision'|'text', what, model, usd })   // a paid call no card records
 spend({ collectionId? }?) → { images, vision, text, total, unknown }                    // USD by kind: a collection, or the factory
 openFolder(path)                                     // the OS file manager
@@ -47,6 +47,8 @@ watch(onEvent, { debounceMs?, pollMs?, poll? }?) → stop   // { type: 'collecti
 ## Calling conventions
 
 - Every operation is an exported async function taking one options object and returning plain JSON-able data; errors throw with a Russian message a person can act on.
-- Paid operations take a spend cap and report cost.
+- Provider failures are `ProviderError`s with `kind`: `auth` (the key is not accepted), `billing` (no money, billing off, a daily quota used up), `rate` (retried), `other` — `openrouter.js` `errorKind`. auth and billing stop a card's run at once (`stop: 'key'`, `keyProblem`) and must stop any run over many cards.
+- Paid operations take a spend cap and report cost. A paid answer of no use (no image, no text) is still spend: the provider's `ProviderError` carries its `cost`, and the caller records it.
+- Several operations may act on one card at once (two editor jobs, an agent's `ccf.mjs` and the editor): attempt numbers and `card.json` changes are safe across them — `core/card/card-file.js` (`reserveAttempt`, `updateCardFile`, busy markers).
 - Writes go through `store/` only, so the editor's live view (file events) sees every change, whoever made it.
-- The API key: one per service (`provider.<preset>.keyEnvVar`), from the environment / `.env` (permanent) or held in memory by a running editor (temporary). An agent without a key uses a running editor's key by sending the operation to the editor server; the key never leaves the editor process.
+- The API key: one per service (`provider.<preset>.keyEnvVar`), from the environment / `.env` (permanent) or held in memory by a running editor (temporary). An agent without a key uses a running editor's key by sending the operation to the editor server; the key never leaves the editor process (a temporary key is not even in its `process.env`). Codex CLI runs without the service key variables in its environment (`preset.js` `keyEnvVars`).

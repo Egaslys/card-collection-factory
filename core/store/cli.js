@@ -51,7 +51,7 @@ async function exportCmd(v) {
   const { exportItems, openFolder } = await store();
   const r = await exportItems({
     collectionId: v.collection, setIds: v.set ? v.set.split(',') : undefined, cardIds: v.card ? v.card.split(',') : undefined,
-    format: v.zip ? 'zip' : 'png',
+    ...(v.pool ? { pool: true } : {}), format: v.zip ? 'zip' : 'png',
   });
   if (v.open) await openFolder(r.path);
   if (v.json) console.log(JSON.stringify(r, null, 2));
@@ -88,13 +88,15 @@ export const storeCommands = {
     run: collectionShow,
   },
   export: {
-    usage: ['ccf.mjs export --collection ID [--set ID,…] [--card ID,…] [--zip] [--open] [--json]'],
+    usage: ['ccf.mjs export --collection ID [--set ID,…] [--pool] [--card ID,…] [--zip] [--open] [--json]'],
     about: `Copies card images out for the person under collections/<collection>/export/: a folder per set (cards in slot
-order) and a folder for single cards, or one ZIP with --zip. Without --set and --card every set of the collection is
-exported. Cards without a finished image are skipped and listed. --open shows the result in the file manager.`,
+order), a folder for the pool's cards (those in no set) and one for single cards, or one ZIP with --zip. Without --set,
+--pool and --card every set of the collection and its pool are exported. Cards without a finished image are skipped
+and listed. --open shows the result in the file manager.`,
     options: {
       collection: { type: 'string', value: 'ID', help: 'the collection id (required)' },
       set: { type: 'string', value: 'ID,ID', help: 'only these sets' },
+      pool: { type: 'boolean', help: "the pool's cards (with --set or --card: as well)" },
       card: { type: 'string', value: 'ID,ID', help: 'single cards of the collection (the pool or any set)' },
       zip: { type: 'boolean', help: 'one ZIP archive instead of folders' },
       open: { type: 'boolean', help: 'open the result in the file manager' },

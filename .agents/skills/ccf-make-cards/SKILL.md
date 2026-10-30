@@ -69,6 +69,7 @@ The `--json` result is a `CardReport` (typedef in `FACTORY/core/card/make.js`; t
 | `passed` | no blocking FAIL; still review it (step 6) |
 | `attempts`, `budget` | limit hit with FAILs left → review, fix the order, `card make … --card ID` |
 | `provider-error` | `attempts[].error`; the service's fallback model, if it has one, was already tried in the same attempt |
+| `key` | the service refused the key or wants money (`keyProblem.kind` `auth` or `billing`); no fallback was tried and nothing more will succeed: stop and give the person `keyProblem.message` |
 | `cost-unknown` | the provider gave no price, so the cap cannot be kept: stop and tell the person |
 | `cancelled` | stopped by the caller |
 
@@ -81,6 +82,6 @@ Review every card before showing it: ccf-review-cards.
 ## 7. Show
 
 - Editor: `node FACTORY/ccf.mjs editor --open COLLECTION[/SET]` starts it in the background (or uses the running one), opens the browser there and prints the address. `ccf.mjs editor --stop` stops it; leave an editor the person uses running.
-- Files: `image` of each report is the card's `card.png`. A folder for the person: `node FACTORY/ccf.mjs export --collection ID --card ID,ID [--zip] [--open] --json` → `path` under `collections/<collection>/export/` (layout: `core/store/README.md`, «Export»).
+- Files: `image` of each report is the card's `card.png`. A folder for the person: `node FACTORY/ccf.mjs export --collection ID --card ID,ID [--zip] [--open] --json` (or `--pool` for every card of the pool, in a folder of its own) → `path` under `collections/<collection>/export/` (layout: `core/store/README.md`, «Export»).
 
 Done when every requested card has a reviewed `card.png`, and the person has the editor view or the export path, the total spent, and every problem left open.

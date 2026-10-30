@@ -3,7 +3,7 @@
 // {type: "json_object"}; usage.cost in the answer).
 // The editor's planning model writes set plans with it (core/set/planner.js). Every value comes from the caller.
 // The HTTP call mirrors `request` of openrouter.js, which does not export it; when it does, this file should use it.
-import { ProviderError } from './openrouter.js';
+import { ProviderError, errorKind } from './openrouter.js';
 
 /** @typedef {import('./openrouter.js').NetOptions} NetOptions */
 /** @typedef {{role: 'system'|'user'|'assistant', content: string}} ChatMessage */
@@ -54,16 +54,17 @@ export async function complete({ endpoint, apiKey, model, messages, maxTokens, t
     try { answer = JSON.parse(raw); } catch { /* reported below */ }
     if (res.ok && answer) {
       const text = answer.choices?.[0]?.message?.content;
-      if (typeof text !== 'string' || !text.trim()) throw new ProviderError('Текстовая модель ответила без текста.', { status: 200, providerMessage: redact(JSON.stringify(answer.error || {}).slice(0, 300), apiKey) });
-      const cost = answer.usage?.cost;
-      return { text, model, cost: typeof cost === 'number' ? cost : null };
+      const cost = typeof answer.usage?.cost === 'number' ? answer.usage.cost : null;
+      if (typeof text !== 'string' || !text.trim()) throw new ProviderError('Текстовая модель ответила без текста.', { status: 200, providerMessage: redact(JSON.stringify(answer.error || {}).slice(0, 300), apiKey), cost });
+      return { text, model, cost };
     }
-    if ((res.status === 429 || res.status >= 500) && attempt < retries) {
+    const kind = errorKind(res.status, answer);
+    if ((kind === 'rate' || res.status >= 500) && attempt < retries) {
       const retryAfter = Number(res.headers?.get?.('retry-after'));
       await sleep(retryAfter > 0 ? retryAfter * 1000 : backoffMs * 2 ** attempt);
       continue;
     }
     const providerMessage = redact(answer?.error?.message || (raw || '').slice(0, 300) || 'пустой ответ', apiKey);
-    throw new ProviderError(`Провайдер вернул HTTP ${res.status} (${route}): ${providerMessage}`, { status: res.status, providerMessage });
+    throw new ProviderError(`Провайдер вернул HTTP ${res.status} (${route}): ${providerMessage}`, { status: res.status, providerMessage, kind });
   }
 }

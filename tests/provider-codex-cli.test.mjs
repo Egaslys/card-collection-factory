@@ -113,6 +113,22 @@ test('generateImage: значения берутся из настроек вы�
   assert.ok(m.calls[0].args.includes('model_reasoning_effort="high"'));
 });
 
+test('generateImage: Codex не получает ключей сервисов фабрики — переменных keyEnvVar всех пресетов', async t => {
+  const { keyEnvVars } = await import('../core/providers/preset.js');
+  const vars = keyEnvVars(JSON.parse(fs.readFileSync(path.join(ROOT, 'settings/defaults.json'), 'utf8')).provider);
+  assert.deepEqual(vars, ['OPENROUTER_API_KEY', 'GEMINI_API_KEY']);
+  const saved = Object.fromEntries(vars.map(v => [v, process.env[v]]));
+  t.after(() => { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } });
+  for (const v of vars) process.env[v] = `secret-${v}`;
+  const codexHome = home();
+  const m = mock({ onSpawn: () => putImage(codexHome) });
+  await generateImage({ prompt: 'p', settings: CODEX, withoutEnv: vars, net: { spawnImpl: m.spawnImpl, codexHome } });
+  const env = m.calls[0].opts.env;
+  for (const v of vars) assert.equal(env[v], undefined, v);
+  assert.equal(env.PATH, process.env.PATH, 'остальное окружение (PATH, HOME, CODEX_HOME) — как у фабрики');
+  assert.equal(process.env.OPENROUTER_API_KEY, 'secret-OPENROUTER_API_KEY', 'окружение самой фабрики не тронуто');
+});
+
 test('generateImage: ненулевой код выхода, ошибка в событиях, нет картинки', async () => {
   const codexHome = home();
   await assert.rejects(generateImage({ settings: CODEX, prompt: 'p', net: { spawnImpl: mock({ code: 1, stderr: 'boom' }).spawnImpl, codexHome } }),

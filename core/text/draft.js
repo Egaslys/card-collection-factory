@@ -61,10 +61,19 @@ export async function draftText({ kind, notes, context, collectionId = null, set
   const prompt = draftPrompt({ kind, notes: rough, context, help });
   const m = textModel(settings);
   const or = presetOf(settings.provider);
-  const r = await (complete ?? apiOf(or.name).complete)({
-    endpoint: or.endpoint, apiKey, prices: or.prices, model: m.model, messages: [{ role: 'user', content: prompt }], maxTokens: help.maxTokens, temperature: help.temperature,
-    ...(m.reasoning ? { reasoning: m.reasoning } : {}), net: { timeoutMs: m.timeoutMs, retries: or.retries, backoffMs: or.backoffMs },
-  });
+  /** @type {{text: string, cost: number|null}} */
+  let r;
+  try {
+    r = await (complete ?? apiOf(or.name).complete)({
+      endpoint: or.endpoint, apiKey, prices: or.prices, model: m.model, messages: [{ role: 'user', content: prompt }], maxTokens: help.maxTokens, temperature: help.temperature,
+      ...(m.reasoning ? { reasoning: m.reasoning } : {}), net: { timeoutMs: m.timeoutMs, retries: or.retries, backoffMs: or.backoffMs },
+    });
+  } catch (e) {
+    // a call answered and paid but of no use (ProviderError cost): its price still counts
+    const cost = /** @type {any} */ (e)?.cost;
+    if (typeof cost === 'number' && cost > 0) await store.recordSpend(collectionId, { kind: 'text', what: 'text-help', model: m.model, usd: cost });
+    throw e;
+  }
   await store.recordSpend(collectionId, { kind: 'text', what: 'text-help', model: m.model, usd: r.cost });
   const text = r.text.trim().replace(/^```[a-z]*\n?|\n?```$/g, '').replace(/^«(.*)»$/s, '$1').trim();
   if (!text) throw new Error('Текстовая модель ответила пустым текстом: попробуйте ещё раз.');

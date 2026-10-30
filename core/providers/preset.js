@@ -51,6 +51,14 @@ export function presetOf(provider, name = provider.preset) {
   return { ...provider[name], name: /** @type {PresetName} */ (name) };
 }
 
+/**
+ * The key variables of every preset in the settings (provider.<preset>.keyEnvVar): what a child process that is not
+ * one of these services (Codex) must not inherit.
+ * @param {Record<string, any>} provider  settings provider
+ * @returns {string[]}
+ */
+export const keyEnvVars = provider => [...new Set(PRESETS.map(n => provider[n]?.keyEnvVar).filter(v => typeof v === 'string' && v))];
+
 /** The calls of a preset. @param {PresetName} name */
 export const apiOf = name => APIS[name];
 

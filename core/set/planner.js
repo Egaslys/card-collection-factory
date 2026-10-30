@@ -24,11 +24,12 @@ import { expandStaging, loadSetRules, seenPatterns, windowSkeleton } from './rul
  * @typedef {object} PlanSettings  settings `set.plan`
  * @property {number} repairs @property {number} maxTokens @property {number} temperature  (the model: provider.<preset>.textModel)
  * @property {Record<string, unknown>|null} reasoning @property {number} timeoutMs @property {number} maxSpendUsd
+ * @property {number} retries  an unreadable answer asked for again @property {number} keepVersions  earlier plans a set keeps
  */
 
 /**
  * @typedef {object} PlanReport
- * @property {SetPlan} plan
+ * @property {SetPlan|null} plan  null when no answer of the model could be read as a plan
  * @property {string[]} errors  left after the repairs: the plan cannot be made until they are fixed
  * @property {string[]} warnings
  * @property {number} rounds  model answers spent on this plan
@@ -195,21 +196,45 @@ export function planFromAnswer(answer, o) {
 }
 
 /**
- * A spend guard for the planning calls: refuses a call once the spent sum reached the cap or a price is unknown.
- * @param {TextModel} model @param {number} cap
+ * A guard for the planning calls: refuses a call once the run is stopped (`signal`) or the spent sum reached the cap,
+ * and stops after an answer without a price. `spent` is what the run spent before (a collection's earlier sets), so
+ * the message names the whole run's sum against its cap. The caller catches the refusal and keeps what it planned.
+ * @param {TextModel} model @param {number} cap @param {{signal?: AbortSignal, spent?: number}} [o]
  */
-function guarded(model, cap) {
-  const state = { spent: 0, calls: 0 };
+function guarded(model, cap, { signal, spent = 0 } = {}) {
+  const state = { spent, calls: 0, unknown: 0 };
   /** @type {TextModel} */
   const call = async messages => {
+    if (signal?.aborted) throw new Error('Планирование остановлено по просьбе: новых вызовов модели нет.');
     if (state.spent >= cap) throw new Error(`Планирование остановлено: потрачено $${state.spent.toFixed(4)} при потолке $${cap} (настройки set.plan.maxSpendUsd).`);
-    const answer = await model(messages);
+    /** @type {{text: string, cost: number|null}} */
+    let answer;
+    try { answer = await model(messages); } catch (e) {
+      // a call answered and paid but of no use (ProviderError cost): its price still counts
+      const cost = /** @type {any} */ (e)?.cost;
+      if (typeof cost === 'number' && cost > 0) { state.calls++; state.spent += cost; }
+      throw e;
+    }
     state.calls++;
-    if (answer.cost == null) throw new Error('Текстовая модель не сообщила цену — потолок расходов не соблюсти, планирование остановлено.');
+    if (answer.cost == null) { state.unknown++; throw new Error('Текстовая модель не сообщила цену — потолок расходов не соблюсти, планирование остановлено.'); }
     state.spent += answer.cost;
     return answer;
   };
   return { call, state };
+}
+
+/** @param {unknown} e */
+const messageOf = e => String(/** @type {any} */ (e)?.message ?? e);
+
+/**
+ * Why a refused or failed call ends planning: its message, or — when the service refused the key or wants money —
+ * the key problem (core/card/make.js keyProblemOf; loaded only on this path) and its message for a person.
+ * @param {unknown} e
+ * @returns {Promise<{stopped: string, keyProblem?: import('../card/make.js').KeyProblem}>}
+ */
+async function stopOf(e) {
+  const keyProblem = (await import('../card/make.js')).keyProblemOf(/** @type {any} */ (e));
+  return keyProblem ? { stopped: keyProblem.message, keyProblem } : { stopped: messageOf(e) };
 }
 
 /**
@@ -226,9 +251,17 @@ function guarded(model, cap) {
  * @param {RegistryEntry[]} [o.registry]  the other sets of the collection
  * @param {string[]} [o.titles]  the titles of the other sets
  * @param {string} [o.group]  the variant group id (default: from the theme)
+ * @param {SetPlan[]} [o.siblings]  variants of this set the collection already has (same `group`): the new ones are
+ *   numbered after them, told their item kinds and checked against them; their kinds are not the registry's
  * @param {TextModel} o.model
- * @param {{repairs: number, maxSpendUsd: number}} o.limits
- * @returns {Promise<{plans: PlanReport[], spent: number, calls: number}>}
+ * @param {{repairs: number, maxSpendUsd: number, retries?: number, spent?: number}} o.limits  retries: an answer that
+ *   cannot be read as a plan is asked for again, this many times per variant (and per self-check), before it counts as
+ *   an error; spent: what the run spent before this set (a collection's), counted against maxSpendUsd
+ * @param {AbortSignal} [o.signal]  checked before every call
+ * @returns {Promise<{plans: PlanReport[], spent: number, calls: number, unknown: number, stopped?: string, keyProblem?: import('../card/make.js').KeyProblem}>}
+ *   stopped: why planning ended early (the signal, the spend cap, an answer without a price, a failed call; keyProblem
+ *   when the service refused the key or wants money); the plans before it
+ *   are kept, a variant cut in the middle of its repairs comes with its errors (or as the plan that passed before)
  */
 export async function planSet(o) {
   const { rules } = loadSetRules(o.style);
@@ -237,40 +270,108 @@ export async function planSet(o) {
   if (!w) throw new Error(`Нет окна «${layout}»; есть: ${Object.keys(rules.windows).join(', ')}.`);
   const scenes = o.scenes ?? Math.min(...w.scenes);
   const count = o.variants ?? 1;
+  const siblings = o.siblings ?? [];
   const group = o.group ?? (count > 1 ? `${o.theme}`.toLowerCase().replace(/[^a-zа-яё0-9]+/gi, '-').replace(/^-|-$/g, '') : undefined);
-  const { call, state } = guarded(o.model, o.limits.maxSpendUsd);
+  const registry = (o.registry ?? []).filter(r => !group || r.group !== group);
+  const retries = o.limits.retries ?? 0;
+  const g = rules.prompt.glue;
+  /** @param {string[]} list */
+  const repair = list => ({ role: /** @type {const} */ ('user'), content: glue(g.repair, { errors: list.map(e => `- ${e}`).join('\n') }) });
+  const before = o.limits.spent ?? 0;
+  const { call, state } = guarded(o.model, o.limits.maxSpendUsd, { signal: o.signal, spent: before });
   /** @type {PlanReport[]} */
   const out = [];
-  for (let n = 1; n <= count; n++) {
-    const variants = out.map(r => r.plan);
+  /** @type {string|undefined} */
+  let stopped;
+  /** @type {import('../card/make.js').KeyProblem|undefined} */
+  let keyProblem;
+  for (let k = 1; k <= count && !stopped; k++) {
+    const n = siblings.length + k;
+    // a variant without a plan (no answer could be read) gives the next ones nothing to differ from
+    const variants = [...siblings, ...out.flatMap(r => (r.plan ? [r.plan] : []))];
     const meta = { style: o.style, theme: o.theme, wishes: o.wishes, collectionTheme: o.collectionTheme, grand: o.grand, layout, scenes, template: o.template, number: o.number, language: o.language, ...(group ? { variant: { n, group } } : {}) };
-    const messages = setPrompt({ ...meta, angle: o.angle, registry: o.registry ?? [], variants, n });
+    const messages = setPrompt({ ...meta, angle: o.angle, registry, variants, n });
+    const brief = messages[1].content;
     /** @type {PlanReport|undefined} */
     let report;
-    for (let round = 0; round <= o.limits.repairs; round++) {
-      const answer = await call(messages);
-      messages.push({ role: 'assistant', content: answer.text });
-      /** @type {SetPlan} */
+    /** the plan that passed the program's checks before the self-check sent it back for a repair */
+    /** @type {Omit<PlanReport, 'rounds'>|undefined} */
+    let passed;
+    let reviewed = !g.review, retried = 0, rounds = 0;
+    for (let round = 0; round <= o.limits.repairs;) {
+      /** @type {{text: string, cost: number|null}} */
+      let answer;
+      try { answer = await call(messages); } catch (e) { ({ stopped, keyProblem } = await stopOf(e)); break; }
+      rounds++;
+      /** @type {SetPlan|null} */
       let plan;
       /** @type {string[]} */
       let errors;
       /** @type {string[]} */
       let warnings;
+      let unreadable = false;
       try {
-        plan = planFromAnswer(parseAnswer(answer.text), meta);
-        ({ errors, warnings, plan } = validatePlan(plan, { registry: o.registry ?? [], variants, titles: o.titles ?? [] }));
-      } catch (/** @type {any} */ e) {
-        plan = /** @type {any} */ (report?.plan ?? null);
-        errors = [String(e?.message ?? e)];
+        const parsed = parseAnswer(answer.text);
+        if (!Array.isArray(parsed?.cards) || !parsed.cards.length) throw new Error('Ответ модели без карточек плана.');
+        ({ errors, warnings, plan } = validatePlan(planFromAnswer(parsed, meta), { registry, variants, titles: o.titles ?? [] }));
+      } catch (e) {
+        unreadable = true;
+        plan = report?.plan ?? null;
+        errors = [messageOf(e)];
         warnings = [];
       }
-      report = { plan, errors, warnings, rounds: round + 1 };
+      // an empty or cut answer is asked for again as it was; it is not kept in the conversation
+      if (unreadable && retried < retries) { retried++; continue; }
+      messages.push({ role: 'assistant', content: answer.text });
+      if (!errors.length && !reviewed) {
+        reviewed = true;
+        const r = await selfCheck(call, g, brief, answer.text, retries);
+        rounds += r.calls;
+        const found = r.problems.map(p => `самопроверка: ${p}`);
+        if (r.stopped) { stopped = r.stopped; keyProblem = r.keyProblem; report = { plan, errors, warnings: [...warnings, ...r.warnings], rounds }; break; }
+        if (found.length && round < o.limits.repairs) {
+          passed = { plan, errors: [], warnings: [...warnings, ...found] };
+          messages.push(repair(r.problems));
+          round++;
+          continue;
+        }
+        warnings = [...warnings, ...found, ...r.warnings];
+      }
+      report = { plan, errors, warnings, rounds };
       if (!errors.length || round === o.limits.repairs) break;
-      messages.push({ role: 'user', content: glue(rules.prompt.glue.repair, { errors: errors.map(e => `- ${e}`).join('\n') }) });
+      messages.push(repair(errors));
+      round++;
     }
-    out.push(/** @type {PlanReport} */ (report));
+    // the repair asked by the self-check broke the rules, or was cut short: the plan that passed stands, with its notes
+    if (passed && (!report || report.errors.length)) report = { ...passed, rounds };
+    if (report) out.push(report);
   }
-  return { plans: out, spent: state.spent, calls: state.calls };
+  return { plans: out, spent: state.spent - before, calls: state.calls, unknown: state.unknown, ...(stopped ? { stopped } : {}), ...(keyProblem ? { keyProblem } : {}) };
+}
+
+/**
+ * The self-check of a plan that passed the program's checks: one separate call of the text model reads it against the
+ * brief it was written for (the style's prompt.glue.review) and names what the program cannot check. An answer that
+ * cannot be read is asked for again `retries` times, then left as a warning.
+ * @param {TextModel} call @param {Record<string, string>} g  prompt glue @param {string} brief @param {string} planText
+ * @param {number} retries
+ * @returns {Promise<{problems: string[], warnings: string[], calls: number, stopped?: string, keyProblem?: import('../card/make.js').KeyProblem}>}
+ */
+async function selfCheck(call, g, brief, planText, retries) {
+  /** @type {ChatMessage[]} */
+  const messages = [{ role: 'system', content: g.system }, { role: 'user', content: glue(g.review, { brief, plan: planText }) }];
+  let calls = 0;
+  for (let i = 0; i <= retries; i++) {
+    /** @type {{text: string, cost: number|null}} */
+    let answer;
+    try { answer = await call(messages); } catch (e) { return { problems: [], warnings: [], calls, ...(await stopOf(e)) }; }
+    calls++;
+    try {
+      const a = parseAnswer(answer.text);
+      if (Array.isArray(a?.problems)) return { problems: a.problems.map(String).filter(Boolean), warnings: [], calls };
+    } catch { /* asked again */ }
+  }
+  return { problems: [], warnings: ['самопроверка плана не дала читаемого ответа'], calls };
 }
 
 /**
@@ -280,59 +381,98 @@ export async function planSet(o) {
  * @param {object} o
  * @param {string} o.style @param {string} o.theme  the collection theme @param {string} [o.wishes]
  * @param {number} [o.variants]  variants per set (default 1)
- * @param {number[]} [o.only]  plan only these places (1-based); the themes are still split for all
+ * @param {number[]} [o.only]  plan only these places (1-based)
  * @param {SetPlan[]} [o.existing]  plans the collection already has (their kinds go to the registry)
+ * @param {Record<number, PlaceVariant>} [o.extend]  places that already hold a set: a new variant of it is planned
+ *   there (its theme, window and scene count), not a new set; the split into themes is asked only for the other places
  * @param {TextModel} o.model
- * @param {{repairs: number, maxSpendUsd: number}} o.limits
+ * @param {{repairs: number, maxSpendUsd: number, retries?: number}} o.limits  maxSpendUsd: the whole run (the split and
+ *   every set); retries: as planSet, also for the split
+ * @param {AbortSignal} [o.signal]  checked before every call
  * @param {(msg: string) => void} [o.progress]
- * @returns {Promise<{themes: {title: string, kind: string, angle: string, examples: string[]}[], plans: PlanReport[], spent: number, calls: number}>}
+ * @returns {Promise<{themes: {title: string, kind: string, angle: string, examples: string[]}[], plans: PlanReport[], spent: number, calls: number, unknown: number, stopped?: string, keyProblem?: import('../card/make.js').KeyProblem}>}
+ *   stopped: why planning ended early (as planSet; also a split the model did not get right after the repairs, then
+ *   with no themes and no plans); the sets planned before it are kept
  */
 export async function planCollection(o) {
   const { rules } = loadSetRules(o.style);
   const count = rules.collection.sets;
-  const { call, state } = guarded(o.model, o.limits.maxSpendUsd);
+  const { call, state } = guarded(o.model, o.limits.maxSpendUsd, { signal: o.signal });
   const g = rules.prompt.glue;
-  /** @type {ChatMessage[]} */
-  const messages = [{ role: 'system', content: g.system }, { role: 'user', content: [glue(g.collection, { 'collection theme': o.theme, count: String(count) }), ...(o.wishes ? [glue(g.wishes, { wishes: o.wishes })] : [])].join('\n\n') }];
+  const retries = o.limits.retries ?? 0;
+  const places = Array.from({ length: count }, (_, i) => i + 1).filter(n => !o.only || o.only.includes(n));
+  /** @param {{stopped: string, keyProblem?: import('../card/make.js').KeyProblem}} stop */
+  const early = stop => ({ themes: [], plans: [], spent: state.spent, calls: state.calls, unknown: state.unknown, ...stop });
   /** @type {any[]} */
   let themes = [];
-  for (let round = 0; round <= o.limits.repairs; round++) {
-    const answer = await call(messages);
-    messages.push({ role: 'assistant', content: answer.text });
-    /** @type {string[]} */
-    const problems = [];
-    try {
-      themes = parseAnswer(answer.text).sets ?? [];
-      if (themes.length !== count) problems.push(`нужно ровно ${count} наборов, а их ${themes.length}`);
-      const titles = themes.map(t => String(t?.title ?? '').toLowerCase());
-      if (new Set(titles).size !== titles.length) problems.push('названия наборов повторяются');
-      for (const [i, t] of themes.entries()) if (!t?.title || !t?.angle) problems.push(`набор ${i + 1}: нужны title и angle`);
-    } catch (/** @type {any} */ e) { problems.push(String(e?.message ?? e)); }
-    if (!problems.length) break;
-    if (round === o.limits.repairs) throw new Error(`Модель не разбила тему коллекции на наборы: ${problems.join('; ')}`);
-    messages.push({ role: 'user', content: glue(g.repair, { errors: problems.map(e => `- ${e}`).join('\n') }) });
+  if (places.some(n => !o.extend?.[n])) {
+    /** @type {ChatMessage[]} */
+    const messages = [{ role: 'system', content: g.system }, { role: 'user', content: [glue(g.collection, { 'collection theme': o.theme, count: String(count) }), ...(o.wishes ? [glue(g.wishes, { wishes: o.wishes })] : [])].join('\n\n') }];
+    let retried = 0;
+    for (let round = 0; round <= o.limits.repairs;) {
+      /** @type {{text: string, cost: number|null}} */
+      let answer;
+      try { answer = await call(messages); } catch (e) { return early(await stopOf(e)); }
+      /** @type {string[]} */
+      const problems = [];
+      try {
+        themes = parseAnswer(answer.text).sets ?? [];
+        if (themes.length !== count) problems.push(`нужно ровно ${count} наборов, а их ${themes.length}`);
+        const titles = themes.map(t => String(t?.title ?? '').toLowerCase());
+        if (new Set(titles).size !== titles.length) problems.push('названия наборов повторяются');
+        for (const [i, t] of themes.entries()) if (!t?.title || !t?.angle) problems.push(`набор ${i + 1}: нужны title и angle`);
+      } catch (e) {
+        // an empty or cut answer is asked for again as it was
+        if (retried < retries) { retried++; continue; }
+        problems.push(messageOf(e));
+      }
+      messages.push({ role: 'assistant', content: answer.text });
+      if (!problems.length) break;
+      if (round === o.limits.repairs) return early({ stopped: `Модель не разбила тему коллекции на наборы: ${problems.join('; ')}` });
+      messages.push({ role: 'user', content: glue(g.repair, { errors: problems.map(e => `- ${e}`).join('\n') }) });
+      round++;
+    }
   }
   /** @type {PlanReport[]} */
   const plans = [];
   const done = [...(o.existing ?? [])];
-  for (const [i, t] of themes.entries()) {
-    const number = i + 1;
-    if (o.only && !o.only.includes(number)) continue;
-    const pos = rules.collection.reference_positions[i];
-    o.progress?.(`набор ${number} из ${count}: «${t.title}» (окно ${pos.window}, сцен ${pos.scenes})`);
-    const left = o.limits.maxSpendUsd - state.spent;
+  /** @type {string|undefined} */
+  let stopped;
+  /** @type {import('../card/make.js').KeyProblem|undefined} */
+  let keyProblem;
+  for (const number of places) {
+    const ext = o.extend?.[number];
+    const t = themes[number - 1];
+    const pos = rules.collection.reference_positions[number - 1];
+    const layout = ext?.layout ?? pos.window, scenes = ext?.scenes ?? pos.scenes;
+    const group = ext?.group;
+    o.progress?.(`набор ${number} из ${count}: «${ext?.theme ?? t.title}»${ext ? ' — ещё вариант' : ''} (окно ${layout}, сцен ${scenes})`);
     const r = await planSet({
-      style: o.style, theme: t.title, angle: t.angle, wishes: o.wishes, collectionTheme: o.theme, window: pos.window, scenes: pos.scenes,
-      grand: pos.window === 'grand', number, variants: o.variants, model: o.model, limits: { repairs: o.limits.repairs, maxSpendUsd: left },
-      registry: done.flatMap(p => registryOf(normalizePlan(p).plan)), titles: done.map(p => p.title),
+      style: o.style, theme: ext?.theme ?? t.title, angle: ext ? undefined : t.angle, wishes: o.wishes, collectionTheme: o.theme,
+      window: layout, scenes, grand: layout === 'grand', number, variants: o.variants, model: o.model, signal: o.signal,
+      ...(ext ? { group: ext.group, siblings: ext.siblings } : {}),
+      limits: { repairs: o.limits.repairs, maxSpendUsd: o.limits.maxSpendUsd, retries, spent: state.spent },
+      registry: done.flatMap(p => registryOf(normalizePlan(p).plan)),
+      titles: done.filter(p => !(group && p.variant?.group === group)).map(p => p.title),
     });
     state.spent += r.spent;
     state.calls += r.calls;
-    for (const p of r.plans) { p.plan.themeKind ??= t.kind; plans.push(p); }
-    done.push(...r.plans.filter(p => p.plan).map(p => p.plan));
+    state.unknown += r.unknown;
+    for (const p of r.plans) { if (p.plan && t?.kind) p.plan.themeKind ??= t.kind; plans.push(p); }
+    done.push(...r.plans.flatMap(p => (p.plan ? [p.plan] : [])));
+    if (r.stopped) { stopped = r.stopped; keyProblem = r.keyProblem; break; }
   }
-  return { themes, plans, spent: state.spent, calls: state.calls };
+  return { themes, plans, spent: state.spent, calls: state.calls, unknown: state.unknown, ...(stopped ? { stopped } : {}), ...(keyProblem ? { keyProblem } : {}) };
 }
+
+/**
+ * A place of the collection that already holds a set, for a new variant of it (planCollection `extend`).
+ * @typedef {object} PlaceVariant
+ * @property {string} group  the variant group: the set's plan's `variant.group`, else the store's `variantGroup`
+ * @property {SetPlan[]} siblings  the plans of the place's sets, each with `variant.group` = group
+ * @property {string} theme  the set's theme (its plan's, else its title)
+ * @property {string} [layout] @property {number} [scenes]  the window and scene count of its plan
+ */
 
 /**
  * The text model from the settings: the API preset's endpoint, key and textModel (provider.preset), the limits of

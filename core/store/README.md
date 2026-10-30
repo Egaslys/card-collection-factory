@@ -75,7 +75,7 @@ An id is the folder name: a slug of the title (Cyrillic transliterated, lower ca
 
 ## Card summary (`listCards`, `getCollection().pool`, `moveCard`)
 
-`{ id, title, image, status, checks, attempts, cost, spend, costUnknown, model, setId, slot, updatedAt, error? }`
+`{ id, title, image, status, checks, attempts, cost, spend, costUnknown, model, setId, slot, updatedAt, busy, error? }`
 
 - `title` — the order's `title`, else its `object`, else the id.
 - `image` — absolute path of `card.png`, `null` while there is none.
@@ -84,6 +84,7 @@ An id is the folder name: a slug of the title (Cyrillic transliterated, lower ca
 - `cost` — USD, the sum of attempts whose cost is known (images and the vision model's calls); `spend` — the same split `{ images, vision }`; `costUnknown` — how many attempts have no reported cost.
 - `model` — the model that made the chosen version (`agent` for an image handed in); `null` without one.
 - `setId`, `slot` — where the card sits; `null` in the pool.
+- `busy` — the long operations running on the card now, in any process (`make`, `regenerate`, `edit`, `import`; `core/card/card-file.js` busy markers); `[]` when none. The editor's card panel holds its actions meanwhile.
 - `error` — `card.json` could not be parsed (the rest of the list still works).
 
 `listCards(c)` — all cards, oldest folder first; `{ setId }` — that set's cards in slot order; `{ pool: true }` — cards in no set.
@@ -98,16 +99,17 @@ An id is the folder name: a slug of the title (Cyrillic transliterated, lower ca
 
 ## Export
 
-`exportItems({ collectionId, setIds?, cardIds?, format: 'png'|'zip', name? })` → `{ path, files, skipped }`.
+`exportItems({ collectionId, setIds?, cardIds?, pool?, format: 'png'|'zip', name? })` → `{ path, files, skipped }`.
 
 ```
 collections/<c>/export/<name>/            (or <name>.zip with the same tree inside)
   <Collection title>/
     01 <Set title>/01 <Card title>.png    sets by number, cards by slot (empty slots skipped)
+    Хранилище/<Card title>.png            the pool's cards: those in no set (pool)
     Карточки/<Card title>.png             the chosen single cards (cardIds)
 ```
 
-- No `setIds` and no `cardIds` — every set of the collection, in the collection's order. Only `cardIds` — only the «Карточки» folder. Pool cards are exported only when chosen in `cardIds`.
+- No `setIds`, no `cardIds` and no `pool` — every set of the collection, in the collection's order, and the pool (a collection of loose cards only exports its pool). `pool: true` adds the pool to the chosen sets or cards (the editor's collection export: the chosen variant of each set and the pool). Only `cardIds` — only the «Карточки» folder.
 - `name` — default: local time `YYYY-MM-DD HH-MM-SS`. A name already in `export/` gets ` (2)`; an export never overwrites another.
 - File names are the titles a person reads: characters that file systems refuse are replaced, length ≤ 80, repeats get ` (2)`.
 - Cards without `card.png` are skipped and listed in `skipped`. Nothing to export → an error.
@@ -117,10 +119,10 @@ collections/<c>/export/<name>/            (or <name>.zip with the same tree insi
 
 ## Writes and live events
 
-Every JSON write goes to `<file>.<pid>.<random>.tmp` and is renamed over the target, so a reader sees the old file or the new one. Writes are synchronous inside each operation, so one process never interleaves two operations; two processes writing the same `set.json` at the same moment can still lose one update (no cross-process lock).
+Every JSON write goes to `<file>.<pid>.<random>.tmp` and is renamed over the target, so a reader sees the old file or the new one. Writes are synchronous inside each operation, so one process never interleaves two operations; two processes writing the same `set.json` at the same moment can still lose one update (no cross-process lock). `card.json` is written by core/card under a per-card lock, safe across processes (`core/card/card-file.js`).
 
 `watch(onEvent, { debounceMs = 150, pollMs = 1000, poll = false }?)` → `stop()`. Events: `{ type: 'collection'|'set'|'card', collectionId, id, change: 'created'|'updated'|'deleted' }`.
 
-- `collection` — `collection.json`; `set` — `set.json`; `card` — the card folder appearing or disappearing, `card.json` or `card.png` changing. Attempt files and exports give no event.
+- `collection` — `collection.json`; `set` — `set.json`; `card` — the card folder appearing or disappearing, `card.json` or `card.png` changing, a long operation starting or ending on it (its busy markers). Attempt files and exports give no event.
 - `fs.watch` (recursive) marks a collection as touched; `debounceMs` after the first touch the watcher compares that collection's files (time and size) with the last state, so a burst of writes gives one event per entity, and a long run of writes still gives an event every `debounceMs`. Where recursive `fs.watch` is unavailable or fails, the whole folder is polled every `pollMs`; `poll: true` forces that.
 - Events come in the order collection, set, card. Card files that core/card writes in place (`card.png` is copied, not renamed) could be read mid-write; the delay makes that unlikely but does not rule it out — a reader that fails on `card.png` should retry on the next event.

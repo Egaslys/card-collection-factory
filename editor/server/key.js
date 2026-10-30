@@ -1,8 +1,8 @@
 // The editor's API keys (VISION «Ключ»), one per key variable — each API preset names its own (settings
 // provider.<preset>.keyEnvVar: OPENROUTER_API_KEY, GEMINI_API_KEY). Permanent — from the environment or the project's
-// .env; temporary — typed into the editor's settings and held only in this process's memory, gone when the editor
-// stops. Core operations read a key from process.env (core/providers/openrouter.js loadApiKey), so a temporary key is
-// put there, under its own variable, and nowhere else: it is never written to disk or logged, and the browser sees
+// .env; temporary — typed into the editor's settings and held only in this module's memory, gone when the editor
+// stops. A temporary key is never put into process.env (a child process such as Codex would inherit it), never written
+// to disk or logged: the editor's operations hand the key in use (currentKey) to core explicitly, and the browser sees
 // only whether there is one and of which kind. Switching the preset never carries a key over to another variable.
 import { loadApiKey } from '../../core/providers/openrouter.js';
 
@@ -38,15 +38,11 @@ export function setTemporaryKey(key, envVar = state.envVar) {
   if (!k) throw new Error('Пустой ключ: вставьте ключ целиком.');
   if (/\s/.test(k)) throw new Error('В ключе есть пробелы или переносы строк: вставьте ключ одной строкой.');
   slot(envVar).temporary = k;
-  process.env[envVar] = k;
 }
 
 /** Forgets the temporary key of a variable (default: the current preset's). @param {string} [envVar] */
 export function clearTemporaryKey(envVar = state.envVar) {
-  const s = slot(envVar);
-  s.temporary = null;
-  if (s.permanent) process.env[envVar] = s.permanent;
-  else delete process.env[envVar];
+  slot(envVar).temporary = null;
 }
 
 /** @param {string} [envVar] @returns {{source: 'temporary'|'permanent'|'none', envVar: string}} no part of the key itself */

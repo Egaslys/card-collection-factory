@@ -5,6 +5,7 @@
 // is not available, or it fails, the whole folder is polled instead.
 import fs from 'node:fs';
 import path from 'node:path';
+import { busyFiles } from '../card/card-file.js';
 import { CARDS_DIR, CARD_FILE, COLLECTION_FILE, FINAL_IMAGE, SETS_DIR, SET_FILE } from './layout.js';
 import { subdirs } from './files.js';
 
@@ -47,7 +48,8 @@ function scanCollection(root, c, into) {
   }
   for (const k of subdirs(path.join(dir, CARDS_DIR))) {
     const cd = path.join(dir, CARDS_DIR, k);
-    into.set(`card\0${c}\0${k}`, `${stamp(path.join(cd, CARD_FILE))}|${stamp(path.join(cd, FINAL_IMAGE))}`);
+    // a long operation starting or ending on the card (its busy markers) is a change of the card too
+    into.set(`card\0${c}\0${k}`, `${stamp(path.join(cd, CARD_FILE))}|${stamp(path.join(cd, FINAL_IMAGE))}|${busyFiles(cd).join(',')}`);
   }
 }
 

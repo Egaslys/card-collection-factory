@@ -3,7 +3,7 @@
 import { call, jobs } from '../api.js';
 import { count, esc, I, jobline } from '../ui.js';
 import { windowHtml, windowsOf } from '../window.js';
-import { openCreateSet, openBuildCollection, openEditCollection } from '../panels/create.js';
+import { openCreateSet, openBuildCollection, openEditCollection, PLACES } from '../panels/create.js';
 import { openExport } from '../panels/export.js';
 import { app } from '../state.js';
 import { poolClick, poolHtml, poolView } from './pool.js';
@@ -13,7 +13,10 @@ export async function load(id) {
   const [{ collection: col, sets }, cards] = await Promise.all([call('getCollection', { collectionId: id }), call('listCards', { collectionId: id })]);
   const g = await windowsOf(col.style);
   const byId = new Map(cards.map((/** @type {any} */ c) => [c.id, c]));
-  const total = Math.max(16, ...sets.map((/** @type {any} */ s) => s.number ?? 0));
+  const total = Math.max(PLACES, ...sets.map((/** @type {any} */ s) => s.number ?? 0));
+  // places of the collection its sets hold (variants of a set share its number): «Собрать все наборы» offers the
+  // missing ones, or one more variant of every place even when all are taken
+  const places = new Set(sets.map((/** @type {any} */ s) => s.number).filter((/** @type {number} */ n) => n >= 1 && n <= PLACES)).size;
 
   // one window per variant group: the chosen variant, else the first; the others are compared on the set screen
   /** @type {Map<string, any[]>} */
@@ -44,7 +47,7 @@ export async function load(id) {
     </div>
     <div class="head__actions">
       <button type="button" class="btn btn--secondary" data-edit>${I.edit}<span>Описание</span></button>
-      ${sets.length < 16 ? `<button type="button" class="btn btn--secondary" data-build>${I.spark}<span>Собрать все наборы</span></button>` : ''}
+      <button type="button" class="btn btn--secondary" data-build>${I.spark}<span>Собрать все наборы</span></button>
       <button type="button" class="btn btn--secondary" data-export ${cards.length ? '' : 'disabled'}>${I.download}<span>Экспорт</span></button>
     </div>
   </header>`;
@@ -69,7 +72,7 @@ export async function load(id) {
         if (pick) { poolView.all = pick.dataset.pool === 'all'; app.refresh(); return; }
         if (poolClick(t, col)) return;
         if (t.closest('[data-edit]')) { openEditCollection(col); return; }
-        if (t.closest('[data-build]')) { openBuildCollection(col, sets.length); return; }
+        if (t.closest('[data-build]')) { openBuildCollection(col, places); return; }
         if (t.closest('[data-export]')) { openExport({ collection: col, sets }); return; }
         const card = /** @type {HTMLElement|null} */ (t.closest('[data-card]'));
         if (card) { openCard(id, /** @type {string} */ (card.dataset.card)); return; }

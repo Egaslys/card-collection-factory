@@ -162,7 +162,7 @@ export async function locateHero({ image, order, width, height, vision, settings
       if (!b) return { view, box: null, cost: r.cost, error: `no box in the answer: ${r.text.slice(0, 120)}` };
       return { view, box: view === 'card' ? b : unmirror(b, width), cost: r.cost };
     } catch (/** @type {any} */ e) {
-      return { view, box: null, cost: null, error: String(e?.message || e) };
+      return { view, box: null, cost: typeof e?.cost === 'number' ? e.cost : null, error: String(e?.message || e) };
     }
   };
   return Promise.all(settings.mirrorCheck ? [one('card'), one('mirror')] : [one('card')]);

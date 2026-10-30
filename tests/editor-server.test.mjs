@@ -83,6 +83,26 @@ test('настройки: запись в local.json — только отлич
   assert.deepEqual(readLocalSettings({ dir }), {}, 'отвергнутая запись файл не меняет');
 });
 
+test('настройки: число — только число; пустое поле редактора (reset) возвращает значение по умолчанию', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccf-local-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.copyFileSync(path.join(ROOT, 'settings/defaults.json'), path.join(dir, 'defaults.json'));
+  const defaults = loadSettings({ dir });
+  saveLocalSettings({ set: { maxSpendUsd: 5 }, card: { attempts: 7 } }, { dir });
+  assert.deepEqual(readLocalSettings({ dir }), { set: { maxSpendUsd: 5 }, card: { attempts: 7 } });
+  // what an emptied field used to send (Number('') = 0 passes as a number, but '' and null do not)
+  for (const bad of ['', null, '2', NaN])
+    assert.throws(() => saveLocalSettings({ set: { maxSpendUsd: bad } }, { dir }), /«set\.maxSpendUsd» должно быть числом/);
+  assert.deepEqual(readLocalSettings({ dir }), { set: { maxSpendUsd: 5 }, card: { attempts: 7 } }, 'отвергнутая запись файл не меняет');
+  const s = saveLocalSettings({ card: { attempts: 4 } }, { dir, reset: ['set.maxSpendUsd'] });
+  assert.equal(s.set.maxSpendUsd, defaults.set.maxSpendUsd);
+  assert.deepEqual(readLocalSettings({ dir }), { card: { attempts: 4 } });
+  assert.throws(() => saveLocalSettings({}, { dir, reset: ['set.nope'] }), /неизвестный ключ «set\.nope»/);
+  // a hand-written local.json with a string where a number belongs is refused when read, with the key named
+  fs.writeFileSync(path.join(dir, 'local.json'), JSON.stringify({ card: { attempts: '3' } }));
+  assert.throws(() => loadSettings({ dir }), /«card\.attempts» должно быть числом/);
+});
+
 test('ccf.mjs editor: справка, неизвестный ключ и --stop с другими ключами отклоняются до работы', () => {
   const ccf = (/** @type {string[]} */ ...args) => spawnSync(process.execPath, [path.join(ROOT, 'ccf.mjs'), ...args], { cwd: ROOT, encoding: 'utf8' });
   assert.equal(ccf('editor', '--help').status, 0);
@@ -142,4 +162,18 @@ test('агент через редактор: с ключом здесь или 
   // without a key here and without an editor: an operation that can do without the key runs here, the others stop
   assert.equal(await hereOrInEditor({ needsKey: true, optional: true, envVar: 'CCF_TEST_NO_KEY', op: 'x', args: fail, here: async () => 'здесь' }), 'здесь');
   await assert.rejects(hereOrInEditor({ needsKey: true, envVar: 'CCF_TEST_NO_KEY', op: 'x', args: fail, here: async () => 'здесь' }), /Нет ключа CCF_TEST_NO_KEY/);
+});
+
+test('ключ редактора: временный — только в памяти редактора, не в окружении процесса (его унаследовал бы Codex)', async () => {
+  const { setTemporaryKey, clearTemporaryKey, currentKey, keyStatus } = await import('../editor/server/key.js');
+  const v = 'CCF_TEST_TEMPORARY_KEY';
+  delete process.env[v];
+  setTemporaryKey('tmp-secret-1', v);
+  assert.equal(currentKey(v), 'tmp-secret-1');
+  assert.equal(keyStatus(v).source, 'temporary');
+  assert.equal(process.env[v], undefined, 'временного ключа нет в process.env');
+  assert.ok(!Object.values(process.env).includes('tmp-secret-1'));
+  clearTemporaryKey(v);
+  assert.equal(currentKey(v), null);
+  assert.equal(keyStatus(v).source, 'none');
 });

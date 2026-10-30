@@ -5,6 +5,8 @@
 // Codex saves it to $CODEX_HOME/generated_images/<thread_id>/exec-<uuid>.png (the thread id is in the
 // first `thread.started` event). Codex runs in a scratch directory, never in the project.
 // Every value comes from the caller: the factory keeps them in settings/defaults.json (provider.codexCli).
+// Codex runs a model that runs commands: it gets the environment without the factory's service keys (`withoutEnv`,
+// the callers pass every preset's keyEnvVar), so nothing it runs can read them.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -30,11 +32,12 @@ const EXT_BY_MIME = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '
 /**
  * Runs the command, feeds `input` to stdin, collects stdout and stderr. Kills the process on timeout.
  * @param {typeof spawn} spawnImpl @param {string} command @param {string[]} args @param {string} cwd @param {string} input @param {number} timeoutMs
+ * @param {NodeJS.ProcessEnv} env
  * @returns {Promise<{code: number|null, stdout: string, stderr: string}>}
  */
-function run(spawnImpl, command, args, cwd, input, timeoutMs) {
+function run(spawnImpl, command, args, cwd, input, timeoutMs, env) {
   return new Promise((resolve, reject) => {
-    const child = spawnImpl(command, args, { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawnImpl(command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     let done = false;
@@ -67,10 +70,11 @@ function run(spawnImpl, command, args, cwd, input, timeoutMs) {
  *   image is the one to change; a card's prompt names its anchor portraits and style cards itself)
  * @param {string} [o.resolution] ignored
  * @param {Record<string, unknown>} [o.params] ignored
+ * @param {string[]} [o.withoutEnv]  environment variables Codex does not get: the factory's service keys
  * @param {CodexNet} [o.net]
  * @returns {Promise<{bytes: Buffer, mime: string|undefined, model: string, cost: null, usage: undefined, raw: {threadId: string, file: string}}>}
  */
-export async function generateImage({ settings: d, model, prompt, references = [], aspectRatio, legend: given, net = {} }) {
+export async function generateImage({ settings: d, model, prompt, references = [], aspectRatio, legend: given, withoutEnv = [], net = {} }) {
   const spawnImpl = net.spawnImpl ?? spawn;
   const codexHome = net.codexHome ?? process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex');
   const scratch = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'ccf-codex-'));
@@ -99,7 +103,9 @@ export async function generateImage({ settings: d, model, prompt, references = [
     for (const f of refPaths) args.push('-i', f);
     args.push('-');
 
-    const { code, stdout, stderr } = await run(spawnImpl, d.command, args, scratch, text, net.timeoutMs ?? d.timeoutMs);
+    const env = { ...process.env };
+    for (const k of withoutEnv) delete env[k];
+    const { code, stdout, stderr } = await run(spawnImpl, d.command, args, scratch, text, net.timeoutMs ?? d.timeoutMs, env);
     /** @type {string|undefined} */
     let threadId;
     /** @type {string[]} */

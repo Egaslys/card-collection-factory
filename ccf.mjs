@@ -265,7 +265,7 @@ function cardOf(dir) {
 function finish(v, report, paid = true) {
   if (v.json) console.log(JSON.stringify(report, null, 2));
   else printReport(report);
-  return report.chosenCheck?.blocking === 0 && (!paid || report.stop !== 'provider-error') ? 0 : 1;
+  return report.chosenCheck?.blocking === 0 && (!paid || (report.stop !== 'provider-error' && report.stop !== 'key')) ? 0 : 1;
 }
 
 /** @param {any} v @param {string[]} p */
@@ -297,6 +297,7 @@ async function cardsMake(v) {
     for (const e of r.plan.errors) console.log(`ошибка плана: ${e}`);
     for (const w of r.plan.warnings) console.log(`предупреждение: ${w}`);
     for (const c of r.cards) console.log(`${c.result.padEnd(9)} ${c.card ?? '—'}  «${c.title}»${c.blocking != null ? `  блокирующих FAIL ${c.blocking}` : ''}${c.error ? `  ${c.error}` : ''}`);
+    for (const w of r.warnings ?? []) console.log(w);
     console.log(`Потрачено $${r.spent.toFixed(4)} (из них план $${r.planSpent.toFixed(4)}).`);
   }
   return !r.plan.errors.length && r.cards.every((/** @type {any} */ c) => c.result === 'made' && c.blocking === 0) ? 0 : 1;
@@ -450,6 +451,7 @@ const STOP_TEXT = {
   attempts: 'исчерпан лимит попыток',
   budget: 'следующий вызов мог бы превысить потолок расходов',
   'provider-error': 'ошибка провайдера (записана в попытке)',
+  key: 'проблема с ключом сервиса (см. «Внимание» выше)',
   'cost-unknown': 'провайдер не сообщил цену — потолок расходов не соблюсти, генерация остановлена',
   cancelled: 'запуск отменён',
 };

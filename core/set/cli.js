@@ -113,9 +113,10 @@ async function setPlan(v) {
       console.log(`  ответов модели: ${p.rounds}${file ? `; файл: ${file}` : ''}${p.set ? `; набор в коллекции: ${p.set}` : ''}`);
       printVerdict(p);
     }
+    if (r.stopped) console.log(`Планирование прервано: ${r.stopped}`);
     console.log(`Планирование: вызовов ${r.calls}, потрачено ${usd(r.spent)}.`);
   }
-  return r.plans.every(p => !p.errors.length) ? 0 : 1;
+  return r.plans.every(p => !p.errors.length) && !r.stopped ? 0 : 1;
 }
 
 /** @param {any} v @param {string[]} files */
@@ -208,7 +209,7 @@ async function setSheetCmd(v) {
 /** @param {any} v */
 async function collectionPlan(v) {
   const { planCollectionInto } = await import('./make.js');
-  const o = { title: v.title, theme: v.theme, wishes: v.wishes, variants: v.variants && +v.variants, only: list(v.only), maxSpendUsd: v['max-spend'] !== undefined ? +v['max-spend'] : undefined };
+  const o = { title: v.title, theme: v.theme, wishes: v.wishes, variants: v.variants && +v.variants, only: list(v.only), mode: v.mode, maxSpendUsd: v['max-spend'] !== undefined ? +v['max-spend'] : undefined };
   const r = await paid({
     needsKey: true, op: 'planCollection', args: () => ({ ...o, collectionId: v.collection }),
     here: () => planCollectionInto({ ...o, collection: v.collection, settings: settingsOf(), progress }),
@@ -218,9 +219,10 @@ async function collectionPlan(v) {
     console.log(`Коллекция ${r.collection}:`);
     for (const s of r.sets) { console.log(`  №${s.number} «${s.plan?.title}»: ${s.set ? `план сохранён (${s.set})` : 'план не сохранён'}`); printVerdict(s, '    '); }
     printVerdict(r);
+    if (r.stopped) console.log(`Планирование прервано: ${r.stopped}`);
     console.log(`Планирование: вызовов ${r.calls}, потрачено ${usd(r.spent)}.`);
   }
-  return r.sets.every(s => s.set) && !r.errors.length ? 0 : 1;
+  return r.sets.every(s => s.set) && !r.errors.length && !r.stopped ? 0 : 1;
 }
 
 /** @param {any} v */
@@ -320,19 +322,24 @@ under one spend cap for the set. Ctrl+C stops starting new cards; the cards in p
     run: setSheetCmd,
   },
   'collection plan': {
-    usage: ['ccf.mjs collection plan --theme TEXT (--collection ID | --title TEXT) [--wishes TEXT] [--variants N] [--only N,N] [--max-spend USD] [--json]'],
+    usage: ['ccf.mjs collection plan --theme TEXT (--collection ID | --title TEXT) [--wishes TEXT] [--variants N] [--only N,N] [--mode missing|variants] [--max-spend USD] [--json]'],
     about: `Plans a whole collection with the text model: the theme is split into its set themes (set-rules.json
 collection.sets; the last one the grand set), then every set is planned in order with the window and scene count of its place (the reference collection's
 curve, SETS.md 1.4), against the sets before it. Plans without errors are saved into the collection as sets (no
-cards yet: "collection make"). Without --collection a new collection is created (title --title, description the theme).`,
+cards yet: "collection make"). Without --collection a new collection is created (title --title, description the theme).
+In a collection that already has sets, --mode missing (the default) plans only its missing places (keeping their
+numbers); --mode variants plans one more variant of every place's set (grouped with it, nothing replaced) and a new
+set on every empty place. --only narrows the places. A plan that passes the checks is read once more by the text
+model (self-check); planning stops early at its spend cap or a failed call: the plans finished before are saved.`,
     options: {
       theme: { type: 'string', value: 'TEXT', help: 'the collection theme (required)' },
       collection: { type: 'string', value: 'ID', help: 'an existing collection to plan into' },
       title: { type: 'string', value: 'TEXT', help: 'the title of a new collection' },
       only: { type: 'string', value: 'N,N', help: 'plan only these places of the collection (1–16)' },
+      mode: { type: 'string', value: 'missing|variants', help: 'in a collection with sets: its missing places, or one more variant of every place' },
       ...PLAN_OPTIONS,
     },
-    check: (/** @type {any} */ v) => !v.theme ? '--theme is required' : !whole(v.variants) ? '--variants must be a whole number above 0' : !listOk(v.only) ? '--only must be numbers separated by commas' : null,
+    check: (/** @type {any} */ v) => !v.theme ? '--theme is required' : !whole(v.variants) ? '--variants must be a whole number above 0' : !listOk(v.only) ? '--only must be numbers separated by commas' : v.mode !== undefined && !['missing', 'variants'].includes(v.mode) ? '--mode must be missing or variants' : null,
     run: collectionPlan,
   },
   'collection check': {

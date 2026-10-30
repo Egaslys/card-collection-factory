@@ -101,9 +101,12 @@ test('export: папка и ZIP, выбор наборов и карточек, 
   await store.moveCard(col, 'b', { setId: set.id, slot: 1 });
 
   const folder = json('export', '--collection', col);
-  assert.equal(folder.files, 1);
+  assert.equal(folder.files, 2, 'без выбора — наборы и хранилище');
   assert.deepEqual(folder.skipped.map(s => s.id), ['b']);
   assert.ok(fs.statSync(folder.path).isDirectory());
+  assert.ok(fs.existsSync(path.join(folder.path, 'Озёра', 'Хранилище', 'Loose.png')));
+  assert.equal(json('export', '--collection', col, '--set', set.id).files, 1, 'только набор');
+  assert.equal(json('export', '--collection', col, '--set', set.id, '--pool').files, 2, 'набор и хранилище');
 
   const zip = json('export', '--collection', col, '--set', set.id, '--card', 'loose', '--zip');
   assert.equal(zip.files, 2);

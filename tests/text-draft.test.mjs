@@ -33,3 +33,15 @@ test('помощь с текстом: модель и ключ из настро
   await assert.rejects(draftText({ kind: 'collection', notes: ' ', settings, apiKey: 'k', complete, store }), /Поле пустое/);
   assert.equal(sent.length, 1, 'пустое поле — без платного вызова');
 });
+
+test('помощь с текстом: оплаченный, но бесполезный ответ (ошибка с ценой) всё равно записан в расход', async () => {
+  const settings = loadSettings();
+  const spent = [];
+  const store = { recordSpend: async (c, e) => { spent.push([c, e]); } };
+  const paid = Object.assign(new Error('Провайдер ответил без текста.'), { cost: 0.003 });
+  await assert.rejects(draftText({ kind: 'collection', notes: 'рыбалка', collectionId: 'leto', settings, apiKey: 'k', complete: async () => { throw paid; }, store }), /без текста/);
+  assert.deepEqual(spent, [['leto', { kind: 'text', what: 'text-help', model: presetOf(settings.provider).textModel, usd: 0.003 }]]);
+  spent.length = 0;
+  await assert.rejects(draftText({ kind: 'collection', notes: 'рыбалка', settings, apiKey: 'k', complete: async () => { throw new Error('сеть'); }, store }), /сеть/);
+  assert.deepEqual(spent, [], 'без цены — ничего не записано');
+});

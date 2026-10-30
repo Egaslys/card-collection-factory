@@ -70,6 +70,24 @@ test('повторы кончились — ошибка; 4xx не повтор�
   assert.equal(b.calls.length, 1);
 });
 
+test('ошибки по видам: 401 — ключ, 402 — деньги (без повтора), 403 модерации — не ключ, 429 — частота', async () => {
+  const { calls, fetchImpl } = mock(
+    reply(401, { error: { code: 401, message: 'No auth credentials found' } }),
+    reply(402, { error: { code: 402, message: 'Insufficient credits' } }),
+    reply(403, { error: { code: 403, message: 'Key is disabled' } }),
+    reply(403, { error: { code: 403, message: 'Input was flagged', metadata: { reasons: ['x'], flagged_input: 'p' } } }),
+    reply(429, { error: { code: 429, message: 'Rate limit exceeded' } }),
+    reply(429, { error: { code: 429, message: 'Rate limit exceeded' } }));
+  const kinds = [];
+  for (let i = 0; i < 5; i++) kinds.push((await generateImage({ ...base, model: 'm', prompt: 'p', net: { fetchImpl, retries: 1, backoffMs: 1, sleep: async () => {} } }).catch(e => e)).kind);
+  assert.deepEqual(kinds, ['auth', 'billing', 'auth', 'other', 'rate']);
+  assert.equal(calls.length, 6, 'повторяется только 429');
+  const { complete } = await import('../core/providers/openrouter-text.js');
+  const text = mock(reply(402, { error: { code: 402, message: 'Insufficient credits' } }));
+  await assert.rejects(complete({ ...base, model: 't', messages: [{ role: 'user', content: 'x' }], net: { fetchImpl: text.fetchImpl, retries: 2, sleep: async () => {} } }), e => e.kind === 'billing');
+  assert.equal(text.calls.length, 1);
+});
+
 test('таймаут: понятная ошибка, без повтора', async () => {
   let n = 0;
   const fetchImpl = async () => { n++; throw Object.assign(new Error('t'), { name: 'TimeoutError' }); };
@@ -120,6 +138,9 @@ test('askVision: сначала текст, затем картинка data URL
   assert.deepEqual(r, { text: '{"box_2d": [1, 2, 3, 4]}', model: 'v/m', cost: 0.0003 });
   const { calls: c2, fetchImpl: empty } = mock(reply(200, { choices: [] }));
   await assert.rejects(askVision({ ...base, model: 'v/m', prompt: 'p', image: { bytes: Buffer.from('i'), mime: 'image/png' }, net: { fetchImpl: empty } }), /без текста/);
+  // an answer without text that was paid: the error carries its price
+  const { fetchImpl: paid } = mock(reply(200, { choices: [{ message: { content: null } }], usage: { cost: 0.0021 } }));
+  await assert.rejects(askVision({ ...base, model: 'v/m', prompt: 'p', image: { bytes: Buffer.from('i'), mime: 'image/png' }, net: { fetchImpl: paid } }), e => e instanceof ProviderError && e.cost === 0.0021);
   assert.equal('reasoning' in JSON.parse(c2[0].init.body), false, 'no reasoning field unless given');
 });
 

@@ -5,11 +5,11 @@
 import { spawn as nodeSpawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { attemptCost, attemptSpend, readCardFile } from '../card/card-file.js';
+import { attemptCost, attemptSpend, busyOf, readCardFile } from '../card/card-file.js';
 import { exists, readJson, subdirs, writeJsonAtomic } from './files.js';
 import { checkId, reserveId, slugify } from './ids.js';
 import {
-  CARDS_DIR, CARD_FILE, COLLECTIONS_DIR, COLLECTION_FILE, DEFAULT_STYLE, EXPORT_CARDS_FOLDER, EXPORT_DIR, FINAL_IMAGE, SETS_DIR,
+  CARDS_DIR, CARD_FILE, COLLECTIONS_DIR, COLLECTION_FILE, DEFAULT_STYLE, EXPORT_CARDS_FOLDER, EXPORT_DIR, EXPORT_POOL_FOLDER, FINAL_IMAGE, SETS_DIR,
   SET_FILE, SLOT_COUNT, SPEND_FILE, windowKinds, windowTemplates,
 } from './layout.js';
 import { watchStore } from './watch.js';
@@ -69,6 +69,8 @@ import { writeZip } from './zip.js';
  * @property {string|null} setId  the set the card sits in; null = in the pool
  * @property {number|null} slot  0-based index into that set's slots
  * @property {string|null} updatedAt  last change of card.json or card.png
+ * @property {string[]} busy  the long operations running on the card now, in any process (card-file.js busyOf), e.g.
+ *   "regenerate"; empty when none
  * @property {string} [error]  card.json could not be read
  */
 
@@ -254,7 +256,7 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
     /** @type {CardSummary} */
     const out = {
       id: k, title: k, image: null, status: 'new', checks: null, attempts: 0, cost: 0, spend: { images: 0, vision: 0 }, costUnknown: 0, model: null,
-      setId: place?.setId ?? null, slot: place?.slot ?? null, updatedAt: latest ? new Date(latest).toISOString() : null,
+      setId: place?.setId ?? null, slot: place?.slot ?? null, updatedAt: latest ? new Date(latest).toISOString() : null, busy: busyOf(dir).map(b => b.what),
     };
     let card;
     try { card = readCardFile(dir); } catch (e) { out.error = `card.json не читается: ${/** @type {Error} */ (e).message}`; return out; }
@@ -594,16 +596,18 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
 
     /**
      * Copies card images out under collections/<c>/export/: the collection's folder, in it a folder per set
-     * («03 Title», cards «01 Title.png» in slot order) and «Карточки» for the chosen single cards. No setIds and no
-     * cardIds = every set of the collection. Cards without an image are skipped and listed.
-     * @param {{collectionId: string, setIds?: string[], cardIds?: string[], format?: 'png'|'zip', name?: string}} o
+     * («03 Title», cards «01 Title.png» in slot order), «Хранилище» for the pool's cards (`pool`: the cards in no
+     * set) and «Карточки» for the chosen single cards. No setIds, no cardIds and no pool = every set of the
+     * collection and its pool. Cards without an image are skipped and listed.
+     * @param {{collectionId: string, setIds?: string[], cardIds?: string[], pool?: boolean, format?: 'png'|'zip', name?: string}} o
      * @returns {Promise<{path: string, files: number, skipped: {id: string, reason: string}[]}>}
      */
-    async exportItems({ collectionId, setIds, cardIds: chosen, format = 'png', name }) {
+    async exportItems({ collectionId, setIds, cardIds: chosen, pool, format = 'png', name }) {
       if (format !== 'png' && format !== 'zip') throw new Error(`Формат выгрузки «${format}» неизвестен: png или zip.`);
       const col = readCollection(collectionId);
       const sets = allSets(collectionId, col);
-      const pickSets = setIds ?? (chosen ? [] : sets.map(s => s.id));
+      const all = !setIds && !chosen && pool === undefined;
+      const pickSets = setIds ?? (all ? sets.map(s => s.id) : []);
       const top = fileName(col.title, col.id);
       /** @type {{name: string, source: string}[]} */
       const entries = [];
@@ -621,6 +625,13 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
         const folder = uniqueName(folders, fileName(`${pad(set.number)} ${set.title}`, set.id));
         const used = new Set();
         set.slots.forEach((k, slot) => { if (k) add(folder, used, k, `${pad(slot + 1)} `); });
+      }
+      if (pool || all) {
+        const places = placesOf(sets);
+        const loose = cardIds(collectionId).filter(k => !places.has(k));
+        const folder = uniqueName(folders, EXPORT_POOL_FOLDER);
+        const used = new Set();
+        for (const k of loose) add(folder, used, k, '');
       }
       if (chosen?.length) {
         const folder = uniqueName(folders, EXPORT_CARDS_FOLDER);

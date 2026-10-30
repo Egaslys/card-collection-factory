@@ -121,7 +121,9 @@ export async function lookAtCard({ image, order, visual, wish, model, settings, 
     prompt = lookPrompt({ title: String(order.title ?? ''), order: await orderWords({ order, wish, settings, buildPrompt }), visual, settings });
     r = await ask({ prompt, image, maxTokens: settings.maxTokens, ...(settings.reasoning ? { reasoning: settings.reasoning } : {}) });
   } catch (/** @type {any} */ e) {
-    return { record: { model, verdict: 'unknown', issues: [], cost: 0, error: String(e?.message ?? e) }, prompt, text: null };
+    // a paid answer of no use (no text) still costs: the provider's error carries its price
+    const errorKind = e?.kind === 'auth' || e?.kind === 'billing' ? { errorKind: /** @type {'auth'|'billing'} */ (e.kind) } : {};
+    return { record: { model, verdict: 'unknown', issues: [], cost: typeof e?.cost === 'number' ? e.cost : 0, error: String(e?.message ?? e), ...errorKind }, prompt, text: null };
   }
   const { verdict, issues, seen, error } = issuesOf(parseAnswer(r.text, Object.keys(settings.prompt.questions)), visual, settings);
   return { record: { model, verdict, issues, ...(seen ? { seen } : {}), cost: r.cost ?? 0, ...(error ? { error } : {}) }, prompt, text: r.text };

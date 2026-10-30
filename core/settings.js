@@ -75,7 +75,8 @@ export function migrateLocal(local) {
 /**
  * Merges the local override into the defaults: objects key by key, anything else replaced. A key the defaults do
  * not have is refused (a typo would otherwise be silently ignored), except under an open map of the defaults (an empty
- * object, or one marked "_open": true) and keys starting with "_" (comments).
+ * object, or one marked "_open": true) and keys starting with "_" (comments). A value whose default is a number must
+ * be a finite number (an emptied field would otherwise become 0 or null).
  * @param {Record<string, any>} defaults
  * @param {Record<string, any>} local
  * @param {string} [where]  key path for error messages
@@ -94,6 +95,8 @@ export function mergeSettings(defaults, local, where = '') {
     } else if (isObject(defaults[key])) {
       if (!isObject(value)) throw new Error(`Настройки: «${name}» должен быть объектом.`);
       out[key] = mergeSettings(defaults[key], value, name);
+    } else if (typeof defaults[key] === 'number' && !(typeof value === 'number' && Number.isFinite(value))) {
+      throw new Error(`Настройки: «${name}» должно быть числом, а не ${JSON.stringify(value)} (по умолчанию ${defaults[key]}).`);
     } else out[key] = value;
   }
   return out;
@@ -125,13 +128,18 @@ export function readLocalSettings({ dir = settingsDir() } = {}) {
 /**
  * Writes personal changes into settings/local.json: `patch` is merged into the file key by key (objects deep,
  * anything else replaced); a value equal to the default is dropped from the file, so local.json keeps only what
- * differs. The result is checked against defaults.json before it is written (an unknown key throws).
+ * differs. `reset`: dotted paths taken out of the file, so they are back at their default (an emptied field of the
+ * editor). The result is checked against defaults.json before it is written (an unknown key or a non-number where the
+ * default is a number throws, and nothing is written).
  * @param {Record<string, any>} patch
- * @param {{dir?: string}} [o]
+ * @param {{dir?: string, reset?: string[]}} [o]
  * @returns {Settings} the merged settings after the write
  */
-export function saveLocalSettings(patch, { dir = settingsDir() } = {}) {
+export function saveLocalSettings(patch, { dir = settingsDir(), reset = [] } = {}) {
   const defaults = JSON.parse(fs.readFileSync(path.join(dir, 'defaults.json'), 'utf8'));
+  /** @param {any} o @param {string} p */
+  const at = (o, p) => p.split('.').reduce((x, k) => (isObject(x) ? x[k] : undefined), o);
+  for (const p of reset) if (at(defaults, p) === undefined) throw new Error(`Настройки: неизвестный ключ «${p}».`);
   /** @param {Record<string, any>} base @param {Record<string, any>} add @returns {Record<string, any>} */
   const deep = (base, add) => {
     const out = { ...base };
@@ -150,7 +158,13 @@ export function saveLocalSettings(patch, { dir = settingsDir() } = {}) {
     }
     return out;
   };
-  const local = prune(migrateLocal(deep(readLocalSettings({ dir }), patch)), defaults);
+  const next = migrateLocal(deep(readLocalSettings({ dir }), patch));
+  for (const p of reset) {
+    const ks = p.split('.');
+    const parent = ks.length === 1 ? next : at(next, ks.slice(0, -1).join('.'));
+    if (isObject(parent)) delete parent[/** @type {string} */ (ks.at(-1))];
+  }
+  const local = prune(next, defaults);
   const merged = mergeSettings(defaults, local);
   const file = path.join(dir, 'local.json');
   fs.writeFileSync(file + '.tmp', JSON.stringify(local, null, 2) + '\n');

@@ -490,6 +490,8 @@ Pills sit only in pill shells or free.
 - **Fields** — h 40, r 8, p 12, 1px line-strong edge (≥ 3:1), label above in ink-2, hint below in ink-3. Focus:
   2px state ring. Error: the edge and the message in error ink, the message says what to do. Textarea grows.
   **Key field**: a password input with "show"; the hint says the key is not stored.
+- **Checkbox** — a native box the size of the slider thumb (20) in brand green, its label on the right in body type;
+  for a yes/no that rides along with a choice (export: «Выгрузить хранилище»). Focus: the 2px state ring.
 - **Sliders** — label, value in data-md (tabular), reset icon; track 4px sunken, fill state, thumb 20px surface
   with a line-strong edge. Reset is disabled while the value is neutral; a changed value shows a state dot.
 - **Badges** — PASS / WARN / FAIL: label type on the status tint in status ink, pill h 20.

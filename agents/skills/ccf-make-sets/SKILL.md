@@ -41,7 +41,7 @@ node FACTORY/ccf.mjs set plan --theme TEXT [--wishes TEXT] [--variants N] --coll
 node FACTORY/ccf.mjs collection plan --theme TEXT (--collection ID | --title TEXT) [--wishes TEXT] [--variants N]
 ```
 
-The text model is the settings' service's (`provider.<preset>.textModel`); these commands have no `--provider`. Errors go back to the model; warnings do not, so read them. Read the saved plans (`plan` in each `collections/<c>/sets/<set>/set.json`) the same way before any card is paid for: the model can still write a wish that contradicts the card's fields or copy a hint word for word.
+The text model is the settings' service's (`provider.<preset>.textModel`); these commands have no `--provider`. `collection plan --collection ID` on a collection that already has sets plans only its missing places, or with `--mode variants` one more variant of every place (`--only` narrows the places). Each plan that passes the program's checks is read once more by the text model (self-check): its notes come back as a repair or as the plan's warnings. When the service refuses the key or wants money, a run stops starting cards, keeps what is made and says so in its warnings: tell the person to top up or replace the key. When planning stops early (its spend cap, a failed call) it says so in its output (`stopped` in `--json`) and exits 1; the plans finished before are saved and the spend is recorded. Errors go back to the model; warnings do not, so read them. Read the saved plans (`plan` in each `collections/<c>/sets/<set>/set.json`) the same way before any card is paid for: the model can still write a wish that contradicts the card's fields or copy a hint word for word.
 
 ## 3. Make the cards
 
@@ -64,6 +64,6 @@ Progress: one stderr line per card event. Stop: one Ctrl+C — no new card start
 
 ## 5. Show
 
-Editor: `node FACTORY/ccf.mjs editor --open COLLECTION/SET` (starts it in the background or uses the running one, opens the browser there, prints the address). It draws the set in the window of its kind (large, small or grand) with the plan's frames and stars. Export: `node FACTORY/ccf.mjs export --collection ID [--set ID,ID] [--zip] [--open] --json` (no `--set` = every set); layout in `core/store/README.md`, «Export».
+Editor: `node FACTORY/ccf.mjs editor --open COLLECTION/SET` (starts it in the background or uses the running one, opens the browser there, prints the address). It draws the set in the window of its kind (large, small or grand) with the plan's frames and stars. Export: `node FACTORY/ccf.mjs export --collection ID [--set ID,ID] [--zip] [--open] --json` (no `--set` = every set and the collection's pool in a folder of its own; `--pool` adds the pool to chosen sets); layout in `core/store/README.md`, «Export».
 
 Done when every slot holds a reviewed card, the set's sheet was looked at, and the person has the editor view or the export path, the total spent and every open problem.

@@ -5,6 +5,8 @@
 //   <card folder>/
 //     card.json            CardFile: the order, every attempt and the chosen one
 //     card.png             the chosen attempt's card (a copy of attempts/<n>/card.png)
+//     card.json.lock       while an operation changes card.json (below: several operations on one card)
+//     card.busy.<pid>.<n>  while a long operation (a generation, an image handed in) runs on the card
 //     attempts/<n>/        one generation (or an image an agent handed in), n = 1, 2, …
 //       model.<ext>        the image as the model returned it (or as the agent handed it in)
 //       prepared.png       cropped and scaled to the card size, before post-processing
@@ -86,8 +88,9 @@ export const ATTEMPT_FILES = { original: 'model', prepared: 'prepared.png', card
  * @property {'ok'|'fix'|'unknown'} verdict  ok = no problem seen; fix = a problem; unknown = no usable answer (`error`)
  * @property {LookIssue[]} issues
  * @property {string} [seen]  how the model names the main subject it sees
- * @property {number} cost  USD (0 when the provider did not report it)
+ * @property {number} cost  USD (0 when the provider did not report it); a paid answer of no use (no text) counts too
  * @property {string} [error]
+ * @property {'auth'|'billing'} [errorKind]  the vision model's service refused the key or wants money
  */
 
 /**
@@ -114,7 +117,8 @@ export const attemptSpend = a => ({ images: a.cost ?? 0, vision: (a.hero?.cost ?
  * @property {string[]} references  images sent with the prompt (style references; for an edit, the image edited)
  * @property {string} [wish]  the person's words this attempt was made for (`card regenerate`, `card edit`)
  * @property {number} [editOf]  an edit: the attempt whose model image was edited
- * @property {number|null} cost  USD as reported by the provider; null = unknown
+ * @property {number|null} cost  USD as reported by the provider, with any call of the attempt that failed but was paid
+ *   (an answer without an image: its error carries the price); null = unknown
  * @property {string} [original]  file name of the model image in the attempt folder
  * @property {number} [cutBottom]  card pixels cut from the bottom of the model image because it came back taller than
  *   the card (core/image/prepare.js); the model's profile should ask it for a frame no taller than the card
@@ -125,7 +129,8 @@ export const attemptSpend = a => ({ images: a.cost ?? 0, vision: (a.hero?.cost ?
  * @property {HeroRecord} [hero]  the hero outline the checks used, when one was cut in a box (card.hero.png)
  * @property {LookRecord} [look]  the vision model's look at the card (look.json)
  * @property {CheckSummary} [check]
- * @property {{stage: 'generate'|'process', message: string, status?: number}} [error]
+ * @property {{stage: 'generate'|'process', message: string, status?: number, kind?: 'auth'|'billing'}} [error]  kind: the
+ *   service refused the key or wants money (the run stopped, make.js StopReason "key")
  */
 
 /**
@@ -146,10 +151,134 @@ export function readCardFile(dir) {
   return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
 }
 
-/** @param {string} dir @param {CardFile} card */
+/** Writes card.json whole; operations on a card go through updateCardFile instead. @param {string} dir @param {CardFile} card */
 export function writeCardFile(dir, card) {
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, CARD_FILE);
-  fs.writeFileSync(file + '.tmp', JSON.stringify(card, null, 2) + '\n');
-  fs.renameSync(file + '.tmp', file);
+  const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(card, null, 2) + '\n');
+  fs.renameSync(tmp, file);
+}
+
+// Several operations may work on one card at once: in one process (two jobs of the editor) and across processes (an
+// agent's ccf.mjs and the editor). Two rules keep every paid attempt and every change:
+// - an attempt's number is taken by creating its folder exclusively (reserveAttempt): no two runs get the same n;
+// - card.json is changed only under the card's lock file (updateCardFile): read as it is now, changed, written. Each
+//   operation changes only its own part — its attempts, the order it was given, its choice — so a change written by
+//   another operation in the meantime stays. Two operations changing the same attempt (adjusting one version twice)
+//   still end with the later one's values.
+// The lock is held only for that synchronous read-change-write (and copying the chosen card.png), never across a call
+// to a provider. A lock left by a process that died (its pid is gone) or older than LOCK_STALE_MS is taken over.
+// While a long operation runs on a card (generation, an image handed in), it leaves a busy marker in the card folder
+// (markBusy); busyOf lists the live ones, so the editor can hold its buttons whoever runs the operation.
+
+/** The lock of card.json; its text is "<pid> <ms>" of the holder. */
+export const LOCK_FILE = CARD_FILE + '.lock';
+/** A lock older than this is a hung or dead writer's: a writer holds it for milliseconds. */
+const LOCK_STALE_MS = 30000;
+/** How long to wait for another writer's lock before giving up. */
+const LOCK_WAIT_MS = 15000;
+const LOCK_RETRY_MS = 10;
+/** Busy markers: card.busy.<pid>.<n>, JSON {what, pid, since}. */
+export const BUSY_PREFIX = 'card.busy.';
+
+/** Whether a process of this machine is alive. @param {number} pid */
+export function alive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch (/** @type {any} */ e) { return e?.code === 'EPERM'; }
+}
+
+/** @param {number} ms */
+const sleepSync = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+/** Takes the card's lock, waiting for another holder; returns its release. @param {string} dir @returns {() => void} */
+function lockCard(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, LOCK_FILE);
+  const until = Date.now() + LOCK_WAIT_MS;
+  for (;;) {
+    try {
+      const fd = fs.openSync(file, 'wx');
+      try { fs.writeSync(fd, `${process.pid} ${Date.now()}`); } finally { fs.closeSync(fd); }
+      return () => fs.rmSync(file, { force: true });
+    } catch (/** @type {any} */ e) {
+      if (e?.code !== 'EEXIST') throw e;
+    }
+    let text, age;
+    try { text = fs.readFileSync(file, 'utf8'); age = Date.now() - fs.statSync(file).mtimeMs; } catch { continue; } // released meanwhile
+    if (age > LOCK_STALE_MS || (text && !alive(Number(text.split(' ')[0])))) {
+      // left by a writer that died or hung: taken over unless another waiter already did
+      try { if (fs.readFileSync(file, 'utf8') === text) fs.rmSync(file, { force: true }); } catch { /* gone already */ }
+      continue;
+    }
+    if (Date.now() > until) throw new Error(`Карточку меняет другая операция дольше ${LOCK_WAIT_MS / 1000} с (${file}). Если её процесса уже нет, удалите этот файл.`);
+    sleepSync(LOCK_RETRY_MS);
+  }
+}
+
+/**
+ * Changes card.json under the card's lock: `change` gets the file as it is now (null when there is none yet) and
+ * returns the card to write. `change` must be synchronous.
+ * @param {string} dir @param {(card: CardFile|null) => CardFile} change
+ * @returns {CardFile} what was written
+ */
+export function updateCardFile(dir, change) {
+  const release = lockCard(dir);
+  try {
+    const card = change(readCardFile(dir));
+    writeCardFile(dir, card);
+    return card;
+  } finally {
+    release();
+  }
+}
+
+/**
+ * Takes the next free attempt number of a card by creating its folder exclusively: after the attempts card.json
+ * records and `after`, the first n whose folder does not exist yet.
+ * @param {string} dir @param {number} [after]  the highest n the caller knows of
+ * @returns {number}
+ */
+export function reserveAttempt(dir, after = 0) {
+  const known = readCardFile(dir)?.attempts ?? [];
+  let n = Math.max(0, after, ...known.map(a => a.n)) + 1;
+  fs.mkdirSync(path.join(dir, 'attempts'), { recursive: true });
+  for (;; n++) {
+    try { fs.mkdirSync(attemptDir(dir, n)); return n; } catch (/** @type {any} */ e) { if (e?.code !== 'EEXIST') throw e; }
+  }
+}
+
+let busySeq = 0;
+/**
+ * Marks the card busy with a long operation of this process until the returned release is called; markers of
+ * processes that are gone are removed.
+ * @param {string} dir @param {string} what  the operation, e.g. "regenerate"
+ * @returns {() => void}
+ */
+export function markBusy(dir, what) {
+  for (const f of busyFiles(dir)) {
+    const b = readBusy(path.join(dir, f));
+    if (!b || !alive(b.pid)) fs.rmSync(path.join(dir, f), { force: true });
+  }
+  const file = path.join(dir, `${BUSY_PREFIX}${process.pid}.${++busySeq}`);
+  fs.writeFileSync(file, JSON.stringify({ what, pid: process.pid, since: new Date().toISOString() }));
+  return () => fs.rmSync(file, { force: true });
+}
+
+/** @param {string} dir @returns {string[]} the busy markers' file names */
+export function busyFiles(dir) {
+  try { return fs.readdirSync(dir).filter(f => f.startsWith(BUSY_PREFIX)).sort(); } catch { return []; }
+}
+
+/** @param {string} file @returns {{what: string, pid: number, since: string}|null} */
+function readBusy(file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+}
+
+/**
+ * The long operations running on a card now, in any process of this machine.
+ * @param {string} dir @returns {{what: string, pid: number, since: string}[]}
+ */
+export function busyOf(dir) {
+  return busyFiles(dir).flatMap(f => { const b = readBusy(path.join(dir, f)); return b && alive(b.pid) ? [b] : []; });
 }

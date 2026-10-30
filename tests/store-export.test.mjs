@@ -55,18 +55,20 @@ async function collection(t) {
   return { store, root, c, lake, sea, img };
 }
 
-test('выгрузка PNG: коллекция → наборы по номеру и названию, карточки в порядке слотов, понятные имена', async t => {
+test('выгрузка PNG: коллекция → наборы по номеру и названию, карточки в порядке слотов, хранилище отдельной папкой, понятные имена', async t => {
   const { store, root, c, img } = await collection(t);
   const r = await store.exportItems({ collectionId: c, format: 'png', name: 'итог' });
   assert.equal(r.path, path.join(root, c, 'export', 'итог'));
-  assert.equal(r.files, 3);
+  assert.equal(r.files, 4);
   assert.deepEqual(r.skipped, [{ id: 'none', reason: 'нет готовой картинки' }]);
   const files = fs.readdirSync(r.path, { recursive: true }).map(String).filter(f => f.endsWith('.png')).sort();
   assert.deepEqual(files, [
     path.join('Летняя рыбалка', '01 Озеро утро', '02 Поплавок.png'),
     path.join('Летняя рыбалка', '01 Озеро утро', '04 Поплавок.png'),
     path.join('Летняя рыбалка', '02 Море', '01 Удочка.png'),
+    path.join('Летняя рыбалка', 'Хранилище', 'Сачок.png'),
   ]);
+  assert.deepEqual(fs.readFileSync(path.join(r.path, 'Летняя рыбалка', 'Хранилище', 'Сачок.png')), img.loose);
   assert.deepEqual(fs.readFileSync(path.join(r.path, files[1])), img.a);
 
   const again = await store.exportItems({ collectionId: c, name: 'итог' });
@@ -90,6 +92,30 @@ test('выгрузка: по набору, по выбранным карточ�
   await assert.rejects(store.exportItems({ collectionId: c, format: 'tar' }), /Формат выгрузки/);
 });
 
+test('выгрузка хранилища: наборы и хранилище, как экспорт коллекции в редакторе; коллекция только из свободных карточек', async t => {
+  const { store, c, lake } = await collection(t);
+  const r = await store.exportItems({ collectionId: c, setIds: [lake], pool: true });
+  const files = fs.readdirSync(r.path, { recursive: true }).map(String).filter(f => f.endsWith('.png')).sort();
+  assert.deepEqual(files, [
+    path.join('Летняя рыбалка', '01 Озеро утро', '02 Поплавок.png'),
+    path.join('Летняя рыбалка', '01 Озеро утро', '04 Поплавок.png'),
+    path.join('Летняя рыбалка', 'Хранилище', 'Сачок.png'),
+  ], 'набор «Море» не выбран — его нет; хранилище есть');
+  const setOnly = await store.exportItems({ collectionId: c, setIds: [lake] });
+  assert.equal(setOnly.files, 2, 'набор без pool — только набор');
+
+  // «20 cards about X»: cards made into the pool, no set at all
+  const only = (await store.createCollection({ title: 'Свободные' })).id;
+  const one = writeCard(store, only, 'x', { title: 'Лодка' });
+  writeCard(store, only, 'y', { image: false });
+  for (const args of [{}, { setIds: [], pool: true }]) {
+    const e = await store.exportItems({ collectionId: only, ...args });
+    assert.equal(e.files, 1);
+    assert.deepEqual(e.skipped, [{ id: 'y', reason: 'нет готовой картинки' }]);
+    assert.deepEqual(fs.readFileSync(path.join(e.path, 'Свободные', 'Хранилище', 'Лодка.png')), one);
+  }
+});
+
 test('выгрузка ZIP: тот же порядок папок, имена в UTF-8, содержимое и CRC сходятся', async t => {
   const { store, root, c, img } = await collection(t);
   const r = await store.exportItems({ collectionId: c, format: 'zip', name: 'архив' });
@@ -99,9 +125,10 @@ test('выгрузка ZIP: тот же порядок папок, имена в
     'Летняя рыбалка/01 Озеро утро/02 Поплавок.png',
     'Летняя рыбалка/01 Озеро утро/04 Поплавок.png',
     'Летняя рыбалка/02 Море/01 Удочка.png',
+    'Летняя рыбалка/Хранилище/Сачок.png',
   ]);
   assert.ok(entries.every(e => e.utf8));
-  assert.deepEqual(entries.map(e => e.data), [img.b, img.a, img.d]);
+  assert.deepEqual(entries.map(e => e.data), [img.b, img.a, img.d, img.loose]);
   assert.ok(!fs.readdirSync(path.dirname(r.path)).some(f => f.endsWith('.tmp')));
   const second = await store.exportItems({ collectionId: c, format: 'zip', name: 'архив' });
   assert.equal(path.basename(second.path), 'архив (2).zip');

@@ -113,7 +113,8 @@ export const OPS = {
   // key: the key of the settings' preset; keys: of every preset (the settings screen shows the one chosen there)
   health: { run: async () => { settings(); return { ok: true, key: keyStatus() }; } },
   getSettings: { run: async () => { const s = settings(); return { settings: s, local: readLocalSettings(), key: keyStatus(), keys: keysOf(s) }; } },
-  saveSettings: { run: async ({ patch }) => { saveLocalSettings(need('patch', patch)); const s = settings(); return { settings: s, local: readLocalSettings(), key: keyStatus(), keys: keysOf(s) }; } },
+  // reset: dotted paths back to their default (the page's emptied fields)
+  saveSettings: { run: async ({ patch, reset }) => { saveLocalSettings(need('patch', patch), { reset: Array.isArray(reset) ? reset.map(String) : [] }); const s = settings(); return { settings: s, local: readLocalSettings(), key: keyStatus(), keys: keysOf(s) }; } },
   // preset: whose key (default: the settings'); the answer is that key's status
   setKey: { run: async ({ key, preset }) => { const s = settings(); const v = presetOf(s.provider, preset ?? s.provider.preset).keyEnvVar; setTemporaryKey(key, v); return keyStatus(v); } },
   clearKey: { run: async ({ preset } = {}) => { const s = settings(); const v = presetOf(s.provider, preset ?? s.provider.preset).keyEnvVar; clearTemporaryKey(v); return keyStatus(v); } },
@@ -154,7 +155,7 @@ export const OPS = {
   deleteCard: { run: async ({ collectionId, cardId }) => store.deleteCard(need('collectionId', collectionId), need('cardId', cardId)) },
   listCards: { run: async ({ collectionId, setId, pool }) => store.listCards(need('collectionId', collectionId), { ...(setId ? { setId } : {}), ...(pool ? { pool: true } : {}) }) },
   exportItems: {
-    run: async ({ collectionId, setIds, cardIds, format, name }) => store.exportItems({ collectionId: need('collectionId', collectionId), setIds, cardIds, format: format ?? 'png', ...(name ? { name } : {}) }),
+    run: async ({ collectionId, setIds, cardIds, pool, format, name }) => store.exportItems({ collectionId: need('collectionId', collectionId), setIds, cardIds, ...(pool ? { pool: true } : {}), format: format ?? 'png', ...(name ? { name } : {}) }),
   },
   openFolder: {
     run: async ({ collectionId, path: target, exports }) => {
@@ -257,15 +258,15 @@ export const OPS = {
 
   // ---------- sets and collections (core/set) ----------
   planSet: {
-    job: true,
+    job: true, cancellable: true,
     title: a => `План набора «${a.theme}»`,
     scope: a => ({ collectionId: a.collectionId }),
     spentOf: r => r?.spent ?? null,
-    run: async (a, { progress }) => {
+    run: async (a, { progress, signal }) => {
       const { planSetInto } = await import('../../core/set/make.js');
       return planSetInto({
         collection: a.collectionId, ...(a.save !== undefined ? { save: !!a.save } : {}), theme: need('theme', a.theme), wishes: a.wishes, variants: a.variants,
-        window: a.window, scenes: a.scenes, template: a.template, maxSpendUsd: a.maxSpendUsd, settings: settings(), apiKey: keyOrThrow(), progress,
+        window: a.window, scenes: a.scenes, template: a.template, maxSpendUsd: a.maxSpendUsd, settings: settings(), apiKey: keyOrThrow(), signal, progress,
       });
     },
   },
@@ -284,15 +285,15 @@ export const OPS = {
     },
   },
   planCollection: {
-    job: true,
-    title: () => 'План коллекции: 16 наборов',
+    job: true, cancellable: true,
+    title: () => 'План коллекции',
     scope: a => ({ collectionId: a.collectionId }),
     spentOf: r => r?.spent ?? null,
-    run: async (a, { progress }) => {
+    run: async (a, { progress, signal }) => {
       const { planCollectionInto } = await import('../../core/set/make.js');
       return planCollectionInto({
-        collection: a.collectionId, title: a.title, theme: need('theme', a.theme), wishes: a.wishes, variants: a.variants, only: a.only,
-        maxSpendUsd: a.maxSpendUsd, settings: settings(), apiKey: keyOrThrow(), progress,
+        collection: a.collectionId, title: a.title, theme: need('theme', a.theme), wishes: a.wishes, variants: a.variants, only: a.only, mode: a.mode,
+        maxSpendUsd: a.maxSpendUsd, settings: settings(), apiKey: keyOrThrow(), signal, progress,
       });
     },
   },
@@ -326,46 +327,37 @@ export const OPS = {
     },
   },
 
-  // ---------- one button: the plan, then its cards ----------
+  // ---------- one button: the plan, then its cards (core/set/make.js buildSet, buildCollection) ----------
+  // Caps (runCap, a safety net the page does not show): every set, each variant included, keeps set.maxSpendUsd;
+  // maxSpendUsd caps the cards of the whole run (default: that × the sets planned); planMaxSpendUsd the planning.
   buildSet: {
     job: true, cancellable: true,
     title: a => `Набор «${a.theme}»`,
     scope: a => ({ collectionId: a.collectionId }),
     spentOf: r => r?.spent ?? null,
-    run: async (a, ctx) => {
-      const plan = /** @type {any} */ (await OPS.planSet.run(a, ctx));
-      ctx.progress('План готов — делаю карточки', { total: plan.spent });
-      const ids = plan.plans.map((/** @type {any} */ p) => p.set).filter(Boolean);
-      if (!ids.length) throw new Error(`План не получился: ${plan.plans.flatMap((/** @type {any} */ p) => p.errors).slice(0, 3).join('; ') || 'модель не дала плана'}`);
-      // a variant whose plan kept failing the rules is not made: say so, not only in the journal
-      const warnings = plan.plans.filter((/** @type {any} */ p) => !p.set).map((/** @type {any} */ p) => `Вариант «${p.plan?.title ?? a.theme}» не получился: ${p.errors[0] ?? 'модель не дала плана'}`);
-      for (const w of warnings) ctx.progress(w);
-      const sets = [];
-      let spent = plan.spent;
-      for (const setId of ids) {
-        if (ctx.signal.aborted) break;
-        const r = /** @type {any} */ (await OPS.makeSet.run({ collectionId: a.collectionId, setId, provider: a.provider, model: a.model }, ctx));
-        spent += r.spent;
-        sets.push(r);
-      }
-      return { plan, sets, spent, warnings };
+    run: async (a, { progress, signal }) => {
+      const s = settings();
+      const { buildSet } = await import('../../core/set/make.js');
+      return buildSet({
+        collection: need('collectionId', a.collectionId), theme: need('theme', a.theme), wishes: a.wishes, variants: a.variants,
+        window: a.window, scenes: a.scenes, template: a.template, settings: s, provider: await providerOf(s, a), apiKey: keyOrThrow(),
+        maxSpendUsd: a.maxSpendUsd, planMaxSpendUsd: a.planMaxSpendUsd, limits: a.limits, signal, progress,
+      });
     },
   },
   buildCollection: {
     job: true, cancellable: true,
-    title: () => 'Коллекция целиком: 16 наборов',
+    title: a => (a.mode === 'variants' ? 'Коллекция: ещё по варианту каждого набора' : 'Коллекция: недостающие наборы'),
     scope: a => ({ collectionId: a.collectionId }),
     spentOf: r => r?.spent ?? null,
-    run: async (a, ctx) => {
-      const plan = /** @type {any} */ (await OPS.planCollection.run(a, ctx));
-      ctx.progress('План коллекции готов — делаю карточки', { total: plan.spent });
-      if (ctx.signal.aborted) return { plan, made: null, spent: plan.spent };
-      const made = /** @type {any} */ (await OPS.makeCollection.run({ collectionId: a.collectionId, provider: a.provider, model: a.model }, ctx));
-      const warnings = [
-        ...plan.sets.filter((/** @type {any} */ s) => !s.set).map((/** @type {any} */ s) => `Набор №${s.number ?? '?'} «${s.plan?.title ?? ''}» не спланирован: ${s.errors[0] ?? 'модель не дала плана'}`),
-        ...plan.errors, ...made.skipped.map((/** @type {string} */ s) => `Пропущен набор ${s}`),
-      ];
-      return { plan, made, spent: plan.spent + made.spent, warnings };
+    run: async (a, { progress, signal }) => {
+      const s = settings();
+      const { buildCollection } = await import('../../core/set/make.js');
+      return buildCollection({
+        collection: a.collectionId, title: a.title, theme: need('theme', a.theme), wishes: a.wishes, variants: a.variants, only: a.only, mode: a.mode,
+        settings: s, provider: await providerOf(s, a), apiKey: keyOrThrow(),
+        maxSpendUsd: a.maxSpendUsd, planMaxSpendUsd: a.planMaxSpendUsd, limits: a.limits, signal, progress,
+      });
     },
   },
 };

@@ -106,6 +106,41 @@ test('gemini askVision и complete: уровень размышлений из e
   await assert.rejects(complete({ endpoint, apiKey: KEY, model: 'flash', messages: [{ role: 'user', content: 'x' }] }), /без текста.*MAX_TOKENS/);
 });
 
+test('gemini: ответ без текста или без картинки оплачен — ошибка несёт его цену', async t => {
+  const usage = { promptTokenCount: 1000, candidatesTokenCount: 0, thoughtsTokenCount: 400 };
+  const empty = { candidates: [{ content: { parts: [{ text: 'thinking…', thought: true }] }, finishReason: 'MAX_TOKENS' }], usageMetadata: usage };
+  const { endpoint } = await fakeGemini(t, empty, empty, { ...empty, usageMetadata: { ...usage, candidatesTokenCount: 5 } }, empty);
+  const price = costOf(usage, priceOf(PRICES, 'flash'));
+  assert.ok(price > 0);
+  const paid = (/** @type {number|null} */ cost) => (/** @type {any} */ e) => e instanceof ProviderError && e.cost === cost;
+  await assert.rejects(askVision({ endpoint, apiKey: KEY, model: 'flash', prompt: 'p', image: { bytes: png, mime: 'image/png' }, prices: PRICES }), paid(price));
+  await assert.rejects(complete({ endpoint, apiKey: KEY, model: 'flash', prompt: 'p', messages: [{ role: 'user', content: 'x' }], prices: PRICES }), paid(price));
+  await assert.rejects(generateImage({ endpoint, apiKey: KEY, model: 'nb', prompt: 'p', prices: PRICES }), paid(costOf({ ...usage, candidatesTokenCount: 5 }, priceOf(PRICES, 'nb'))));
+  await assert.rejects(askVision({ endpoint, apiKey: KEY, model: 'unpriced', prompt: 'p', image: { bytes: png, mime: 'image/png' }, prices: PRICES }), paid(null), 'без цены модели — неизвестно');
+});
+
+test('gemini: ошибки по видам — ключ не принят, деньги или квота кончились (без повторов), частота запросов (повтор)', async t => {
+  const err = (code, status, message, details) => ({ error: { code, status, message, ...(details ? { details } : {}) } });
+  const { calls, endpoint } = await fakeGemini(t,
+    [400, err(400, 'INVALID_ARGUMENT', 'API key not valid. Please pass a valid API key.', [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'API_KEY_INVALID' }])],
+    [403, err(403, 'PERMISSION_DENIED', 'Your API key was reported as leaked. Please use another API key.')],
+    [402, { error: { code: 'payment_required', message: 'Your Prepay credit balance is depleted.' } }],
+    [400, err(400, 'FAILED_PRECONDITION', 'Billing is not enabled for this project.')],
+    [429, err(429, 'RESOURCE_EXHAUSTED', 'You exceeded your current quota.', [{ violations: [{ quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier' }] }])],
+    [429, err(429, 'RESOURCE_EXHAUSTED', 'Resource has been exhausted.', [{ violations: [{ quotaId: 'GenerateRequestsPerMinutePerProjectPerModel' }] }])],
+    [429, err(429, 'RESOURCE_EXHAUSTED', 'Resource has been exhausted.', [{ violations: [{ quotaId: 'GenerateRequestsPerMinutePerProjectPerModel' }] }])],
+    [400, err(400, 'INVALID_ARGUMENT', 'Unsupported MIME type.')]);
+  const net = { retries: 1, backoffMs: 1, sleep: async () => {} };
+  const kinds = [];
+  for (let i = 0; i < 7; i++) {
+    const e = await askVision({ endpoint, apiKey: KEY, model: 'flash', prompt: 'p', image: { bytes: png, mime: 'image/png' }, net }).catch(x => x);
+    assert.ok(e instanceof ProviderError, String(e));
+    kinds.push(e.kind);
+  }
+  assert.deepEqual(kinds, ['auth', 'auth', 'billing', 'billing', 'billing', 'rate', 'other']);
+  assert.equal(calls.length, 8, 'дневная квота не повторяется, частота запросов — повторяется');
+});
+
 test('gemini: цена по дате — до конца акции и после; список моделей с generateContent', async t => {
   assert.equal(priceOf(PRICES, 'flash', new Date('2026-12-31T23:00:00Z'))?.input, 0.75);
   assert.equal(priceOf(PRICES, 'flash', new Date('2027-01-01T00:00:00Z'))?.input, 1.5);

@@ -1,7 +1,9 @@
 // Settings, reachable from every screen: the service every keyed call goes to (provider.preset: OpenRouter or Google
 // AI Studio) and its key (status, a temporary key held only while the editor runs — one per service), who draws (the
-// service's model or Codex), the models of the chosen service, attempts and spend caps. Saved into
-// settings/local.json through core/settings.js; what is rare sits under «Дополнительно».
+// service's model or Codex), the models of the chosen service, attempts. Spend caps are not shown (the author's
+// decision, 2026-10-31: the person limits spend on their provider's key; the caps of settings are a safety net for
+// agents and the command line). Saved into settings/local.json through core/settings.js; what is rare sits under
+// «Дополнительно».
 import { call } from '../api.js';
 import { attempt, esc, I, openSheet, setTheme, toast, usd } from '../ui.js';
 import { app } from '../state.js';
@@ -18,8 +20,6 @@ const FIELDS = {
   main: [
     { path: 'provider.{p}.model', label: 'Модель картинок', hint: 'Основная модель сервиса.' },
     { path: 'card.attempts', label: 'Попыток на карточку', type: 'number', min: 1, step: 1, hint: 'Сколько раз карточку можно сгенерировать заново, если она не прошла проверки стиля.' },
-    { path: 'set.maxSpendUsd', label: 'Потолок на набор, $', type: 'number', min: 0, step: 0.1, hint: 'Больше этого один набор не потратит.' },
-    { path: 'card.maxSpendUsd', label: 'Потолок на карточку, $', type: 'number', min: 0, step: 0.05 },
   ],
   look: [
     { path: 'provider.{p}.visionModel', label: 'Модель, которая смотрит', hint: 'Смотрит на готовые карточки: находит контур героя и сверяет картинку с заказом.' },
@@ -30,7 +30,6 @@ const FIELDS = {
     { path: 'provider.{p}.endpoint', label: 'Адрес подключения', hint: 'Адрес API сервиса.', inputmode: 'url' },
     { path: 'provider.{p}.keyEnvVar', label: 'Переменная ключа', hint: 'Имя строки в .env, где лежит постоянный ключ.' },
     { path: 'set.parallel', label: 'Карточек одновременно', type: 'number', min: 1, step: 1 },
-    { path: 'set.plan.maxSpendUsd', label: 'Потолок на план, $', type: 'number', min: 0, step: 0.05 },
   ],
 };
 
@@ -75,7 +74,7 @@ function keyBlock(k, preset) {
   return `${state}
     <label class="field"><span class="field__label">${k.source === 'none' ? 'Временный ключ' : 'Заменить на временный'}</span>
       <span class="input-wrap"><input class="input" type="password" name="key" autocomplete="off" spellcheck="false" placeholder="${esc(P.placeholder)}" data-key-input><button type="button" class="btn btn--text btn--icon btn--s" data-key-toggle aria-label="Показать ключ" aria-pressed="false">${I.eye}</button></span>
-      <span class="field__hint">${esc(P.keyHint)} Ключ не сохраняется на диск: он живёт, пока запущен редактор. Постоянный ключ кладут в файл .env в папке фабрики: ${esc(k.envVar)}=…</span></label>
+      <span class="field__hint">${esc(P.keyHint)} Ключ не сохраняется на диск: он живёт, пока запущен редактор. Постоянный ключ кладут в файл .env в папке фабрики: ${esc(k.envVar)}=… Ключи лучше время от времени менять (ротировать) у провайдера.</span></label>
     <div class="row"><button type="button" class="btn btn--secondary btn--s" data-key-set>${I.key}Использовать ключ</button>
       ${k.source === 'temporary' ? '<button type="button" class="btn btn--text btn--s" data-key-clear><span>Забыть временный ключ</span></button>' : ''}
       ${k.source !== 'none' ? `<button type="button" class="btn btn--text btn--s" data-key-check><span>${preset === 'openrouter' ? 'Проверить баланс' : 'Проверить ключ'}</span></button>` : ''}</div>
@@ -190,12 +189,24 @@ export async function openSettings() {
       put(patch, 'provider.use', usePressed());
       put(patch, 'provider.preset', preset);
       put(patch, 'look.use', /** @type {HTMLElement} */ (sheet.querySelector('[data-look] [aria-pressed="true"]')).dataset.v === 'true');
-      for (const f of allPaths()) {
+      /** number fields left empty: back to their default */
+      const reset = [];
+      for (const f of /** @type {any[]} */ (allPaths())) {
         const input = /** @type {HTMLInputElement} */ (sheet.querySelector(`[name="${f.path}"]`));
         const raw = input.value.trim();
-        /** @type {any} */ (f).type === 'number' ? put(patch, f.path, Number(raw)) : put(patch, f.path, raw === '' && /** @type {any} */ (f).nullable ? null : raw);
+        if (f.type !== 'number') { put(patch, f.path, raw === '' && f.nullable ? null : raw); continue; }
+        // a number field with text it cannot read reports an empty value: badInput tells the two apart
+        if (raw === '' && !input.validity.badInput) { reset.push(f.path); continue; }
+        const n = Number(raw);
+        if (raw === '' || !Number.isFinite(n) || n < f.min) {
+          input.closest('details')?.setAttribute('open', '');
+          input.focus();
+          toast(`«${f.label}»: нужно число не меньше ${f.min}. Пустое поле вернёт значение по умолчанию.`, { kind: 'fail' });
+          return;
+        }
+        put(patch, f.path, n);
       }
-      const ok = await attempt(() => call('saveSettings', { patch }));
+      const ok = await attempt(() => call('saveSettings', { patch, reset }));
       if (ok) { app.key = ok.key; close(); toast('Настройки сохранены.', { kind: 'done' }); }
     }
   });

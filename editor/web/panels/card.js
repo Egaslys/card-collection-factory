@@ -22,6 +22,9 @@ const flat = p => ({ sharpen: p.sharpen.amount, saturation: p.saturation, bright
 /** @param {Record<string, number>} v @param {any} base */
 const settingsOf = (v, base) => ({ ...base, brightness: v.brightness, saturation: v.saturation, shadows: v.shadows, sharpen: { ...base.sharpen, amount: v.sharpen } });
 
+/** The long operations core/card marks on a card (card-file.js markBusy), for a person. */
+const BUSY_WORDS = /** @type {Record<string, string>} */ ({ make: 'генерация', regenerate: 'перегенерация', edit: 'правка картинки', import: 'проверка своей картинки' });
+
 /** Spend for a person: the image and, when the vision model was asked, its part. @param {{images: number, vision: number}} sp */
 const spendText = sp => (sp.vision ? `картинка ${usd(sp.images)} · взгляд ${usd(sp.vision)}` : usd(sp.images));
 
@@ -52,9 +55,9 @@ function lookHtml(a) {
 
 /**
  * @param {string} collectionId @param {string} cardId
- * @param {{version?: number}} [o]  the version to show first (default: the card)
+ * @param {{version?: number, wish?: string}} [o]  the version to show first (default: the card); the wish typed so far
  */
-export async function openCard(collectionId, cardId, { version } = {}) {
+export async function openCard(collectionId, cardId, { version, wish: typed = '' } = {}) {
   const [data, col] = await Promise.all([attempt(() => call('getCard', { collectionId, cardId })), attempt(() => call('getCollection', { collectionId }))]);
   if (!data || !col) return;
   const s = data.summary ?? { id: cardId, title: data.order.title ?? cardId, status: 'new' };
@@ -62,9 +65,16 @@ export async function openCard(collectionId, cardId, { version } = {}) {
   const versions = /** @type {any[]} */ (data.attempts);
   const proc = data.processing;
   const running = [...jobs.values()].find(j => j.status === 'running' && j.scope?.cardId === cardId);
+  // a long operation on this card from anywhere — a set's job, an agent's ccf.mjs — holds the card's actions too: the
+  // core keeps every result either way, but a person's choice or processing made meanwhile would be overtaken by it
+  const busy = /** @type {string[]} */ (s.busy ?? []);
+  const blocked = !!running || busy.length > 0;
+  const off_ = blocked ? 'disabled' : '';
   const where = set ? `Набор «${set.title}», место ${s.slot + 1}` : 'В хранилище, вне наборов';
   const total = versions.reduce((/** @type {{images: number, vision: number}} */ x, /** @type {any} */ a) => ({ images: x.images + a.spend.images, vision: x.vision + a.spend.vision }), { images: 0, vision: 0 });
-  let wish = '';
+  let wish = typed;
+  /** an action's call is under way: further clicks wait for it (no double sends) */
+  let pending = false;
 
   /** @type {number|null} the version shown */
   let cur = versions.some(a => a.n === version) ? /** @type {number} */ (version) : data.chosen ?? versions.at(-1)?.n ?? null;
@@ -113,7 +123,7 @@ export async function openCard(collectionId, cardId, { version } = {}) {
         <span class="vbar__text"><b>Версия ${a?.n ?? '—'}</b><span class="ink-3"> из ${versions.length}</span>${isCard ? '<span class="vbar__card">' + I.check + 'карточка</span>' : ''}</span>
         <button type="button" class="btn btn--secondary btn--icon btn--s" data-ver="1" aria-label="Следующая версия" ${i >= versions.length - 1 ? 'disabled' : ''}>${I.next}</button>
       </div>` : '';
-    const choose = a && !isCard && a.files?.cardUrl ? `<button type="button" class="btn btn--secondary" data-choose>${I.check}Сделать карточкой</button>` : '';
+    const choose = a && !isCard && a.files?.cardUrl ? `<button type="button" class="btn btn--secondary" data-choose ${off_}>${I.check}Сделать карточкой</button>` : '';
     const versionsHtml = versions.map(x => `<li><button type="button" class="att${x.n === cur ? ' is-current' : ''}${x.n === data.chosen ? ' is-chosen' : ''}" data-show="${x.n}" aria-pressed="${x.n === cur}">
         <span class="att__img thumb__img">${x.files.cardUrl ? `<img src="${esc(x.files.cardUrl)}" alt="" loading="lazy">` : `<span class="thumb__empty">${I.alert}</span>`}</span>
         <span class="att__text"><span><b>Версия ${x.n}</b>${x.n === data.chosen ? ' · карточка' : ''}${x.wish ? ` · «${esc(x.wish)}»` : ''}</span><span class="data ink-3">${esc(modelName(x.model))} · ${x.cost == null ? 'цена неизвестна' : spendText(x.spend)}</span>${x.error ? `<span class="att__err">${esc(x.error.message)}</span>` : badge(verdictOf(x))}</span></button></li>`).join('');
@@ -128,13 +138,13 @@ export async function openCard(collectionId, cardId, { version } = {}) {
         <div class="verdict">${badge(v)}<span>${esc(v.text)}</span></div>
         ${look}
         ${details}
-        ${running ? jobline(running) : ''}
+        ${running ? jobline(running) : busy.length ? `<div class="jobline panel"><i class="dot dot--work"></i><span class="jobline__title">Карточка занята</span><span class="lookline ink-2">идёт ${esc(busy.map(w => BUSY_WORDS[w] ?? w).join(', '))} — действия с карточкой подождут её конца</span></div>` : ''}
         <section class="cardp__sec" aria-label="Пожелание"><div class="field"><span class="label">Пожелание</span>
           <span class="seg" role="group" data-wish-mode><button type="button" data-v="regenerate" aria-pressed="true">Сделать заново</button><button type="button" data-v="edit" aria-pressed="false" ${a?.files?.original ? '' : 'disabled'}>Поправить картинку</button></span>
           <textarea class="input" rows="2" data-wish placeholder="Например: поплавок крупнее, фон теплее">${esc(wish)}</textarea>
           ${textHelp('cardWish')}
           <span class="field__hint" data-wish-hint>Карточка будет сгенерирована заново по своему заказу с вашим пожеланием и станет новой версией.</span></div>
-          <div class="row"><button type="button" class="btn btn--secondary" data-wish-go ${running ? 'disabled' : ''}>${I.spark}Отправить</button></div>
+          <div class="row"><button type="button" class="btn btn--secondary" data-wish-go ${off_}>${I.spark}Отправить</button></div>
         </section>
         <section class="cardp__sec" aria-label="Обработка"><div class="cardp__sec-head"><span class="label">Обработка версии ${a?.n ?? ''}</span></div>
           ${canAdjust ? SLIDERS.filter(sl => sl.key !== 'shadows' || ranges.shadows[1] > 0).map(sl => `<div class="slider" data-slider="${sl.key}"><span class="slider__label">${sl.label}<i class="slider__changed"></i></span><span class="slider__value" data-value>${sl.fmt(applied[sl.key])}</span>
@@ -142,7 +152,7 @@ export async function openCard(collectionId, cardId, { version } = {}) {
             <input type="range" min="${ranges[/** @type {keyof typeof ranges} */ (sl.key)][0]}" max="${ranges[/** @type {keyof typeof ranges} */ (sl.key)][1]}" step="${sl.step}" value="${applied[sl.key]}" aria-label="${sl.label}"></div>`).join('')
             : '<p class="ink-3">У этой версии нет подготовленной картинки — обработку менять не на чем.</p>'}
           ${canAdjust ? `<span class="field__hint">${a.processingFixed ? 'Обработку этой версии задали вручную.' : 'Обработку подобрала программа.'} Предпросмотр считает тот же код, что пишет итоговую картинку; «Применить» сохранит её и проверит заново, «Сбросить» вернёт ползунки к сохранённым значениям.</span>` : ''}
-          ${canAdjust && a.processingFixed ? `<div class="row"><button type="button" class="btn btn--text btn--s" data-auto><span>Вернуть обработку программы</span></button></div>` : ''}
+          ${canAdjust && a.processingFixed ? `<div class="row"><button type="button" class="btn btn--text btn--s" data-auto ${off_}><span>Вернуть обработку программы</span></button></div>` : ''}
         </section>
         <section class="cardp__sec" aria-label="Версии"><div class="cardp__sec-head"><span class="label">Версии · ${versions.length}</span><span class="data ink-3" title="Картинки ${usd(total.images)}, взгляд смотрящей модели ${usd(total.vision)}">${usd(total.images + total.vision)}</span></div><ol class="atts">${versionsHtml}</ol></section>
         <details class="more"><summary class="btn btn--text btn--s"><span>Ещё</span></summary><div class="form">
@@ -150,7 +160,7 @@ export async function openCard(collectionId, cardId, { version } = {}) {
             <span class="select"><select class="input" data-move-set><option value="">В хранилище</option>${col.sets.map((/** @type {any} */ x) => `<option value="${esc(x.id)}" ${x.id === s.setId ? 'selected' : ''}>${esc(`${x.number ?? ''} · ${x.title}`)}</option>`).join('')}</select></span>
             <span class="select select--narrow"><select class="input" data-move-slot>${Array.from({ length: 10 }, (_, k) => `<option value="${k}" ${k === s.slot ? 'selected' : ''}>место ${k + 1}</option>`).join('')}</select></span>
             <button type="button" class="btn btn--secondary" data-move>Переместить</button></div><span class="field__hint">Если место занято, карточки поменяются местами; карточка из хранилища вытеснит занявшую место обратно в хранилище.</span></div>
-          <div class="field"><span class="field__label">Своя картинка</span><input class="input" type="file" accept="image/png,image/jpeg,image/webp" data-import><span class="field__hint">Станет новой версией: программа обрежет её до карточки, найдёт контур, подберёт обработку и проверит так же строго, как сгенерированную.</span></div>
+          <div class="field"><span class="field__label">Своя картинка</span><input class="input" type="file" accept="image/png,image/jpeg,image/webp" data-import ${off_}><span class="field__hint">Станет новой версией: программа обрежет её до карточки, найдёт контур, подберёт обработку и проверит так же строго, как сгенерированную.</span></div>
           <div class="row"><button type="button" class="btn btn--secondary" data-export>${I.download}Экспорт</button><button type="button" class="btn btn--secondary" data-folder>${I.folder}Открыть в папке</button></div>
           <div class="row"><button type="button" class="btn btn--text btn--s" data-delete><span>Удалить карточку</span></button></div>
         </div></details>
@@ -193,7 +203,8 @@ export async function openCard(collectionId, cardId, { version } = {}) {
       el.classList.toggle('is-changed', diff);
       /** @type {HTMLButtonElement} */ (el.querySelector('[data-reset]')).disabled = !diff;
     }
-    for (const b of foot.querySelectorAll('[data-apply], [data-reset-all]')) /** @type {HTMLButtonElement} */ (b).disabled = !changed();
+    for (const b of foot.querySelectorAll('[data-reset-all]')) /** @type {HTMLButtonElement} */ (b).disabled = !changed();
+    for (const b of foot.querySelectorAll('[data-apply]')) /** @type {HTMLButtonElement} */ (b).disabled = !changed() || blocked || pending;
   }
   render();
   bindTextHelp(body, () => ({ collectionId, context: { collection: col.collection.title, card: s.title } }));
@@ -209,7 +220,22 @@ export async function openCard(collectionId, cardId, { version } = {}) {
   });
 
   // ---------- actions ----------
-  const reopen = () => { close(); openCard(collectionId, cardId, { version: cur ?? undefined }); };
+  const reopen = () => { wish = /** @type {HTMLTextAreaElement|null} */ (body.querySelector('[data-wish]'))?.value ?? wish; close(); openCard(collectionId, cardId, { version: cur ?? undefined, wish }); };
+  /**
+   * Runs one action on the card: refused while the card is busy or another action's call is under way, its buttons
+   * held meanwhile.
+   * @template T @param {() => Promise<T>} fn @returns {Promise<T|undefined>}
+   */
+  const act = async fn => {
+    if (blocked || pending) return undefined;
+    pending = true;
+    const held = [...sheet.querySelectorAll('[data-choose], [data-apply], [data-auto], [data-wish-go], [data-import], [data-move], [data-delete]')].filter(b => !(/** @type {HTMLButtonElement} */ (b).disabled));
+    for (const b of held) /** @type {HTMLButtonElement} */ (b).disabled = true;
+    try { return await fn(); } finally {
+      pending = false;
+      if (body.isConnected) { for (const b of held) /** @type {HTMLButtonElement} */ (b).disabled = false; syncSliders(); }
+    }
+  };
   /** @param {number|null} n */
   const show = n => {
     if (n == null || n === cur) return;
@@ -231,7 +257,7 @@ export async function openCard(collectionId, cardId, { version } = {}) {
     const pick = /** @type {HTMLElement|null} */ (t.closest('[data-show]'));
     if (pick) { show(Number(pick.dataset.show)); return; }
     if (t.closest('[data-choose]')) {
-      const r = await attempt(() => call('chooseAttempt', { collectionId, cardId, n: cur }));
+      const r = await act(() => attempt(() => call('chooseAttempt', { collectionId, cardId, n: cur })));
       if (r) { toast(`Версия ${cur} — теперь карточка.`, { kind: 'done' }); app.refresh(); reopen(); }
       return;
     }
@@ -248,14 +274,12 @@ export async function openCard(collectionId, cardId, { version } = {}) {
     if (reset) { values[/** @type {string} */ (reset.dataset.reset)] = applied[/** @type {string} */ (reset.dataset.reset)]; syncSliders(); draw(); return; }
     if (t.closest('[data-reset-all]')) { Object.assign(values, applied); syncSliders(); draw(); return; }
     if (t.closest('[data-apply]')) {
-      const btn = /** @type {HTMLButtonElement} */ (t.closest('[data-apply]'));
-      btn.disabled = true;
-      const r = await attempt(() => call('adjustCard', { collectionId, cardId, n: cur, saturation: values.saturation, brightness: values.brightness, sharpen: values.sharpen, shadows: values.shadows }));
-      if (r) { toast('Обработка применена, версия проверена заново.', { kind: 'done' }); reopen(); } else btn.disabled = false;
+      const r = await act(() => attempt(() => call('adjustCard', { collectionId, cardId, n: cur, saturation: values.saturation, brightness: values.brightness, sharpen: values.sharpen, shadows: values.shadows })));
+      if (r) { toast('Обработка применена, версия проверена заново.', { kind: 'done' }); reopen(); }
       return;
     }
     if (t.closest('[data-auto]')) {
-      const r = await attempt(() => call('adjustCard', { collectionId, cardId, n: cur, reset: true }));
+      const r = await act(() => attempt(() => call('adjustCard', { collectionId, cardId, n: cur, reset: true })));
       if (r) { toast('Обработка снова подобрана программой, версия проверена заново.', { kind: 'done' }); reopen(); }
       return;
     }
@@ -263,14 +287,14 @@ export async function openCard(collectionId, cardId, { version } = {}) {
       const text = /** @type {HTMLTextAreaElement} */ (body.querySelector('[data-wish]')).value.trim();
       if (!text) { toast('Напишите пожелание: что изменить.', { kind: 'fail' }); return; }
       const edit = /** @type {HTMLElement} */ (body.querySelector('[data-wish-mode] [aria-pressed="true"]')).dataset.v === 'edit';
-      const r = await attempt(() => call(edit ? 'editCard' : 'regenerateCard', { collectionId, cardId, wish: text, ...(edit ? { n: cur } : {}) }));
-      if (r) { wish = ''; reopen(); }
+      const r = await act(() => attempt(() => call(edit ? 'editCard' : 'regenerateCard', { collectionId, cardId, wish: text, ...(edit ? { n: cur } : {}) })));
+      if (r) { /** @type {HTMLTextAreaElement} */ (body.querySelector('[data-wish]')).value = ''; reopen(); }
       return;
     }
     if (t.closest('[data-move]')) {
       const setId = /** @type {HTMLSelectElement} */ (body.querySelector('[data-move-set]')).value;
       const slot = Number(/** @type {HTMLSelectElement} */ (body.querySelector('[data-move-slot]')).value);
-      const r = await attempt(() => call('moveCard', setId ? { collectionId, cardId, setId, slot } : { collectionId, cardId, pool: true }));
+      const r = await act(() => attempt(() => call('moveCard', setId ? { collectionId, cardId, setId, slot } : { collectionId, cardId, pool: true })));
       if (r !== undefined) { toast(setId ? 'Карточка перемещена.' : 'Карточка убрана в хранилище.', { kind: 'done' }); app.refresh(); reopen(); }
       return;
     }
@@ -286,10 +310,12 @@ export async function openCard(collectionId, cardId, { version } = {}) {
     const input = /** @type {HTMLInputElement} */ (e.target);
     if (!input.matches('[data-import]')) return;
     const file = input.files?.[0];
-    if (!file) return;
-    const dataUrl = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(file); });
-    toast('Проверяю картинку: обрезка, контур, обработка, проверки…');
-    const r = await attempt(() => call('importImage', { collectionId, cardId, data: dataUrl }));
+    if (!file || blocked || pending) return;
+    const r = await act(async () => {
+      const dataUrl = await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(file); });
+      toast('Проверяю картинку: обрезка, контур, обработка, проверки…');
+      return attempt(() => call('importImage', { collectionId, cardId, data: dataUrl }));
+    });
     if (r) { toast('Картинка добавлена новой версией.', { kind: 'done' }); cur = r.chosen; reopen(); }
   });
 
@@ -300,6 +326,7 @@ export async function openCard(collectionId, cardId, { version } = {}) {
       if (e.job.status !== 'running') { cur = null; reopen(); }
       else body.querySelector(`[data-jobline="${e.job.id}"]`)?.replaceWith(fromHtml(jobline(e.job)));
     }
-    if (e.type === 'store' && e.entity === 'card' && e.id === cardId && !changed() && !running) reopen();
+    // a job of this editor reopens the panel when it ends (above); a busy card reopens on its changes, so it frees itself
+    if (e.type === 'store' && e.entity === 'card' && e.id === cardId && !changed() && !running && !pending) reopen();
   });
 }

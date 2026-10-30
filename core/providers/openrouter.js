@@ -13,16 +13,65 @@ const MIME_BY_EXT = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image
 
 /** @typedef {{timeoutMs?: number, retries?: number, backoffMs?: number, fetchImpl?: typeof fetch, sleep?: (ms: number) => Promise<void>}} NetOptions */
 
-/** Provider failure: `status` is the HTTP status (0 for timeout/network), `providerMessage` is the provider's own text. */
+/**
+ * What kind of failure a provider error is: `auth` — the service does not accept the key (missing, invalid, expired,
+ * leaked, no access); `billing` — no money or no billing (credits or Prepay balance depleted, billing disabled, a daily
+ * quota used up); `rate` — too many requests for now, worth waiting; `other` — anything else (a refusal, a model down,
+ * a bad request, the network). auth and billing stop a run: no later call can succeed until a person acts.
+ * @typedef {'auth'|'billing'|'rate'|'other'} ErrorKind
+ */
+
+/**
+ * Provider failure: `status` is the HTTP status (0 for timeout/network), `providerMessage` is the provider's own text,
+ * `kind` what it means for a run (ErrorKind).
+ */
 export class ProviderError extends Error {
-  /** @param {string} message @param {{status?: number, providerMessage?: string}} [info] */
-  constructor(message, { status = 0, providerMessage = '' } = {}) {
+  /**
+   * @param {string} message
+   * @param {{status?: number, providerMessage?: string, cost?: number|null, kind?: ErrorKind}} [info]  cost: USD of a
+   *   call that was answered and paid but is of no use (no image, no text); null = not known or nothing paid
+   */
+  constructor(message, { status = 0, providerMessage = '', cost = null, kind = 'other' } = {}) {
     super(message);
     this.name = 'ProviderError';
     this.status = status;
     this.providerMessage = providerMessage;
+    this.cost = cost;
+    this.kind = kind;
   }
 }
+
+/**
+ * The kind of an HTTP error answer, from its status and body. Sources, checked 2026-10-31:
+ * - OpenRouter (openrouter.ai/docs/api-reference/errors): body {error: {code: <HTTP status>, message, metadata?}};
+ *   401 invalid credentials (disabled or invalid key), 402 insufficient credits, 403 forbidden — insufficient
+ *   permissions, or a guardrail or moderation block (those carry `metadata` and are a refusal, not the key), 429 rate
+ *   limited.
+ * - Gemini API (ai.google.dev/gemini-api/docs/api-errors and …/troubleshooting): codes `authentication` (401: key
+ *   missing, invalid or expired), `payment_required` (402: Prepay credits depleted), `permission_denied` (403: no
+ *   permission, project restricted, a key reported as leaked), `failed_precondition` (400: e.g. billing disabled),
+ *   `quota_exceeded` (429: daily quota) apart from `rate_limit_exceeded` / `too_many_requests` (429). generateContent
+ *   also answers {error: {code: <HTTP status>, status: "INVALID_ARGUMENT"|"FAILED_PRECONDITION"|"PERMISSION_DENIED"|
+ *   "RESOURCE_EXHAUSTED", message, details: [{reason: "API_KEY_INVALID"}, {violations: [{quotaId}]}]}}: an invalid key
+ *   comes as 400 with reason API_KEY_INVALID, a daily quota as 429 with a quotaId "…PerDay…".
+ * @param {number} status @param {any} json  the parsed body, or null
+ * @returns {ErrorKind}
+ */
+export function errorKind(status, json) {
+  const e = json?.error && typeof json.error === 'object' ? json.error : {};
+  const code = typeof e.code === 'string' ? e.code : '';
+  const state = typeof e.status === 'string' ? e.status : '';
+  const message = String(e.message ?? '');
+  const details = (Array.isArray(e.details) ? e.details : []).flatMap((/** @type {any} */ d) => [d?.reason, ...(Array.isArray(d?.violations) ? d.violations.map((/** @type {any} */ v) => v?.quotaId) : [])]).filter(Boolean).join(' ');
+  if (status === 401 || code === 'authentication' || /API_KEY_INVALID/.test(details) || /API key not valid|API key expired/i.test(message)) return 'auth';
+  if (status === 402 || code === 'payment_required' || code === 'failed_precondition' || state === 'FAILED_PRECONDITION') return 'billing';
+  if (status === 403) return e.metadata || /moderat|flagged|guardrail/i.test(message) ? 'other' : 'auth';
+  if (status === 429) return code === 'quota_exceeded' || /PerDay/i.test(details) ? 'billing' : 'rate';
+  return 'other';
+}
+
+/** USD of an OpenRouter answer (usage.cost), or null. @param {any} json @returns {number|null} */
+const usageCost = json => (typeof json?.usage?.cost === 'number' ? json.usage.cost : null);
 
 /**
  * Reads the API key from the environment, loading `.env` from the repo root first when it exists.
@@ -75,13 +124,15 @@ export async function request({ endpoint, apiKey, auth, method = 'GET', route, b
     let json = null;
     try { json = JSON.parse(text); } catch { /* non-JSON body is reported below */ }
     if (res.ok && json) return json;
-    if ((res.status === 429 || res.status >= 500) && attempt < retries) {
+    const kind = errorKind(res.status, json);
+    // a 429 that is a used-up quota (billing) does not pass by waiting
+    if ((kind === 'rate' || res.status >= 500) && attempt < retries) {
       const retryAfter = Number(res.headers?.get?.('retry-after'));
       await sleep(retryAfter > 0 ? retryAfter * 1000 : backoffMs * 2 ** attempt);
       continue;
     }
     const providerMessage = redact(json?.error?.message || (text || '').slice(0, 300) || 'пустой ответ', apiKey);
-    throw new ProviderError(`Провайдер вернул HTTP ${res.status} (${route}): ${providerMessage}`, { status: res.status, providerMessage });
+    throw new ProviderError(`Провайдер вернул HTTP ${res.status} (${route}): ${providerMessage}`, { status: res.status, providerMessage, kind });
   }
 }
 
@@ -122,9 +173,8 @@ export async function generateImage({ endpoint, apiKey, model, prompt, reference
   }
   const json = await request({ endpoint, apiKey, method: 'POST', route: '/images', body, ...net });
   const img = json.data?.[0];
-  if (!img?.b64_json) throw new ProviderError('Провайдер ответил без картинки.', { status: 200, providerMessage: redact(JSON.stringify(json.error || {}).slice(0, 300), apiKey) });
-  const cost = json.usage?.cost;
-  return { bytes: Buffer.from(img.b64_json, 'base64'), mime: img.media_type, model, cost: typeof cost === 'number' ? cost : null, usage: json.usage, raw: { created: json.created } };
+  if (!img?.b64_json) throw new ProviderError('Провайдер ответил без картинки.', { status: 200, providerMessage: redact(JSON.stringify(json.error || {}).slice(0, 300), apiKey), cost: usageCost(json) });
+  return { bytes: Buffer.from(img.b64_json, 'base64'), mime: img.media_type, model, cost: usageCost(json), usage: json.usage, raw: { created: json.created } };
 }
 
 /**
@@ -145,9 +195,8 @@ export async function askVision({ endpoint, apiKey, model, prompt, image, maxTok
   };
   const json = await request({ endpoint, apiKey, method: 'POST', route: '/chat/completions', body, ...net });
   const text = json.choices?.[0]?.message?.content;
-  if (typeof text !== 'string') throw new ProviderError('Провайдер ответил без текста.', { status: 200, providerMessage: redact(JSON.stringify(json.error || {}).slice(0, 300), apiKey) });
-  const cost = json.usage?.cost;
-  return { text, model, cost: typeof cost === 'number' ? cost : null };
+  if (typeof text !== 'string') throw new ProviderError('Провайдер ответил без текста.', { status: 200, providerMessage: redact(JSON.stringify(json.error || {}).slice(0, 300), apiKey), cost: usageCost(json) });
+  return { text, model, cost: usageCost(json) };
 }
 
 /**

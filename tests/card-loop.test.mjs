@@ -202,8 +202,17 @@ test('цикл: ошибка провайдера и неизвестная це
   const r = await makeCard({ order: ORDER, ...at, settings: SETTINGS, provider: { model: MODEL, generate: failing }, buildPrompt: fakePrompt });
   assert.equal(r.stop, 'provider-error');
   assert.deepEqual(r.attempts[0].error, { stage: 'generate', message: 'Провайдер вернул HTTP 402 (/images): нет средств', status: 402 });
+  assert.equal(r.attempts[0].cost, null, 'ошибка без цены — расход неизвестен');
   assert.equal(r.chosen, null);
   assert.equal(r.image, null);
+
+  // an answer without an image that was paid: its price is the attempt's, also when the fallback model then draws
+  const noImage = async () => { throw new ProviderError('Провайдер ответил без картинки.', { status: 200, cost: 0.03 }); };
+  const other = await pool();
+  const n = await makeCard({ order: ORDER, ...other, settings: SETTINGS, provider: { model: MODEL, generate: noImage }, buildPrompt: fakePrompt });
+  assert.deepEqual([n.stop, n.attempts[0].cost, n.spent], ['provider-error', 0.03, 0.03]);
+  const fb = await makeCard({ order: ORDER, ...other, settings: SETTINGS, provider: { model: MODEL, generate: noImage, fallback: fakeProvider(await grey(), 0.04, { model: 'other/model' }) }, buildPrompt: fakePrompt, limits: { attempts: 1 } });
+  assert.ok(Math.abs(fb.attempts[0].cost - 0.07) < 1e-9 && Math.abs(fb.spent - 0.07) < 1e-9, `${fb.attempts[0].cost} ${fb.spent}`);
 
   const p = fakeProvider(await grey(), null);
   const u = await makeCard({ order: ORDER, ...at, card: r.id, settings: SETTINGS, provider: p, buildPrompt: fakePrompt });
@@ -248,6 +257,56 @@ test('цикл: опорный портрет персонажа — свой к
   assert.ok(!('aspectRatio' in card.calls[0]));
   assert.equal(cardOf(made.dir).attempts[0].cutBottom, 58);
   assert.ok(made.warnings.some((/** @type {string} */ w) => /выше карточки: срезано 58 px снизу/.test(w)), made.warnings.join('\n'));
+});
+
+test('цикл: ключ не принят или кончились деньги — запуск останавливается сразу, без запасной модели и новых попыток', { skip: noSharp }, async t => {
+  const { makeCard, providerFrom } = /** @type {any} */ (loop);
+  const { ProviderError } = await import('../core/providers/openrouter.js');
+  const http = await import('node:http');
+  // a fake OpenRouter: every image request is refused for credits
+  let hits = 0;
+  const server = http.createServer((req, res) => { hits++; req.resume(); req.on('end', () => { res.writeHead(402, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: { code: 402, message: 'Insufficient credits' } })); }); });
+  await new Promise(r => server.listen(0, '127.0.0.1', () => r(undefined)));
+  t.after(() => server.close());
+  const real = loadSettings();
+  const port = /** @type {any} */ (server.address()).port;
+  const p = providerFrom({ ...real.provider, use: 'api', preset: 'openrouter', openrouter: { ...real.provider.openrouter, endpoint: `http://127.0.0.1:${port}/api/v1`, fallbackModel: 'other/model', retries: 2, backoffMs: 1 } }, { apiKey: 'test-key' });
+  const r = await makeCard({ order: ORDER, ...await pool(), settings: { ...SETTINGS, card: { ...SETTINGS.card, attempts: 3 } }, provider: p, buildPrompt: fakePrompt });
+  assert.equal(r.stop, 'key');
+  assert.equal(hits, 1, 'ни повтора, ни запасной модели, ни новой попытки');
+  assert.equal(r.keyProblem.kind, 'billing');
+  assert.match(r.keyProblem.message, /^С ключом проблема: на счёте сервиса кончились деньги.*Insufficient credits/);
+  assert.equal(r.warnings[0], r.keyProblem.message);
+  assert.deepEqual(r.attempts.map(a => [a.n, a.error?.kind, a.error?.status]), [[1, 'billing', 402]]);
+
+  // the vision model's service refuses the key: the attempt is made and recorded, then the run stops
+  const settings = { ...real, card: { ...real.card, attempts: 3, tuneProcessing: false } };
+  const vision = Object.assign(async () => { throw new ProviderError('Провайдер вернул HTTP 401 (/chat/completions): No auth credentials found', { status: 401, kind: 'auth' }); }, { model: 'v/m' });
+  const v = await makeCard({ order: ORDER, ...await pool(), settings, provider: fakeProvider(await grey(), 0.04, { vision }), buildPrompt: fakePrompt });
+  assert.deepEqual([v.stop, v.keyProblem.kind, v.attempts.length], ['key', 'auth', 1]);
+  assert.match(v.keyProblem.message, /сервис не принял ключ/);
+});
+
+test('цикл: Codex запускается без ключей сервисов фабрики в окружении', { skip: (noSharp || (process.platform === 'win32' && 'скрипт-заглушка Codex — для sh')) }, async t => {
+  const { providerFrom } = /** @type {any} */ (loop);
+  const real = loadSettings();
+  const dir = tmp();
+  const out = path.join(dir, 'env.json');
+  const fake = path.join(dir, 'codex');
+  // a stand-in for the codex command: writes the environment it got, then fails (nothing is drawn)
+  fs.writeFileSync(fake, `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(out)}, JSON.stringify(process.env)); process.exit(3);\n`, { mode: 0o755 });
+  const vars = { CCF_TEST_KEY_A: 'secret-a', CCF_TEST_KEY_B: 'secret-b' };
+  Object.assign(process.env, vars);
+  t.after(() => { for (const k of Object.keys(vars)) delete process.env[k]; });
+  const provider = providerFrom({
+    ...real.provider, use: 'codex-cli', codexCli: { ...real.provider.codexCli, command: fake },
+    openrouter: { ...real.provider.openrouter, keyEnvVar: 'CCF_TEST_KEY_A' }, google: { ...real.provider.google, keyEnvVar: 'CCF_TEST_KEY_B' },
+  });
+  await assert.rejects(provider.generate({ prompt: 'p', references: [] }), /Codex: код выхода 3/);
+  const env = JSON.parse(fs.readFileSync(out, 'utf8'));
+  assert.equal(env.CCF_TEST_KEY_A, undefined, 'ключа OpenRouter нет');
+  assert.equal(env.CCF_TEST_KEY_B, undefined, 'ключа Google нет');
+  assert.equal(env.PATH, process.env.PATH);
 });
 
 test('цикл: провайдер из настроек — неизвестный отклоняется, codex-cli бесплатный и без ключа', { skip: noSharp }, () => {
@@ -597,6 +656,63 @@ test('версии карточки: любую готовую попытку м
   assert.equal(ccf('card', 'choose', made.dir).status, 2, 'без --attempt');
 });
 
+test('одна карточка, несколько операций сразу: у каждой попытки свой номер, ни одна запись в card.json не теряется', { skip: noSharp }, async () => {
+  const { makeCard, regenerateCard, adjustCard } = /** @type {any} */ (loop);
+  const { busyOf } = await import('../core/card/card-file.js');
+  const at = await pool();
+  const made = await makeCard({ order: ORDER, ...at, settings: SETTINGS, provider: fakeProvider(await grey(), 0.04), buildPrompt: fakePrompt, limits: { attempts: 1 } });
+  /** @type {() => void} */
+  let go = () => {};
+  const gate = new Promise(r => { go = () => r(undefined); });
+  const slow = { ...fakeProvider(await grey(), 0.04), generate: async () => { await gate; return { bytes: await grey(), mime: 'image/png', cost: 0.04 }; } };
+  const runs = [
+    regenerateCard({ dir: made.dir, wish: 'первое', settings: OPS, provider: slow, buildPrompt: echoPrompt }),
+    regenerateCard({ dir: made.dir, wish: 'второе', settings: OPS, provider: slow, buildPrompt: echoPrompt }),
+  ];
+  await new Promise(r => setTimeout(r, 50));
+  assert.deepEqual(busyOf(made.dir).map(b => b.what), ['regenerate', 'regenerate'], 'пока идут генерации, карточка занята');
+  // a person adjusts version 1 while both generations are under way
+  await adjustCard({ dir: made.dir, n: 1, saturation: 1.2 });
+  go();
+  const [a, b] = await Promise.all(runs);
+  assert.deepEqual([a.attempts[0].n, b.attempts[0].n].sort(), [2, 3], 'номера попыток разные');
+  const c = cardOf(made.dir);
+  assert.deepEqual(c.attempts.map(x => [x.n, x.wish ?? '', x.cost]), [[1, '', 0.04], [2, 'первое', 0.04], [3, 'второе', 0.04]]);
+  assert.equal(c.attempts[0].processing.saturation, 1.2, 'ручная обработка версии 1 не затёрта');
+  assert.equal((await at.store.listCards(at.collection))[0].cost, 0.12, 'расход всех оплаченных попыток виден');
+  assert.deepEqual(busyOf(made.dir), [], 'после работы карточка свободна');
+  assert.ok(!fs.existsSync(path.join(made.dir, 'card.json.lock')));
+});
+
+test('card.json из нескольких процессов: блокировка и номера попыток; брошенная блокировка и метка «занята» не мешают', async () => {
+  const { updateCardFile, reserveAttempt, busyOf, LOCK_FILE, BUSY_PREFIX } = await import('../core/card/card-file.js');
+  const dir = tmp();
+  updateCardFile(dir, () => ({ order: /** @type {any} */ ({ title: 'x' }), attempts: [], chosen: null }));
+  const mod = new URL('../core/card/card-file.js', import.meta.url).href;
+  const script = `const { updateCardFile, reserveAttempt } = await import(${JSON.stringify(mod)});
+    for (let i = 0; i < 25; i++) { const n = reserveAttempt(process.argv[1]); updateCardFile(process.argv[1], c => { c.attempts.push({ n, by: process.pid }); return c; }); }`;
+  const { spawn } = await import('node:child_process');
+  const run = () => new Promise((res, rej) => {
+    const ch = spawn(process.execPath, ['--input-type=module', '-e', script, dir], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let err = '';
+    ch.stderr.on('data', d => { err += d; });
+    ch.on('exit', code => (code === 0 ? res(undefined) : rej(new Error(err))));
+  });
+  await Promise.all([run(), run(), run()]);
+  const ns = cardOf(dir).attempts.map(a => a.n).sort((x, y) => x - y);
+  assert.deepEqual(ns, Array.from({ length: 75 }, (_, i) => i + 1), 'три процесса × 25 попыток: все записаны, номера не повторяются');
+
+  // a lock and a busy marker left by a process that is gone
+  const gone = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' });
+  const deadPid = Number(gone.stdout);
+  fs.writeFileSync(path.join(dir, LOCK_FILE), `${deadPid} ${Date.now()}`);
+  fs.writeFileSync(path.join(dir, `${BUSY_PREFIX}${deadPid}.1`), JSON.stringify({ what: 'make', pid: deadPid, since: '' }));
+  updateCardFile(dir, c => ({ .../** @type {any} */ (c), chosen: 1 }));
+  assert.equal(cardOf(dir).chosen, 1, 'блокировка умершего процесса снята');
+  assert.deepEqual(busyOf(dir), [], 'метка умершего процесса не держит карточку');
+  assert.equal(reserveAttempt(dir), 76);
+});
+
 test('сброс обработки: ручные значения заменяются подобранными программой, как после генерации', { skip: noSharp }, async () => {
   const { makeCard, adjustCard } = /** @type {any} */ (loop);
   const real = loadSettings();
@@ -678,6 +794,18 @@ test('смотрящая модель: вопросы взгляда из зак
     assert.equal(issuesOf(parseAnswer('no json here', kinds), visual, look).verdict, 'unknown');
     assert.equal(issuesOf({ seen: 'x', checklist: [] }, visual, look).verdict, 'unknown', 'ни на один вопрос нет ответа');
   });
+});
+
+test('смотрящая модель: оплаченный ответ без текста записан со своей ценой, а не $0', async () => {
+  const { lookAtCard } = await import('../core/card/look.js');
+  const { ProviderError } = await import('../core/providers/openrouter.js');
+  const look = loadSettings().look;
+  const base = { image: { bytes: Buffer.from('x') }, order: /** @type {any} */ ({ title: 'T' }), visual: [], model: 'v', settings: look, buildPrompt: async () => /** @type {any} */ ({ prompt: 'P', sections: [], references: [] }) };
+  const paid = await lookAtCard({ ...base, ask: async () => { throw new ProviderError('Смотрящая модель ответила без текста (finishReason MAX_TOKENS).', { status: 200, cost: 0.0042 }); } });
+  assert.deepEqual([paid.record.verdict, paid.record.cost], ['unknown', 0.0042]);
+  assert.match(String(paid.record.error), /без текста/);
+  const net = await lookAtCard({ ...base, ask: async () => { throw new ProviderError('Сеть: нет связи'); } });
+  assert.equal(net.record.cost, 0, 'ошибка без ответа — ничего не оплачено');
 });
 
 test('смотрящая модель в цикле: рамка героя → доверенный контур, взгляд «не тот предмет» гонит перегенерацию, расходы учтены; перепроверка модель не спрашивает', { skip: noSharp }, async () => {

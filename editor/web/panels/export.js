@@ -24,7 +24,9 @@ export function openExport({ collection, sets, set, cardId, cardTitle }) {
     title: 'Экспорт',
     body: `<div class="form">
       <div class="field"><span class="field__label">Что</span><div class="seg" role="group" data-seg="scope">${scopes.map((s, i) => `<button type="button" data-v="${s.id}" aria-pressed="${i === 0}">${s.label}</button>`).join('')}</div>
-        <span class="field__hint" data-about>${esc(scopes[0].about)}</span></div>
+        <span class="field__hint" data-about>${esc(scopes[0].about)}</span>
+        <label class="check" data-pool-row ${scopes[0].id === 'collection' ? '' : 'hidden'}><input type="checkbox" data-pool checked><span>Выгрузить хранилище</span></label>
+        <span class="field__hint" data-pool-hint ${scopes[0].id === 'collection' ? '' : 'hidden'}>Карточки вне наборов — отдельной папкой «Хранилище».</span></div>
       <div class="field"><span class="field__label">Как</span><div class="seg" role="group" data-seg="format"><button type="button" data-v="png" aria-pressed="true">Картинки PNG</button><button type="button" data-v="zip" aria-pressed="false">Архив ZIP</button></div>
         <span class="field__hint">Файлы ложатся в папку коллекции → export, по папкам: коллекция → наборы → карточки.</span></div>
       <div data-result></div>
@@ -41,6 +43,7 @@ export function openExport({ collection, sets, set, cardId, cardTitle }) {
     if (b) {
       for (const x of /** @type {HTMLElement} */ (b.parentElement).children) x.setAttribute('aria-pressed', String(x === b));
       /** @type {HTMLElement} */ (sheet.querySelector('[data-about]')).textContent = scopes.find(s => s.id === pressed('scope'))?.about ?? '';
+      for (const el of sheet.querySelectorAll('[data-pool-row], [data-pool-hint]')) /** @type {HTMLElement} */ (el).hidden = pressed('scope') !== 'collection';
       return;
     }
     if (t.closest('[data-open-folder]')) {
@@ -52,7 +55,8 @@ export function openExport({ collection, sets, set, cardId, cardTitle }) {
       const btn = /** @type {HTMLButtonElement} */ (t.closest('[data-submit]'));
       btn.disabled = true;
       result.innerHTML = '<p class="field__hint">Экспортирую…</p>';
-      const r = await attempt(() => call('exportItems', { collectionId: collection.id, format: pressed('format'), ...scope?.args }));
+      const pool = scope?.id === 'collection' && /** @type {HTMLInputElement} */ (sheet.querySelector('[data-pool]')).checked;
+      const r = await attempt(() => call('exportItems', { collectionId: collection.id, format: pressed('format'), ...scope?.args, ...(pool ? { pool: true } : {}) }));
       btn.disabled = false;
       result.innerHTML = '';
       if (!r) return;

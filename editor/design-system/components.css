@@ -93,6 +93,12 @@ textarea.input { height: auto; min-height: calc(var(--c-field-height) * 2.4); pa
 .input:disabled { background: var(--color-surface-sunken); color: var(--color-ink-4); cursor: not-allowed; }
 .field--error .input { border-color: var(--c-field-error-bg); box-shadow: 0 0 0 1px var(--c-field-error-bg); }
 .field--error .field__hint { color: var(--c-field-error-fg); }
+/* checkbox: a native box in brand green, the label on its right */
+.check { display: inline-flex; align-items: center; gap: var(--spacing-s2); cursor: pointer; color: var(--color-ink-1);
+  font: var(--type-body-md-weight) var(--type-body-md-size)/var(--type-body-md-line) var(--type-body-md-family); }
+.check[hidden] { display: none; }
+.check input { width: var(--c-slider-thumb-size); height: var(--c-slider-thumb-size); margin: 0; accent-color: var(--color-accent); cursor: pointer; }
+.check input:focus-visible { outline: 2px solid var(--c-focus-ring-bg); outline-offset: 2px; }
 .select { position: relative; display: block; }
 .select .input { appearance: none; -webkit-appearance: none; padding-right: calc(var(--c-field-padding) * 3); cursor: pointer; }
 .select::after { content: ""; position: absolute; right: calc(var(--c-field-padding) + 2px); top: 50%; width: 7px; height: 7px; margin-top: -6px;
