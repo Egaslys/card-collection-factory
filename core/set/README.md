@@ -13,14 +13,14 @@ Two ways to a plan, one way to cards:
 | File | What |
 |---|---|
 | `rules.js` | `loadSetRules(style)` → `{ rules, style }`; `stagingRow`, `rowCategories`, `seenPatterns`, `expandStaging` (presets), `windowSkeleton(rules, layout, scenes)`, `kindKey`, `cardBudget(cap, perCard)` (the spend cap of cards made a few at a time, for `makeSet` and loose cards: each card reserves its own cap; a card that finds nothing left waits for a running one to finish instead of starting with a cap of 0) |
-| `plan.js` | `SetPlan` / `SlotPlan` typedefs, `normalizePlan`, `validatePlan(plan, { registry, variants, titles })`, `slotLookErrors(slot, style)`, `registryOf(plan)`, `validateCollection(plans)` |
+| `plan.js` | `SetPlan` / `SlotPlan` typedefs, `normalizePlan`, `readyOrder(order)` (an order from a plan made ready for `card prompt`: preset expanded, temporary id), `validatePlan(plan, { registry, variants, titles })`, `slotLookErrors(slot, style)`, `registryOf(plan)`, `validateCollection(plans)` |
 | `planner.js` | `setPrompt`, `planSet`, `planCollection`, `planFromAnswer`, `parseAnswer`, `textModelFrom(settings)`; shared with loose cards: `setFragment`, `answerParts` (staging ids and values, answer format, wishes), `slotFromAnswer`, `glue` |
 | `cards.js` | loose cards into a collection's pool, outside any set: `cardsPrompt` (the set planner's `setFragment` and `answerParts`), `cardsFromAnswer` (`slotFromAnswer`, shared with `planFromAnswer`), `validateCards` (each order by the style, what the image model will read (`slotLookErrors`; warnings when the order has a `humanRequest`), its category by its staging, no item kind twice, the asked count and scenes; a missing category and wishes not reaching a card are warnings), `planCards` (with repairs and the spend cap of `set.plan`; 1 to `set.cards.maxCount` cards a run), `makeCardsInto` (plan, record its spend as text, make each card with `makeCard` under `set.maxSpendUsd`); prompt glue `prompt.glue.cards` of the style's set-rules.json |
-| `make.js` | `planSetInto`, `planCollectionInto` (plan with the text model and save into the collection: the one composition the CLI and the editor call), `saveSetPlan`, `makeSet`, `makeCollection`, `collectionContext` |
+| `make.js` | `planSetInto`, `planCollectionInto` (plan with the text model and save into the collection: the one composition the CLI and the editor call), `saveSetPlan` (`set save PLAN.json --collection ID [--set ID]`: a new set, or with `--set` the plan of an existing one), `makeSet`, `makeCollection`, `collectionContext` |
 | `sheet.js` | `setSheet` — a contact sheet PNG of a set (cards in window order, stars, frame, caption) to look at the set as a whole |
 | `cli.js` | `setCommands` — the `set …` and `collection …` commands that `ccf.mjs` dispatches to |
 
-The text model: `core/providers/openrouter-text.js` `complete()` (chat completions, JSON mode).
+The text model: the service of the run, through `core/providers/preset.js` (`textModelFrom` in `planner.js`; JSON mode).
 
 ## SetPlan
 

@@ -86,6 +86,9 @@ test('parseBox: форматы Gemini, Qwen и пиксели; мусор и в�
   assert.deepEqual(parseBox('{"bbox_2d": [200, 100, 800, 900]}', 'qwen', 430, 480), [86, 48, 344, 432]);
   assert.deepEqual(parseBox('{"box": [500, -3, 10, 700]}', 'pixels', 430, 480), [10, 0, 429, 479]);
   assert.equal(parseBox('{"box_2d": [0, 0, 0, 0]}', 'gemini', 430, 480), null);
+  assert.deepEqual(parseBox('{"box_d": [100, 200, 900, 800]}', 'gemini', 430, 480), [86, 48, 344, 432]);
+  assert.deepEqual(parseBox('```json\n{"bounding_box": [100, 200, 900, 800]}\n```', 'gemini', 430, 480), [86, 48, 344, 432]);
+  assert.equal(parseBox('{"label": [100, 200, 900, 800]}', 'gemini', 430, 480), null);
   assert.equal(parseBox('no idea', 'gemini', 430, 480), null);
   assert.equal(parseBox('{"box_2d": "x"}', 'gemini', 430, 480), null);
   // answer variants seen from Gemini 3.5 Flash-Lite: a list of boxes (union), a missing bracket, an object of values

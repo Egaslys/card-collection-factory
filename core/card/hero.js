@@ -93,16 +93,19 @@ export function cleanBox(b, width, height) {
 /**
  * The box in a model's answer, or null. The numbers after the format's field are read in fours, so the variants
  * the model was seen to answer with also count: a list of boxes ([[…], […]] — their union, e.g. one per character),
- * an object of four values, JSON with a missing bracket.
+ * an object of four values, JSON with a missing bracket, a misspelt key ("box_d" for "box_2d").
  * @param {string} text @param {string} format key of FORMATS @param {number} width @param {number} height
  * @returns {Box|null}
  */
 export function parseBox(text, format, width, height) {
   const f = FORMATS[format];
   if (!f) throw new Error(`Неизвестный формат ответа модели: «${format}» (есть: ${Object.keys(FORMATS).join(', ')}).`);
-  const s = String(text), at = s.search(new RegExp(`"${f.key}"\\s*:`));
-  if (at < 0) return null;
-  const rest = s.slice(at + f.key.length + 2), end = rest.indexOf('}');
+  const s = String(text);
+  // The documented key first; else any key that looks like a box (Gemini 3.8 Flash was seen answering "box_d"),
+  // its numbers read in the format's order.
+  const m = new RegExp(`"${f.key}"\\s*:`).exec(s) || /"[a-z0-9_]*box[a-z0-9_]*"\s*:/i.exec(s);
+  if (!m) return null;
+  const rest = s.slice(m.index + m[0].length), end = rest.indexOf('}');
   const nums = ((end < 0 ? rest : rest.slice(0, end)).match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
   if (nums.length < 4 || nums.length % 4) return null;
   /** @type {Box|null} */

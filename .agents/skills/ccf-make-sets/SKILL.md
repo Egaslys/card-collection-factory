@@ -30,7 +30,7 @@ node FACTORY/ccf.mjs set check PLAN.json [VARIANT2.json …] --collection ID
 - Variants: one file per variant with `variant: { n, group }` and the same window layout, all checked in one call.
 - Then go through the items the program cannot check («Not checkable by the program» in `core/set/README.md`) yourself.
 
-**Read the plan before it is saved.** `set save` and `set make PLAN.json` always add a new set, and no command replaces a saved plan, so fix everything in the file first. `card prompt` refuses a plan's orders with a preset or without an `id`. To read the assembled prompts, `set save` the plan (free), then for slot N run `jq '.plan.slots[N-1].order' FACTORY/collections/<c>/sets/<set>/set.json > ORDER.json` and `ccf.mjs card prompt ORDER.json`. If a saved plan still needs a change before its cards are made, put the corrected plan in through the Store API: `updateSet(collection, set, { plan })` from `FACTORY/core/store/index.js` (`core/README.md`). `set make --set` checks the stored plan again before any card.
+**Read the plan before cards are made.** `set save PLAN.json --collection ID` without `--set` always adds a new set; to change a saved plan, correct the file and run `set save PLAN.json --collection ID --set SET_ID` (checked again, refused with its errors, the made cards stay). To read the assembled prompt of slot N for free, put that slot's order (`.slots[N-1].order` of the plan file) into ORDER.json and run `ccf.mjs card prompt ORDER.json`: an order with a preset staging and no `id` is accepted. `set make --set` checks the stored plan again before any card.
 
 Your own collection: write, check and save it set by set in collection order. `set check --collection` sees only plans already saved in the collection, so save each plan (`set save PLAN.json --collection ID`, which checks it again and makes no cards) before checking the next. Each set is then checked against the ones before it. The whole-collection check (16 sets, the grand set last, the scene curve) is `node FACTORY/ccf.mjs collection check --collection ID` over the saved plans (`--partial` while the collection is not complete); the rest of the collection part of `SETS.md` §9 you go through yourself.
 
@@ -46,7 +46,7 @@ The text model is the settings' service's (`provider.<preset>.textModel`); these
 ## 3. Make the cards
 
 ```sh
-node FACTORY/ccf.mjs set save PLAN.json --collection ID          # checks and saves as a new set; no cards, no money
+node FACTORY/ccf.mjs set save PLAN.json --collection ID          # checks and saves as a new set (--set SET_ID: replaces that set's plan); no cards, no money
 node FACTORY/ccf.mjs set make PLAN.json --collection ID          # checks, saves as a new set, makes its cards
 node FACTORY/ccf.mjs set make --collection ID --set SET_ID [--slots 1,2] [--redo]   # a saved plan
 node FACTORY/ccf.mjs collection make --collection ID [--sets N,N]

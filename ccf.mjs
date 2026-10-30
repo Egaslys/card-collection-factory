@@ -54,7 +54,7 @@ const COMMANDS = {
     about: `Makes one card from an order (a JSON CardOrder: core/style/card-order.js): the prompt is assembled from the
 style's phrases, the image is generated, cropped to the card, post-processed and checked by the style's automatic
 checks. While a check FAILs, the card is generated again, up to the attempt limit and the spend cap (settings/,
-or the options below). With an OpenRouter key, the vision model of the settings finds the hero's box (the outline is
+or the options below). With the key of the run's service, the vision model of the settings finds the hero's box (the outline is
 cut in it: attempts/<n>/card.hero.png, trusted when its two looks agree) and looks at the card against the order
 (attempts/<n>/look.json); its blocking problems also cause a regeneration. A FAIL that rests on an outline nobody
 trusts does not: look at attempts/<n>/card.mask.png and run "card check".
@@ -126,7 +126,7 @@ generated or paid.`,
     about: `Takes in an image an agent drew with its own tool (its built-in image generation): as a new attempt of a
 card (CARD_DIR), or as a new card of the collection made from an order (ORDER.json). The image goes through every
 step a generated one does: cropped, its hero outline found by the vision model, post-processing tuned, the style's
-checks, the vision model's look against the order (with an OpenRouter key here, or a running editor's; without one
+checks, the vision model's look against the order (with the key of the run's service here, or a running editor's; without one
 the vision steps are skipped with a warning). The attempt's model is "agent", its image cost 0 (the vision calls are
 counted). It becomes the card.`,
     options: { collection: { type: 'string', value: 'ID', help: 'with ORDER.json: the collection id' }, ...PLACE_OPTIONS, json: JSON_OPTION },
@@ -147,8 +147,9 @@ Nothing is generated or paid.`,
   'card prompt': {
     usage: [`${NAME} card prompt ORDER.json [--json]`],
     about: `For an agent that draws with its own image tool: prints the prompt the program assembles for the order,
-the style reference images to attach, the frame, and the next step (draw, then "card import"). Nothing is generated
-or paid.`,
+the style reference images to attach, the frame, and the next step (draw, then "card import"). An order taken from
+a set plan works too (a staging given as a preset is expanded, a missing id is a temporary one). Nothing is
+generated or paid.`,
     options: { json: JSON_OPTION },
     positionals: { min: 1, max: 1, label: 'ORDER.json' },
     run: cardPrompt,
@@ -206,7 +207,7 @@ editor). --stop stops the running editor.`,
     about: `Makes loose cards on a theme into the collection's pool, outside any set: the text model of the settings
 (set.plan) writes N card orders from the style's set fragments and checks them by the style (each order, its category
 by its staging, no item kind twice; the mix of categories only warns), then every card is made as "card make" does,
-a few at a time (settings set.parallel). Planning needs an OpenRouter key (here or in a running editor) whatever draws
+a few at a time (settings set.parallel). Planning needs the key of the run's service (here or in a running editor) whatever draws
 the cards; its cost is recorded as text. With plan errors no card is made and the errors are printed.`,
     options: {
       collection: { type: 'string', value: 'ID', help: 'the collection id (required)' },
@@ -357,7 +358,8 @@ async function cardImport(v, [target, image]) {
 /** @param {any} v @param {string[]} p */
 async function cardPrompt(v, [orderFile]) {
   const { orderPrompt } = await import('./core/card/make.js');
-  const r = await orderPrompt({ order: readOrder(orderFile), settings: loadSettings() });
+  const { readyOrder } = await import('./core/set/plan.js');
+  const r = await orderPrompt({ order: readyOrder(readOrder(orderFile)), settings: loadSettings() });
   if (v.json) console.log(JSON.stringify(r, null, 2));
   else {
     console.log(`Запрос (prompt):\n${r.prompt}\n\nПропорция: ${r.aspectRatio}`);

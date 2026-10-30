@@ -218,3 +218,42 @@ test('makeCardsInto: план от модели, карточки — в хра�
   assert.ok(bad.plan.errors.length && !bad.cards.length);
   assert.equal(calls.length, 2);
 });
+
+test('saveSetPlan с set: план существующего набора заменяется, с ошибками — отказ и старый план цел', { skip }, async t => {
+  const { saveSetPlan } = await import('../core/set/make.js');
+  const { store } = tempStore(t);
+  const collection = (await store.createCollection({ title: 'Лето' })).id;
+  const first = await saveSetPlan({ collection, plan: lakePlan(), store });
+  const next = lakePlan();
+  next.angle = 'a new angle: from the shore to the dock';
+  const r = await saveSetPlan({ collection, plan: next, set: first.set.id, store });
+  assert.equal(r.set.id, first.set.id);
+  assert.equal((await store.getCollection(collection)).sets.length, 1, 'нового набора нет');
+  assert.equal(/** @type {any} */ ((await store.getSet(collection, first.set.id)).plan).angle, next.angle);
+  const broken = lakePlan();
+  broken.slots.pop();
+  await assert.rejects(saveSetPlan({ collection, plan: broken, set: first.set.id, store }), /не прошёл проверку/);
+  assert.equal(/** @type {any} */ ((await store.getSet(collection, first.set.id)).plan).angle, next.angle);
+});
+
+test('card prompt: заказ из плана набора (постановка-пресет, без id) принимается; set save знает --set', { skip }, async () => {
+  const { spawnSync } = await import('node:child_process');
+  const os = await import('node:os');
+  const ccf = (/** @type {string[]} */ ...a) => spawnSync(process.execPath, [path.join(ROOT, 'ccf.mjs'), ...a], { cwd: ROOT, encoding: 'utf8' });
+  const order = lakePlan().slots[0].order;
+  assert.equal(order.id, undefined);
+  assert.equal(order.staging.preset, 'field');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccf-prompt-'));
+  try {
+    const file = path.join(dir, 'order.json');
+    fs.writeFileSync(file, JSON.stringify(order));
+    const r = ccf('card', 'prompt', file, '--json');
+    assert.equal(r.status, 0, r.stderr);
+    const expanded = (await import('../core/set/plan.js')).normalizePlan(lakePlan()).plan.slots[0].order;
+    const { buildPrompt } = await import('../core/style/prompt.js');
+    assert.equal(JSON.parse(r.stdout).prompt, (await buildPrompt(expanded)).prompt);
+    fs.writeFileSync(file, JSON.stringify({ ...order, staging: { preset: 'no-such' } }));
+    assert.notEqual(ccf('card', 'prompt', file).status, 0);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  assert.match(ccf('set', 'save', '--help').stdout, /--set SET_ID/);
+});

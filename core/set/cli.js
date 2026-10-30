@@ -139,10 +139,12 @@ async function setCheck(v, files) {
 /** @param {any} v @param {string[]} files */
 async function setSave(v, [file]) {
   const { saveSetPlan } = await import('./make.js');
-  const { set, warnings } = await saveSetPlan({ collection: v.collection, plan: JSON.parse(fs.readFileSync(path.resolve(file), 'utf8')) });
+  const { set, warnings } = await saveSetPlan({ collection: v.collection, set: v.set, plan: JSON.parse(fs.readFileSync(path.resolve(file), 'utf8')) });
   if (v.json) console.log(JSON.stringify({ set: set.id, number: set.number, title: set.title, warnings }, null, 2));
   else {
-    console.log(`План сохранён набором ${set.id} (№${set.number}, «${set.title}») в коллекции ${v.collection}; карточек пока нет: "set make --set ${set.id}".`);
+    console.log(v.set
+      ? `План набора ${set.id} (№${set.number}, «${set.title}») в коллекции ${v.collection} заменён; сделанные карточки остались на месте.`
+      : `План сохранён набором ${set.id} (№${set.number}, «${set.title}») в коллекции ${v.collection}; карточек пока нет: "set make --set ${set.id}".`);
     printVerdict({ errors: [], warnings });
   }
   return 0;
@@ -277,11 +279,12 @@ ${PLAN_ABOUT}`,
     run: setCheck,
   },
   'set save': {
-    usage: ['ccf.mjs set save PLAN.json --collection ID [--json]'],
+    usage: ['ccf.mjs set save PLAN.json --collection ID [--set SET_ID] [--json]'],
     about: `Saves a set plan written by an agent as a new set of the collection, without making any card (cards: "set make
---set ID"). The plan is checked as in "set check --collection" and is refused with its errors if it does not pass.
+--set ID"); with --set, it replaces the plan of that existing set instead. The plan is checked as in "set check
+--collection" and is refused with its errors if it does not pass.
 ${PLAN_ABOUT}`,
-    options: { collection: { type: 'string', value: 'ID', help: 'the collection id (required)' }, json: JSON_OPTION },
+    options: { collection: { type: 'string', value: 'ID', help: 'the collection id (required)' }, set: { type: 'string', value: 'SET_ID', help: 'replace the plan of this existing set instead of adding a new set' }, json: JSON_OPTION },
     positionals: { min: 1, max: 1, label: 'PLAN.json' },
     check: (/** @type {any} */ v) => !v.collection ? '--collection is required' : null,
     run: setSave,

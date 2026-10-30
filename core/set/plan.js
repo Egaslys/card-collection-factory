@@ -92,6 +92,20 @@ export function normalizePlan(plan) {
 }
 
 /**
+ * An order taken from a set plan made ready for the card operations that read an order on its own ("card prompt"):
+ * a staging given as a preset is expanded, a missing id is a temporary one (a copy). A finished order comes back equal.
+ * @param {Record<string, any>} order
+ * @returns {Record<string, any>}
+ * @throws {Error} when the preset is unknown
+ */
+export function readyOrder(order) {
+  const { rules } = loadSetRules(order.style);
+  const { staging, error } = expandStaging(order.staging, rules);
+  if (error) throw new Error(`Заказ «${order.title ?? ''}»: ${error}`);
+  return { ...order, ...(staging ? { staging } : {}), id: order.id ?? `preview-${slug(order.title ?? 'card')}` };
+}
+
+/**
  * The registry entries of one plan: hero kinds of the cards without characters, props of the scenes.
  * @param {SetPlan} plan
  * @returns {RegistryEntry[]}
