@@ -94,17 +94,28 @@ export const ATTEMPT_FILES = { original: 'model', prepared: 'prepared.png', card
  */
 
 /**
- * USD an attempt spent: the image (when its price is known) and the vision model's calls for its hero and its look.
+ * USD an attempt spent: the image (when its price is known), the vision model's calls for its hero and its look, and the
+ * text model's correction it was drawn with.
  * @param {Attempt} a
  */
-export const attemptCost = a => (a.cost ?? 0) + (a.hero?.cost ?? 0) + (a.look?.cost ?? 0);
+export const attemptCost = a => (a.cost ?? 0) + (a.hero?.cost ?? 0) + (a.look?.cost ?? 0) + (a.fix?.cost ?? 0);
 
 /**
  * The same USD split by kind: `images` the image (0 for a free provider and an imported image), `vision` the vision
- * model's calls (hero and look).
- * @param {Attempt} a @returns {{images: number, vision: number}}
+ * model's calls (hero and look), `text` the text model's correction (fix.js).
+ * @param {Attempt} a @returns {{images: number, vision: number, text: number}}
  */
-export const attemptSpend = a => ({ images: a.cost ?? 0, vision: (a.hero?.cost ?? 0) + (a.look?.cost ?? 0) });
+export const attemptSpend = a => ({ images: a.cost ?? 0, vision: (a.hero?.cost ?? 0) + (a.look?.cost ?? 0), text: a.fix?.cost ?? 0 });
+
+/**
+ * @typedef {object} FixRecord
+ * @property {number} from  the attempt whose findings it corrects
+ * @property {string|null} text  the sentences added to the prompt; null = the text model gave none (`error`)
+ * @property {string} model  the text model
+ * @property {number} cost  USD (0 when the service did not report it)
+ * @property {string[]} [skipped]  findings the text model left out, with why
+ * @property {string} [error]
+ */
 
 /**
  * @typedef {object} Attempt
@@ -128,6 +139,8 @@ export const attemptSpend = a => ({ images: a.cost ?? 0, vision: (a.hero?.cost ?
  * @property {Review} [review]
  * @property {HeroRecord} [hero]  the hero outline the checks used, when one was cut in a box (card.hero.png)
  * @property {LookRecord} [look]  the vision model's look at the card (look.json)
+ * @property {FixRecord} [fix]  the correction added at the end of `prompt`, written by the text model from the findings
+ *   of an earlier attempt (core/card/fix.js)
  * @property {CheckSummary} [check]
  * @property {{stage: 'generate'|'process', message: string, status?: number, kind?: 'auth'|'billing'}} [error]  kind: the
  *   service refused the key or wants money (the run stopped, make.js StopReason "key")

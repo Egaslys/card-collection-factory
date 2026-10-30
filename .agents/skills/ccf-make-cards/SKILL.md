@@ -52,7 +52,7 @@ Check each order for free: `ccf.mjs card prompt ORDER.json` prints the assembled
 node FACTORY/ccf.mjs card make ORDER.json --collection ID [--set ID --slot N] [--provider NAME] [--model ID] [--max-spend USD] --json
 ```
 
-The loop generates, crops, finds the hero box with the vision model, tunes the processing, checks, has the vision model look at the card against the order, and regenerates while a blocking FAIL or a blocking look issue remains, within the attempt limit and the cap. Several `card make` processes may run at once for pool cards; with `--set` run them one after another (two processes writing one `set.json` can lose an update: `core/store/README.md`, «Writes and live events»). To try again on the same card after changing its order: `--card CARD_ID` (attempts are appended).
+The loop generates, crops, finds the hero box with the vision model, tunes the processing, checks, has the vision model look at the card against the order, and regenerates while a blocking FAIL or a blocking look issue remains, within the attempt limit and the cap; each new attempt carries a correction the text model wrote from the previous attempt's findings (the attempt's `fix`, `core/card/fix.js`), so it does not repeat the same prompt. Several `card make` processes may run at once for pool cards; with `--set` run them one after another (two processes writing one `set.json` can lose an update: `core/store/README.md`, «Writes and live events»). To try again on the same card after changing its order: `--card CARD_ID` (attempts are appended).
 
 ## 4b. Make with your own image tool
 

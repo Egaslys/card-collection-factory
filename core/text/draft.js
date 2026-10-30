@@ -22,8 +22,17 @@ import * as factoryStore from '../store/index.js';
  * @returns {{model: string, reasoning: Record<string, unknown>|null, timeoutMs: number}}
  */
 export function textModel(settings) {
+  return { model: presetOf(settings.provider).textModel, ...textCallOptions(settings) };
+}
+
+/**
+ * How the text model is asked, apart from which model it is: the reasoning and timeout of settings set.plan.
+ * @param {any} settings
+ * @returns {{reasoning: Record<string, unknown>|null, timeoutMs: number}}
+ */
+export function textCallOptions(settings) {
   const p = settings.set.plan;
-  return { model: presetOf(settings.provider).textModel, reasoning: p.reasoning ?? null, timeoutMs: p.timeoutMs };
+  return { reasoning: p.reasoning ?? null, timeoutMs: p.timeoutMs };
 }
 
 /**

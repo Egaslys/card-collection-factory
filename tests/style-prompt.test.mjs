@@ -162,7 +162,7 @@ const PILOT_EXPECT = {
   },
   'c5-gone-fishing': {
     fragments: ['char.scene-frame', 'char.man', 'char.pig', 'bg.setting', 'colour.palette', 'colour.shadows-light', 'render.style', 'render.style[low sun or stage spots]', 'render.style[scene]'],
-    text: ['A simple everyday lake fishing scene with the Man and the Pig (two of the cast), set in a small wooden dock on a calm lake', ', at sunset. The Man and the Pig sit on the dock fishing with rods.', 'the Man looks straight at the boot', 'the bottom edge cuts them at the waist', 'a near ground that is one broad smooth surface', 'open sky', 'Image 1 is the canonical look of the Man', 'Image 2 is the canonical look of the Pig', 'Images 3–4 are style references'],
+    text: ['A simple everyday lake fishing scene with the Man and the Pig (two of the cast), set in a small wooden dock on a calm lake', ', at sunset. The Man and the Pig sit on the dock fishing with rods: one familiar activity that reads at a glance', 'the Man shows it with a big, clear expression, and the boot is fully inside the frame', 'the bottom edge cuts them at the waist', 'a near ground that is one broad smooth surface', 'open sky', 'Image 1 is the canonical look of the Man', 'Image 2 is the canonical look of the Pig', 'Images 3–4 are style references'],
   },
 };
 

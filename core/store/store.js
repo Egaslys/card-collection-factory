@@ -62,8 +62,9 @@ import { writeZip } from './zip.js';
  * @property {'new'|'made'|'failed'} status  new: no attempt yet; made: card.png chosen; failed: attempts, none usable
  * @property {{blocking: number, warns: number, needsEyes: number, maskStatus: string}|null} checks  the chosen attempt's
  * @property {number} attempts
- * @property {number} cost  USD, sum of the known costs of the attempts: images and the vision model's calls (card-file.js attemptCost)
- * @property {{images: number, vision: number}} spend  the same split by kind (card-file.js attemptSpend)
+ * @property {number} cost  USD, sum of the known costs of the attempts: images, the vision model's calls and the text
+ *   model's corrections (card-file.js attemptCost)
+ * @property {{images: number, vision: number, text: number}} spend  the same split by kind (card-file.js attemptSpend)
  * @property {number} costUnknown  attempts whose cost the provider did not report
  * @property {string|null} model  the model that made the chosen version ("agent": an image handed in); null without one
  * @property {string|null} setId  the set the card sits in; null = in the pool
@@ -100,7 +101,7 @@ import { writeZip } from './zip.js';
  * @typedef {object} Spend  USD by kind, known costs only
  * @property {number} images  the image models (an imported image and a free provider count 0)
  * @property {number} vision  the vision model: hero outlines and looks
- * @property {number} text  the text model: plans, text help
+ * @property {number} text  the text model: plans, text help, corrections of failed pictures
  * @property {number} total
  * @property {number} unknown  calls whose price the provider did not report
  */
@@ -255,7 +256,7 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
     const latest = Math.max(...times);
     /** @type {CardSummary} */
     const out = {
-      id: k, title: k, image: null, status: 'new', checks: null, attempts: 0, cost: 0, spend: { images: 0, vision: 0 }, costUnknown: 0, model: null,
+      id: k, title: k, image: null, status: 'new', checks: null, attempts: 0, cost: 0, spend: { images: 0, vision: 0, text: 0 }, costUnknown: 0, model: null,
       setId: place?.setId ?? null, slot: place?.slot ?? null, updatedAt: latest ? new Date(latest).toISOString() : null, busy: busyOf(dir).map(b => b.what),
     };
     let card;
@@ -269,9 +270,10 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
       const sp = attemptSpend(a);
       out.spend.images += sp.images;
       out.spend.vision += sp.vision;
+      out.spend.text += sp.text;
     }
     out.cost = round6(out.cost);
-    out.spend = { images: round6(out.spend.images), vision: round6(out.spend.vision) };
+    out.spend = { images: round6(out.spend.images), vision: round6(out.spend.vision), text: round6(out.spend.text) };
     const chosen = card.attempts.find(a => a.n === card.chosen);
     out.model = chosen?.model ?? null;
     if (chosen && exists(png)) {
@@ -296,6 +298,7 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
       const sum = summary(c, k, undefined);
       into.images += sum.spend.images;
       into.vision += sum.spend.vision;
+      into.text += sum.spend.text;
       into.unknown += sum.costUnknown;
     }
   }

@@ -206,6 +206,7 @@ test('хранилище: расходы по видам — картинки и
   const card = JSON.parse(fs.readFileSync(file, 'utf8'));
   card.attempts[0].hero = { cost: 0.001 };
   card.attempts[0].look = { cost: 0.002 };
+  card.attempts[0].fix = { cost: 0.003 };
   card.attempts.push({ n: 3, model: 'codex-cli', cost: 0, look: { cost: 0.002 } });
   fs.writeFileSync(file, JSON.stringify(card));
   writeCard(store, b.id, 'y', { costs: [0.05] });
@@ -215,10 +216,10 @@ test('хранилище: расходы по видам — картинки и
   await assert.rejects(store.recordSpend('nope', { kind: 'text', what: 'plan', model: 't', usd: 1 }), /Коллекции «nope» нет/);
   await assert.rejects(store.recordSpend(null, { kind: 'coffee', what: 'x', model: 't', usd: 1 }), /неизвестен/);
   const x = (await store.listCards(a.id))[0];
-  assert.deepEqual([x.spend, x.model], [{ images: 0.04, vision: 0.005 }, 'm']);
-  assert.deepEqual(await store.spend({ collectionId: a.id }), { images: 0.04, vision: 0.005, text: 0.01, total: 0.055, unknown: 1 });
+  assert.deepEqual([x.spend, x.model], [{ images: 0.04, vision: 0.005, text: 0.003 }, 'm']);
+  assert.deepEqual(await store.spend({ collectionId: a.id }), { images: 0.04, vision: 0.005, text: 0.013, total: 0.058, unknown: 1 });
   assert.deepEqual(await store.spend({ collectionId: b.id }), { images: 0.05, vision: 0, text: 0, total: 0.05, unknown: 1 });
-  assert.deepEqual(await store.spend(), { images: 0.09, vision: 0.005, text: 0.012, total: 0.107, unknown: 2 });
+  assert.deepEqual(await store.spend(), { images: 0.09, vision: 0.005, text: 0.015, total: 0.11, unknown: 2 });
   assert.equal(fs.readFileSync(path.join(root, 'spend.jsonl'), 'utf8').trim().split('\n').length, 3);
   assert.deepEqual((await store.listCollections()).map(c => c.id), [a.id, b.id], 'журнал не коллекция');
 });

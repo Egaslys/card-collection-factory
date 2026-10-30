@@ -76,14 +76,34 @@ pixel checks and stops after one attempt: run it again for another; the checks f
     run: cardMake,
   },
   'card regenerate': {
-    usage: [`${NAME} card regenerate CARD_DIR --wish TEXT [--provider NAME] [--model ID] [--attempts N] [--max-spend USD] [--json]`],
-    about: `Generates the card again from its order with the person's wish added to the prompt as it is (the order's
-promptExtra, or its promptOverride when it has one). One attempt unless --attempts says more; the new attempt
-becomes the card even when an earlier one passes more checks (the person's word outranks the rules).`,
-    options: { wish: WISH_OPTION, ...RUN_OPTIONS, json: JSON_OPTION },
+    usage: [`${NAME} card regenerate CARD_DIR [--wish TEXT] [--attempt N] [--provider NAME] [--model ID] [--attempts N] [--max-spend USD] [--json]`],
+    about: `Generates the card again from its order. A wish is added to the prompt as it is (the order's promptExtra,
+or its promptOverride when it has one). With the key of the service, the problems found on the chosen attempt (or
+--attempt N) — the checks' FAILs and what the vision model saw — are turned by the text model into a correction
+added at the end of the prompt (settings card.fix); the wish outranks them. Without a wish and without findings,
+the card is simply drawn again. One attempt unless --attempts says more (each further attempt corrects the one
+before); the new attempt becomes the card even when an earlier one passes more checks (the person's word outranks
+the rules).`,
+    options: { wish: { ...WISH_OPTION, help: "the person's wish, in their words" }, attempt: { ...ATTEMPT_OPTION, help: 'the attempt whose problems to correct (default: the chosen one)' }, ...RUN_OPTIONS, json: JSON_OPTION },
     positionals: { min: 1, max: 1, label: 'CARD_DIR' },
-    check: (/** @type {any} */ v) => wishError(v) ?? runError(v),
+    check: (/** @type {any} */ v) => attemptError(v) ?? runError(v),
     run: cardRegenerate,
+  },
+  'card wish': {
+    usage: [`${NAME} card wish CARD_DIR [--attempt N] [--notes TEXT] [--language ru|en] [--json]`],
+    about: `Proposes a wish for a new picture of the card (the editor's text help on the wish field): the text model
+of the service reads what the chosen attempt (or --attempt N) was ordered to show and what its checks and the vision
+model found, with your rough notes first, and writes what to change in the picture. Nothing is generated or saved;
+send the wish with "card regenerate --wish" or "card edit --wish". Costs one text model call.`,
+    options: {
+      attempt: ATTEMPT_OPTION,
+      notes: { type: 'string', value: 'TEXT', help: 'rough notes of what you want, kept first' },
+      language: { type: 'string', value: 'CODE', help: 'the language of the wish (settings card.fix.languages; default ru)' },
+      json: JSON_OPTION,
+    },
+    positionals: { min: 1, max: 1, label: 'CARD_DIR' },
+    check: (/** @type {any} */ v) => attemptError(v),
+    run: cardWish,
   },
   'card edit': {
     usage: [`${NAME} card edit CARD_DIR --wish TEXT [--attempt N] [--provider NAME] [--model ID] [--attempts N] [--max-spend USD] [--json]`],
@@ -307,9 +327,32 @@ async function cardsMake(v) {
 async function cardRegenerate(v, [dir]) {
   const { regenerateCard } = await import('./core/card/make.js');
   const settings = loadSettings();
+  const n = v.attempt && +v.attempt;
   return finish(v, await paid(v, settings, 'regenerateCard',
-    () => ({ ...cardOf(dir), wish: v.wish, provider: v.provider, model: v.model, limits: limitsOf(v) }),
-    async () => regenerateCard({ dir: path.resolve(dir), wish: v.wish, ...await runOf(v, settings) })));
+    () => ({ ...cardOf(dir), wish: v.wish, n, provider: v.provider, model: v.model, limits: limitsOf(v) }),
+    async () => regenerateCard({ dir: path.resolve(dir), wish: v.wish, n, ...await runOf(v, settings) })));
+}
+
+/** @param {any} v @param {string[]} p */
+async function cardWish(v, [dir]) {
+  const { proposeCardWish, textFrom } = await import('./core/card/make.js');
+  const { hereOrInEditor } = await import('./editor/remote.js');
+  const settings = loadSettings();
+  const n = v.attempt && +v.attempt;
+  const r = await hereOrInEditor({
+    needsKey: true, envVar: presetOf(settings.provider).keyEnvVar, op: 'proposeCardWish',
+    args: () => ({ ...cardOf(dir), n, notes: v.notes, language: v.language }),
+    here: async () => {
+      const text = textFrom(settings.provider);
+      if (!text) throw new Error(`Нет ключа ${presetOf(settings.provider).keyEnvVar}: текстовую модель не спросить.`);
+      let collectionId = null;
+      try { collectionId = cardOf(dir).collectionId; } catch { /* a card outside the factory's collections: the spend counts for none */ }
+      return proposeCardWish({ dir: path.resolve(dir), n, notes: v.notes, language: v.language, collectionId, settings, text });
+    },
+  });
+  if (v.json) console.log(JSON.stringify(r, null, 2));
+  else console.log(`${r.text}\n\n(из найденного: ${r.findings.length ? r.findings.join('; ') : 'ничего, по вашим заметкам'}; $${(r.cost ?? 0).toFixed(4)})`);
+  return 0;
 }
 
 /** @param {any} v @param {string[]} p */

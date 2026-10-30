@@ -47,7 +47,7 @@ test('ccf.mjs: справка, неизвестная команда и неиз
   assert.match(help.stdout, /card make/);
   assert.match(help.stdout, /editor --stop/, 'общая справка — все формы команды');
   assert.match(help.stdout, /card adjust CARD_DIR \[--attempt N\] --reset/);
-  for (const c of [['card', 'make'], ['card', 'regenerate'], ['card', 'edit'], ['card', 'adjust'], ['card', 'import'], ['card', 'choose'], ['card', 'prompt'], ['card', 'check'], ['models'], ['credits']]) {
+  for (const c of [['card', 'make'], ['card', 'regenerate'], ['card', 'wish'], ['card', 'edit'], ['card', 'adjust'], ['card', 'import'], ['card', 'choose'], ['card', 'prompt'], ['card', 'check'], ['models'], ['credits']]) {
     assert.equal(ccf(...c, '--help').status, 0, c.join(' '));
     const bad = ccf(...c, ...(c[0] === 'card' ? ['x'] : []), '--no-such-option');
     assert.equal(bad.status, 2, c.join(' '));
@@ -58,7 +58,8 @@ test('ccf.mjs: справка, неизвестная команда и неиз
   assert.equal(ccf('card', 'make', 'x.json', '--collection', 'c', '--set', 's').status, 2, '--set без --slot');
   assert.equal(ccf('card', 'make', 'x.json', '--collection', 'c', '--set', 's', '--slot', '11').status, 2, 'слот вне 1–10');
   assert.equal(ccf('card', 'make', 'x.json', '--collection', 'c', '--attempts', '0').status, 2);
-  assert.equal(ccf('card', 'regenerate', 'x').status, 2, 'без --wish');
+  assert.equal(ccf('card', 'regenerate', 'x', '--attempt', '0').status, 2, 'попытка с нуля');
+  assert.equal(ccf('card', 'wish', 'x', '--attempt', 'a').status, 2);
   assert.equal(ccf('card', 'edit', 'x', '--wish', ' ').status, 2, 'пустое пожелание');
   assert.equal(ccf('card', 'adjust', 'x').status, 2, 'без значений');
   assert.equal(ccf('card', 'adjust', 'x', '--saturation', '-1').status, 2);
@@ -293,8 +294,8 @@ test('цикл: Codex запускается без ключей сервисо�
   const dir = tmp();
   const out = path.join(dir, 'env.json');
   const fake = path.join(dir, 'codex');
-  // a stand-in for the codex command: writes the environment it got, then fails (nothing is drawn)
-  fs.writeFileSync(fake, `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(out)}, JSON.stringify(process.env)); process.exit(3);\n`, { mode: 0o755 });
+  // a stand-in for the codex command: logged in; writes the environment it got, then fails (nothing is drawn)
+  fs.writeFileSync(fake, `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(out)}, JSON.stringify(process.env)); process.exit(process.argv[2] === 'login' ? 0 : 3);\n`, { mode: 0o755 });
   const vars = { CCF_TEST_KEY_A: 'secret-a', CCF_TEST_KEY_B: 'secret-b' };
   Object.assign(process.env, vars);
   t.after(() => { for (const k of Object.keys(vars)) delete process.env[k]; });
@@ -302,7 +303,7 @@ test('цикл: Codex запускается без ключей сервисо�
     ...real.provider, use: 'codex-cli', codexCli: { ...real.provider.codexCli, command: fake },
     openrouter: { ...real.provider.openrouter, keyEnvVar: 'CCF_TEST_KEY_A' }, google: { ...real.provider.google, keyEnvVar: 'CCF_TEST_KEY_B' },
   });
-  await assert.rejects(provider.generate({ prompt: 'p', references: [] }), /Codex: код выхода 3/);
+  await assert.rejects(provider.generate({ prompt: 'p', references: [] }), /Codex CLI: не нарисовал картинку \(код выхода 3\)/);
   const env = JSON.parse(fs.readFileSync(out, 'utf8'));
   assert.equal(env.CCF_TEST_KEY_A, undefined, 'ключа OpenRouter нет');
   assert.equal(env.CCF_TEST_KEY_B, undefined, 'ключа Google нет');
@@ -518,7 +519,6 @@ test('перегенерация с пожеланием: слова челов�
   const made = await makeCard({ order, ...await pool(), settings: SETTINGS, provider: fakeProvider(reference(), 0.04), buildPrompt: echoPrompt, limits: { attempts: 1 } });
   const before = made.chosenCheck;
   const p = fakeProvider(await grey(), 0.04);
-  await assert.rejects(regenerateCard({ dir: made.dir, wish: '  ', settings: OPS, provider: p, buildPrompt: echoPrompt }), /Пожелание пустое/);
   const r = await regenerateCard({ dir: made.dir, wish: 'поплавок синий', settings: OPS, provider: p, buildPrompt: echoPrompt });
   assert.equal(p.calls.length, 1, 'одна попытка по умолчанию');
   assert.equal(p.calls[0].prompt, 'PROMPT | поплавок синий');
@@ -536,6 +536,47 @@ test('перегенерация с пожеланием: слова челов�
   const q = fakeProvider(await grey(), 0.04);
   await regenerateCard({ dir: over.dir, wish: 'ярче', settings: OPS, provider: q, buildPrompt: echoPrompt });
   assert.equal(q.calls[0].prompt, 'PROMPT | MY PROMPT ярче');
+});
+
+test('урок неудачи: следующая попытка и «сделать заново» без пожелания несут поправку текстовой модели по найденному', { skip: noSharp }, async () => {
+  const { makeCard, regenerateCard, proposeCardWish } = /** @type {any} */ (loop);
+  const FIX = { ...SETTINGS, card: { ...SETTINGS.card, fix: REAL_CARD.fix }, set: { plan: { reasoning: null, timeoutMs: 1000 } } };
+  const asked = [];
+  const text = Object.assign(async req => { asked.push(req.messages[0].content); return { text: `{"fix": "FIX ${asked.length}", "skipped": []}`, cost: 0.001 }; }, { model: 'text/model' });
+  const at = await pool();
+  const p = fakeProvider(await grey(), 0.04, { text });
+  const r = await makeCard({ order: ORDER, ...at, settings: FIX, provider: p, buildPrompt: fakePrompt, limits: { attempts: 2 } });
+  assert.deepEqual(p.calls.map(c => c.prompt), ['PROMPT', 'PROMPT\n\nFIX 1'], 'первая — по заказу, вторая — с поправкой по найденному в первой');
+  assert.match(asked[0], /- must: COLOUR\.1/);
+  const c = cardOf(r.dir);
+  assert.equal(c.attempts[0].fix, undefined);
+  assert.deepEqual(c.attempts[1].fix, { from: 1, text: 'FIX 1', model: 'text/model', cost: 0.001 });
+  assert.equal(c.attempts[1].prompt, 'PROMPT\n\nFIX 1', 'в попытке — промпт, как он ушёл');
+  assert.ok(Math.abs(r.spent - 0.081) < 1e-9, 'поправка — в расходах прогона');
+
+  // «сделать заново» без пожелания: поправка по найденному в версии 2, с её прежней поправкой
+  const q = fakeProvider(await grey(), 0.04, { text });
+  await regenerateCard({ dir: r.dir, n: 2, settings: FIX, provider: q, buildPrompt: echoPrompt });
+  assert.equal(q.calls[0].prompt, 'PROMPT\n\nFIX 2');
+  assert.match(asked[1], /already ended with this correction[^]*FIX 1/);
+  assert.equal(cardOf(r.dir).attempts[2].wish, undefined);
+  // с пожеланием: слова человека в промпте как есть и главнее найденного
+  await regenerateCard({ dir: r.dir, wish: 'синее', settings: FIX, provider: q, buildPrompt: echoPrompt });
+  assert.equal(q.calls[1].prompt, 'PROMPT | синее\n\nFIX 3');
+  assert.match(asked[2], /outrank every finding: синее/);
+  // без текстовой модели (нет ключа) — просто заново
+  const bare = fakeProvider(await grey(), 0.04);
+  await regenerateCard({ dir: r.dir, settings: FIX, provider: bare, buildPrompt: echoPrompt });
+  assert.equal(bare.calls[0].prompt, 'PROMPT');
+
+  // подсказка пожелания: из найденного, на языке человека; расход — в журнал коллекции
+  const wishText = Object.assign(async req => { asked.push(req.messages[0].content); return { text: '{"wish": "Сделай фон ярче."}', cost: 0.002 }; }, { model: 'text/model' });
+  const w = await proposeCardWish({ dir: r.dir, n: 1, settings: FIX, text: wishText, collectionId: at.collection, store: at.store });
+  assert.equal(w.text, 'Сделай фон ярче.');
+  assert.ok(w.findings.some(f => f.startsWith('COLOUR.1')));
+  assert.match(asked.at(-1), /in Russian/);
+  assert.equal((await at.store.spend({ collectionId: at.collection })).text, 0.005, 'три поправки в попытках и подсказка в журнале');
+  await assert.rejects(proposeCardWish({ dir: r.dir, n: 1, language: 'xx', settings: FIX, text: wishText }), /Язык «xx»/);
 });
 
 test('правка картинки: картинка модели выбранной попытки уходит входной картинкой с пожеланием; новая попытка проходит обработку и проверки', { skip: noSharp }, async () => {

@@ -261,7 +261,7 @@ export async function makeCardsInto({ collection, theme, wishes, count, scenes =
       if (r.stop === 'key' && r.keyProblem) keyProblem ??= r.keyProblem;
       const blocking = r.chosenCheck?.blocking ?? null;
       report({ title, card: r.id, result: 'made', stop: r.stop, spent: r.spent ?? 0, blocking, image: r.image },
-        `${r.image ? `готово (блокирующих FAIL ${blocking ?? '—'})` : r.stop === 'key' ? 'картинки нет: проблема с ключом' : 'картинки нет'}, $${(r.spent ?? 0).toFixed(4)}`);
+        `${r.image ? `готово (блокирующих FAIL ${blocking ?? '—'})` : r.stop === 'key' ? 'картинки нет: нет доступа к сервису (ключ, вход в Codex или лимит)' : 'картинки нет'}, $${(r.spent ?? 0).toFixed(4)}`);
     } catch (/** @type {any} */ e) {
       keyProblem ??= await keyProblemOf(e);
       report({ title, card: null, result: 'failed', spent: 0, error: String(e?.message ?? e) }, `ошибка: ${e?.message ?? e}`);
@@ -271,7 +271,7 @@ export async function makeCardsInto({ collection, theme, wishes, count, scenes =
   };
   await Promise.all(Array.from({ length: Math.min(Math.max(1, settings.set.parallel), queue.length) }, async () => {
     for (let i = queue.shift(); i !== undefined; i = queue.shift()) {
-      if (signal?.aborted || keyProblem) report({ title: String(plan.cards[i].order.title), card: null, result: 'cancelled', spent: 0 }, keyProblem ? 'не начата: проблема с ключом' : 'отменена');
+      if (signal?.aborted || keyProblem) report({ title: String(plan.cards[i].order.title), card: null, result: 'cancelled', spent: 0 }, keyProblem ? 'не начата: нет доступа к сервису' : 'отменена');
       else await one(i);
     }
   }));

@@ -17,6 +17,7 @@ Read first: `core/README.md` (modules, the Store API contract, calling conventio
 - **No build.** Plain JavaScript with JSDoc types checked by `tsc` (`tsconfig.json`); Node only, no framework; the one dependency is `sharp` (`package.json`). Processing is own code: `core/image/adjust.js` has no imports and runs in the browser too, so the editor's preview equals the card.
 - **The person's word outranks the rules**: a request (`regenerate`, `edit`, `import`) or a choice (`card choose`) makes its version the card and keeps it on recheck; `promptOverride` and `humanRequest` lift the style's limits.
 - **Outline policy** (`core/card/make.js` header): a FAIL resting on an unconfirmed hero outline never triggers a paid regeneration.
+- **A new attempt learns from the last** (`core/card/fix.js`, `textFrom` next to `visionFrom` in `make.js`): before an attempt after one with findings, and on `regenerateCard` (no wish required; `n` = the version to fix), the text model writes a correction appended to the prompt (the attempt's `fix`, its cost under spend kind `text`); a person's wish goes in as is and outranks the findings; no text key — no correction. `proposeCardWish` proposes a wish from a version's findings. A `ProviderError` carries `service`, so a Codex login, absence or limit stops a run with its own message.
 - **Command line**: `tools/cli-args.mjs` — `--help`, an unknown option refused with exit 2 before anything runs, `--json` for agents.
 
 ## What other parts rely on

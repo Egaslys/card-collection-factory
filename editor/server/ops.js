@@ -179,6 +179,14 @@ export const OPS = {
 
   // ---------- one card (core/card) ----------
   getCard: { run: getCard },
+  proposeCardWish: {
+    run: async a => {
+      const { proposeCardWish, textFrom } = await import('../../core/card/make.js');
+      const s = settings();
+      const text = /** @type {import('../../core/card/fix.js').TextCall} */ (textFrom(s.provider, { apiKey: keyOrThrow() }));
+      return proposeCardWish({ dir: cardDirOf(a), n: a.n, notes: a.notes, language: a.language, collectionId: a.collectionId, settings: s, text });
+    },
+  },
   makeCard: {
     job: true, cancellable: true,
     title: a => `Карточка «${a.order?.title ?? a.order?.id ?? ''}»`,
@@ -201,7 +209,7 @@ export const OPS = {
     run: async (a, { progress, signal }) => {
       const s = settings();
       const { regenerateCard } = await import('../../core/card/make.js');
-      return regenerateCard({ dir: cardDirOf(a), wish: a.wish, settings: s, provider: await providerOf(s, a), limits: a.limits, signal, onProgress: cardProgress(progress) });
+      return regenerateCard({ dir: cardDirOf(a), wish: a.wish, n: a.n, settings: s, provider: await providerOf(s, a), limits: a.limits, signal, onProgress: cardProgress(progress) });
     },
   },
   editCard: {

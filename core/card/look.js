@@ -44,7 +44,7 @@ export function lookPrompt({ title, order, visual, settings }) {
   const p = settings.prompt;
   const questions = Object.entries(p.questions).map(([k, q]) => `${k}: ${q}`).join('\n');
   const checklist = visual.map(v => `${v.id}: ${v.what}`).join('\n');
-  const json = `{"seen": "...", "differences": ["..."], ${Object.keys(p.questions).map(k => `"${k}": {"ok": true or false, "why": "..."}`).join(', ')}, "checklist": [{"id": "...", "why": "..."}]}`;
+  const json = `{"seen": "...", "defects": ["..."], "differences": ["..."], ${Object.keys(p.questions).map(k => `"${k}": {"ok": true or false, "why": "..."}`).join(', ')}, "checklist": [{"id": "...", "why": "..."}]}`;
   return p.template.replace('{title}', () => title).replace('{order}', () => order).replace('{questions}', () => questions)
     .replace('{checklist}', () => checklist || '(none)').replace('{answer}', () => p.answer.replace('{json}', () => json));
 }

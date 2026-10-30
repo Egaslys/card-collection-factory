@@ -36,7 +36,7 @@ const settingsDir = () => (process.env.CCF_SETTINGS_DIR ? path.resolve(process.e
 /**
  * @typedef {object} Settings
  * @property {ProviderSettings} provider
- * @property {{attempts: number, maxSpendUsd: number, tuneProcessing: boolean, editPrompt: string, editLegend: string}} card
+ * @property {{attempts: number, maxSpendUsd: number, tuneProcessing: boolean, editPrompt: string, editLegend: string, fix: import('./card/fix.js').FixSettings}} card
  * @property {Record<string, import('./image/adjust.js').AdjustSettings>} processing  per model id; overrides the style's start
  * @property {import('./card/hero.js').VisionSettings} vision  the vision model that looks at finished cards
  * @property {import('./card/hero.js').HeroSettings} hero  finding the hero's outline when nobody gives its box

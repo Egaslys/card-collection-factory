@@ -7,6 +7,13 @@
 // Every value comes from the caller: the factory keeps them in settings/defaults.json (provider.codexCli).
 // Codex runs a model that runs commands: it gets the environment without the factory's service keys (`withoutEnv`,
 // the callers pass every preset's keyEnvVar), so nothing it runs can read them.
+// Failures a person must act on are ProviderErrors of kind auth or billing with `service` "codex-cli" and a one-line
+// message saying what to do; they stop a run over many cards (core/card/make.js keyProblemOf). Checked on codex-cli
+// 0.166.0 (2026-10-31): `codex login status` answers at once — exit 0 and «Logged in using ChatGPT», or exit 1 and
+// «Not logged in» — so it is asked before every run; without a login `codex exec` retries 401 Unauthorized for about
+// 30 s and exits 1 with `error` / `turn.failed` events. The usage-limit and plan texts are taken from the strings of
+// the Codex binary («You've hit your usage limit…», «Usage limit reached», «out of credits», «To use Codex with your
+// ChatGPT plan, upgrade to Plus»); a real limit was not reproduced.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -17,6 +24,25 @@ import { ProviderError } from './openrouter.js';
 const MIME_BY_EXT = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
 /** @type {Record<string, string>} */
 const EXT_BY_MIME = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp' };
+
+const SERVICE = 'codex-cli';
+const LOGIN_TEXT = 'Codex CLI не вошёл в аккаунт ChatGPT (или вход устарел): выполните в терминале «codex login» и запустите снова.';
+const AUTH_SIGNS = /401 Unauthorized|not logged in|missing bearer|sign in again|reauthenticate|refresh token|token (has )?expired|log ?in again/i;
+const LIMIT_SIGNS = /usage limit|hit your usage|out of credits|spend cap|quota exceeded|upgrade to (plus|pro)|purchase more credits/i;
+
+/**
+ * What a failure text of Codex means for a person, or null when it is none of the known kinds.
+ * @param {string} text  Codex's error events and stderr
+ * @returns {{kind: 'auth'|'billing', message: string}|null}
+ */
+export function failureOf(text) {
+  if (LIMIT_SIGNS.test(text)) {
+    const when = text.match(/try again (?:at|in) [^.,|"]+/i)?.[0];
+    return { kind: 'billing', message: `Codex CLI: исчерпан лимит подписки ChatGPT или в тарифе нет Codex${when ? ` (Codex пишет: ${when})` : ''}. Дождитесь, когда лимит обновится, или рисуйте через сервис с ключом (настройки: кто рисует картинки).` };
+  }
+  if (AUTH_SIGNS.test(text)) return { kind: 'auth', message: LOGIN_TEXT };
+  return null;
+}
 
 /** @typedef {{timeoutMs?: number, spawnImpl?: typeof spawn, codexHome?: string}} CodexNet */
 /**
@@ -44,12 +70,13 @@ function run(spawnImpl, command, args, cwd, input, timeoutMs, env) {
     const finish = (/** @type {() => void} */ fn) => { if (!done) { done = true; clearTimeout(timer); fn(); } };
     const timer = setTimeout(() => {
       child.kill('SIGKILL');
-      finish(() => reject(new ProviderError(`Codex не закончил за ${timeoutMs} мс, процесс остановлен.`)));
+      finish(() => reject(new ProviderError(`Codex CLI не закончил за ${Math.round(timeoutMs / 1000)} с: процесс остановлен.`, { service: SERVICE })));
     }, timeoutMs);
     child.stdout?.on('data', d => { stdout += d; });
     child.stderr?.on('data', d => { stderr += d; });
     child.on('error', (/** @type {NodeJS.ErrnoException} */ e) => finish(() => reject(new ProviderError(
-      e.code === 'ENOENT' ? `Команда «${command}» не найдена: установите Codex CLI и войдите (codex login).` : `Не удалось запустить «${command}»: ${e.message}`))));
+      e.code === 'ENOENT' ? `Codex CLI не найден (команда «${command}»): установите Codex CLI и войдите в него командой «codex login».` : `Не удалось запустить «${command}»: ${e.message}`,
+      e.code === 'ENOENT' ? { kind: 'auth', service: SERVICE } : { service: SERVICE }))));
     child.on('close', code => finish(() => resolve({ code, stdout, stderr })));
     child.stdin?.on('error', () => { /* the process died early; its exit is reported by 'close' */ });
     child.stdin?.end(input);
@@ -105,6 +132,9 @@ export async function generateImage({ settings: d, model, prompt, references = [
 
     const env = { ...process.env };
     for (const k of withoutEnv) delete env[k];
+    // not logged in: say so at once (codex exec would retry for half a minute and then fail)
+    const login = await run(spawnImpl, d.command, ['login', 'status'], scratch, '', net.timeoutMs ?? d.timeoutMs, env);
+    if (login.code !== 0) throw new ProviderError(LOGIN_TEXT, { kind: 'auth', service: SERVICE, providerMessage: `${login.stdout} ${login.stderr}`.trim().slice(0, 300) });
     const { code, stdout, stderr } = await run(spawnImpl, d.command, args, scratch, text, net.timeoutMs ?? d.timeoutMs, env);
     /** @type {string|undefined} */
     let threadId;
@@ -117,9 +147,15 @@ export async function generateImage({ settings: d, model, prompt, references = [
       if (e.type === 'thread.started') threadId = e.thread_id;
       if (e.type === 'error' || e.type === 'turn.failed') errors.push(String(e.message ?? e.error?.message ?? e.error ?? '').slice(0, 400));
     }
-    const fail = (/** @type {string} */ why) => new ProviderError(`Codex: ${why}`, { providerMessage: [...errors, stderr.trim().slice(-300)].filter(Boolean).join(' | ') });
-    if (code !== 0) throw fail(`код выхода ${code}.`);
-    if (errors.length) throw fail('ошибка во время генерации.');
+    const providerMessage = [...errors, stderr.trim().slice(-300)].filter(Boolean).join(' | ');
+    const fail = (/** @type {string} */ why) => new ProviderError(`Codex CLI: ${why}`, { providerMessage, service: SERVICE });
+    const known = failureOf(providerMessage);
+    if (known) throw new ProviderError(known.message, { kind: known.kind, service: SERVICE, providerMessage });
+    // the last error event is the one the run ended on (the earlier ones are its retries)
+    const last = errors.at(-1);
+    const said = last ? ` Codex пишет: ${last.slice(0, 200)}` : '';
+    if (code !== 0) throw fail(`не нарисовал картинку (код выхода ${code}).${said}`);
+    if (errors.length) throw fail(`ошибка во время генерации.${said}`);
     if (!threadId) throw fail('в выводе нет thread.started.');
     const dir = path.join(codexHome, 'generated_images', threadId);
     /** @type {string[]} */

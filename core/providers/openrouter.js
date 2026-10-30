@@ -23,21 +23,23 @@ const MIME_BY_EXT = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image
 
 /**
  * Provider failure: `status` is the HTTP status (0 for timeout/network), `providerMessage` is the provider's own text,
- * `kind` what it means for a run (ErrorKind).
+ * `kind` what it means for a run (ErrorKind); `service` "codex-cli" for Codex, whose message already says what a person
+ * must do (it has no key: core/card/make.js keyProblemOf passes the message on as it is).
  */
 export class ProviderError extends Error {
   /**
    * @param {string} message
-   * @param {{status?: number, providerMessage?: string, cost?: number|null, kind?: ErrorKind}} [info]  cost: USD of a
+   * @param {{status?: number, providerMessage?: string, cost?: number|null, kind?: ErrorKind, service?: string}} [info]  cost: USD of a
    *   call that was answered and paid but is of no use (no image, no text); null = not known or nothing paid
    */
-  constructor(message, { status = 0, providerMessage = '', cost = null, kind = 'other' } = {}) {
+  constructor(message, { status = 0, providerMessage = '', cost = null, kind = 'other', service } = {}) {
     super(message);
     this.name = 'ProviderError';
     this.status = status;
     this.providerMessage = providerMessage;
     this.cost = cost;
     this.kind = kind;
+    if (service) this.service = service;
   }
 }
 

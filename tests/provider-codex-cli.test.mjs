@@ -15,10 +15,20 @@ const THREAD = 'thread-1';
 const events = (...e) => e.map(x => JSON.stringify(x)).join('\n') + '\n';
 const okEvents = events({ type: 'thread.started', thread_id: THREAD }, { type: 'turn.completed' });
 
-// A fake process. `onSpawn(cmd, args, opts, input)` may write the picture into the fake Codex home.
-function mock({ stdout = okEvents, stderr = '', code = 0, hang = false, spawnError, onSpawn } = {}) {
+// A fake process. `onSpawn(cmd, args, opts, input)` may write the picture into the fake Codex home. `codex login
+// status` answers `login` (exit code; 0 = logged in) and is not counted in `calls`.
+function mock({ stdout = okEvents, stderr = '', code = 0, hang = false, spawnError, onSpawn, login = 0 } = {}) {
   const calls = [];
+  const logins = [];
   const spawnImpl = (cmd, args, opts) => {
+    if (args[0] === 'login' && !spawnError) {
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter(); child.stderr = new EventEmitter(); child.kill = () => {};
+      child.stdin = { on() {}, end() {} };
+      logins.push({ cmd, args, opts });
+      setImmediate(() => { child.stdout.emit('data', login ? 'Not logged in\n' : 'Logged in using ChatGPT\n'); child.emit('close', login); });
+      return child;
+    }
     const child = new EventEmitter();
     child.stdout = new EventEmitter();
     child.stderr = new EventEmitter();
@@ -38,7 +48,7 @@ function mock({ stdout = okEvents, stderr = '', code = 0, hang = false, spawnErr
     });
     return child;
   };
-  return { calls, spawnImpl };
+  return { calls, logins, spawnImpl };
 }
 const home = () => fs.mkdtempSync(path.join(os.tmpdir(), 'ccf-test-home-'));
 const putImage = (codexHome, name = 'exec-1.png', bytes = png) => {
@@ -132,7 +142,7 @@ test('generateImage: Codex не получает ключей сервисов �
 test('generateImage: ненулевой код выхода, ошибка в событиях, нет картинки', async () => {
   const codexHome = home();
   await assert.rejects(generateImage({ settings: CODEX, prompt: 'p', net: { spawnImpl: mock({ code: 1, stderr: 'boom' }).spawnImpl, codexHome } }),
-    e => e instanceof ProviderError && /код выхода 1/.test(e.message) && /boom/.test(e.providerMessage));
+    e => e instanceof ProviderError && /^Codex CLI: не нарисовал картинку \(код выхода 1\)/.test(e.message) && /boom/.test(e.providerMessage) && e.kind === 'other');
   const bad = events({ type: 'thread.started', thread_id: THREAD }, { type: 'error', message: 'model is not supported when using Codex with a ChatGPT account' });
   await assert.rejects(generateImage({ settings: CODEX, prompt: 'p', net: { spawnImpl: mock({ stdout: bad }).spawnImpl, codexHome } }),
     e => e instanceof ProviderError && /not supported/.test(e.providerMessage));
@@ -143,10 +153,12 @@ test('generateImage: ненулевой код выхода, ошибка в с�
 test('generateImage: таймаут убивает процесс; нет команды — понятная ошибка', async () => {
   const m = mock({ hang: true });
   await assert.rejects(generateImage({ settings: CODEX, prompt: 'p', net: { spawnImpl: m.spawnImpl, timeoutMs: 20, codexHome: home() } }), e => e instanceof ProviderError && /не закончил/.test(e.message));
+  assert.equal(m.logins.length, 1, 'вход проверен до запуска');
   assert.equal(m.calls[0].child.killed, true);
   assert.equal(fs.existsSync(m.calls[0].opts.cwd), false);
   const enoent = Object.assign(new Error('x'), { code: 'ENOENT' });
-  await assert.rejects(generateImage({ settings: CODEX, prompt: 'p', net: { spawnImpl: mock({ spawnError: enoent }).spawnImpl, codexHome: home() } }), /не найдена/);
+  await assert.rejects(generateImage({ settings: CODEX, prompt: 'p', net: { spawnImpl: mock({ spawnError: enoent }).spawnImpl, codexHome: home() } }),
+    e => /^Codex CLI не найден/.test(e.message) && e.kind === 'auth' && e.service === 'codex-cli');
 });
 
 test('generateImage: образец без пути и mime, путь с запятой — ошибки до запуска', async () => {
@@ -154,4 +166,19 @@ test('generateImage: образец без пути и mime, путь с зап�
   await assert.rejects(generateImage({ settings: CODEX, prompt: 'p', references: [{ bytes: Buffer.from('a') }], net: { spawnImpl: m.spawnImpl } }), /нет ни пути/);
   await assert.rejects(generateImage({ settings: CODEX, prompt: 'p', references: [{ path: '/a,b.png' }], net: { spawnImpl: m.spawnImpl } }), /запят/);
   assert.equal(m.calls.length, 0);
+});
+
+test('generateImage: нет входа, лимит подписки — одна понятная строка, вид auth или billing, Codex не запускается без входа', async () => {
+  const { keyProblemOf } = await import('../core/card/make.js');
+  const codexHome = home();
+  const out = mock({ login: 1 });
+  await assert.rejects(generateImage({ settings: CODEX, prompt: 'p', net: { spawnImpl: out.spawnImpl, codexHome } }),
+    e => e.kind === 'auth' && e.service === 'codex-cli' && /codex login/.test(e.message) && keyProblemOf(e)?.message === e.message);
+  assert.equal(out.calls.length, 0, 'codex exec не запускался');
+  // the session expired after the check: 401 in the events (as codex-cli 0.166.0 prints it)
+  const expired = events({ type: 'thread.started', thread_id: THREAD }, { type: 'error', message: 'unexpected status 401 Unauthorized: Missing bearer or basic authentication in header' }, { type: 'turn.failed', error: { message: 'unexpected status 401 Unauthorized' } });
+  await assert.rejects(generateImage({ settings: CODEX, prompt: 'p', net: { spawnImpl: mock({ stdout: expired, code: 1 }).spawnImpl, codexHome } }), e => e.kind === 'auth' && /codex login/.test(e.message));
+  const limit = events({ type: 'thread.started', thread_id: THREAD }, { type: 'turn.failed', error: { message: "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), or try again at 5:04 PM." } });
+  await assert.rejects(generateImage({ settings: CODEX, prompt: 'p', net: { spawnImpl: mock({ stdout: limit, code: 1 }).spawnImpl, codexHome } }),
+    e => e.kind === 'billing' && /исчерпан лимит подписки/.test(e.message) && /try again at 5:04 PM/.test(e.message) && !e.message.includes('\n'));
 });

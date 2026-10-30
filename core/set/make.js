@@ -219,7 +219,7 @@ export async function makeSet({ collection, plan: input, set: setId, settings, p
       if (r.stop === 'key' && r.keyProblem) keyProblem ??= r.keyProblem;
       const blocking = r.chosenCheck?.blocking ?? null;
       report({ slot: i + 1, title, card: r.id, result: 'made', stop: r.stop, spent: r.spent ?? 0, blocking, image: r.image },
-        `${r.image ? `готово (блокирующих FAIL ${blocking ?? '—'})` : r.stop === 'key' ? 'картинки нет: проблема с ключом' : 'картинки нет'}, $${(r.spent ?? 0).toFixed(4)}`);
+        `${r.image ? `готово (блокирующих FAIL ${blocking ?? '—'})` : r.stop === 'key' ? 'картинки нет: нет доступа к сервису (ключ, вход в Codex или лимит)' : 'картинки нет'}, $${(r.spent ?? 0).toFixed(4)}`);
     } catch (/** @type {any} */ e) {
       keyProblem ??= await keyProblemOf(e);
       report({ slot: i + 1, title, card: existing, result: 'failed', spent: 0, error: String(e?.message ?? e) }, `ошибка: ${e?.message ?? e}`);
@@ -231,7 +231,7 @@ export async function makeSet({ collection, plan: input, set: setId, settings, p
     for (let i = queue.shift(); i !== undefined; i = queue.shift()) {
       if (signal?.aborted || keyProblem) {
         const s = plan.slots[i];
-        report({ slot: i + 1, title: String(s.order.title), card: set.slots[i] ?? null, result: 'cancelled', spent: 0 }, keyProblem ? 'не начата: проблема с ключом' : 'отменена');
+        report({ slot: i + 1, title: String(s.order.title), card: set.slots[i] ?? null, result: 'cancelled', spent: 0 }, keyProblem ? 'не начата: нет доступа к сервису' : 'отменена');
         continue;
       }
       await one(i);
@@ -287,7 +287,7 @@ export async function makeCollection({ collection, numbers, sets: only, settings
   let keyProblem;
   for (const s of chosen) {
     if (signal?.aborted) { skipped.push(`«${s.title}» (№${s.number}): отменено`); continue; }
-    if (keyProblem) { skipped.push(`«${s.title}» (№${s.number}): не начат — проблема с ключом`); continue; }
+    if (keyProblem) { skipped.push(`«${s.title}» (№${s.number}): не начат — нет доступа к сервису`); continue; }
     if (!s.plan) { skipped.push(`«${s.title}» (№${s.number}): нет плана`); continue; }
     const left = limits.maxSpendUsd === undefined ? undefined : limits.maxSpendUsd - spent;
     if (left !== undefined && left <= 0 && !(provider.free && !provider.fallback)) { skipped.push(`«${s.title}» (№${s.number}): исчерпан общий потолок расходов запуска`); continue; }

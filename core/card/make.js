@@ -25,6 +25,11 @@
 // nothing unordered? Its "no" to an order question of a blocking kind (settings → look) counts as a blocking problem
 // and the loop regenerates; its other answers go to the report. Its calls and the hero's are added to the spend.
 //
+// Learning from a failure (fix.js). A regeneration does not repeat the same prompt blindly: before each new attempt
+// whose earlier attempt has findings (the run's own last failed attempt; for `regenerateCard`, the version the person
+// starts from), the text model of the preset writes a correction from them that is added at the end of the prompt and
+// kept in the attempt (`fix`, its cost counted as text). Without the preset's key there is no correction.
+//
 // Post-processing is tuned per attempt (tune.js): from the style's start settings for the model, the search moves
 // saturation, brightness and sharpening until the whole-card measures are inside the bible's aims, with the smallest
 // change. The backdrop's colour joins the measures when the hero outline is trusted, or once a person or the agent
@@ -45,9 +50,11 @@ import { loadStyle, styleDirOf } from '../style/style.js';
 import * as factoryStore from '../store/index.js';
 import { ATTEMPT_FILES, FINAL_IMAGE, attemptCost, attemptDir, markBusy, readCardFile, reserveAttempt, updateCardFile } from './card-file.js';
 import { checkAttempt, styleChecker, styleDir, withLook } from './check.js';
+import { findingsOf, proposeWish, writeFix } from './fix.js';
 import { findHero, locateHero, readOutline, readPixels as heroPixels, writeOutline } from './hero.js';
 import { lookAtCard } from './look.js';
 import { tuneProcessing } from './tune.js';
+import { textCallOptions } from '../text/draft.js';
 
 /** @typedef {import('./card-file.js').Attempt} Attempt */
 /** @typedef {import('./card-file.js').CardFile} CardFile */
@@ -64,8 +71,9 @@ import { tuneProcessing } from './tune.js';
  * attempt, when this one fails (an error, a refusal, an answer without an image). legend: what the attached images
  * are, for a provider that says it in words (Codex); default: style references. vision: asks the vision model about one
  * image through the API preset of the run (provider.preset, with its key); absent when there is no key — the loop then
- * finds no hero box by itself and does not look (settings → vision, hero, look).
- * @typedef {{model: string, free?: boolean, fallback?: Provider, vision?: VisionCall,
+ * finds no hero box by itself and does not look (settings → vision, hero, look). text: the text model of the preset
+ * (with its key), which writes the correction of a failed picture before the next attempt (fix.js); absent without a key.
+ * @typedef {{model: string, free?: boolean, fallback?: Provider, vision?: VisionCall, text?: import('./fix.js').TextCall,
  *   generate: (req: {prompt: string, references: {path: string}[], aspectRatio?: string, legend?: string, crop?: {width: number, height: number}}) => Promise<{bytes: Uint8Array, mime?: string, cost: number|null}>}} Provider
  */
 
@@ -94,16 +102,19 @@ import { tuneProcessing } from './tune.js';
 
 /**
  * What stopped a run on the key: `kind` auth (the key is not accepted) or billing (no money, no billing, a used-up
- * daily quota), `message` in Russian for a person, starting «С ключом проблема:».
+ * daily quota), `message` in Russian for a person, starting «С ключом проблема:»; for Codex (no key): not logged in,
+ * not installed, or the subscription's limit is used up, its own message starting «Codex CLI».
  * @typedef {{kind: 'auth'|'billing', message: string}} KeyProblem
  */
 
 /**
- * A key problem from a provider's failure (its ErrorKind), or null.
- * @param {{kind?: string, message?: string}|null|undefined} e @returns {KeyProblem|null}
+ * A key problem from a provider's failure (its ErrorKind), or null. Codex has no key: its error already says what a
+ * person must do (log in, wait for the subscription's limit), and that is the message.
+ * @param {{kind?: string, message?: string, service?: string}|null|undefined} e @returns {KeyProblem|null}
  */
 export function keyProblemOf(e) {
   if (e?.kind !== 'auth' && e?.kind !== 'billing') return null;
+  if (e.service === 'codex-cli') return { kind: e.kind, message: String(e.message ?? '') };
   const what = e.kind === 'billing' ? 'на счёте сервиса кончились деньги, не включена оплата или исчерпана дневная квота' : 'сервис не принял ключ (неверный, отозван или без доступа)';
   return { kind: e.kind, message: `С ключом проблема: ${what}. Ответ сервиса: ${e.message ?? ''} Пополните счёт или замените ключ и запустите снова.` };
 }
@@ -257,6 +268,7 @@ export function providerFrom(settings, { apiKey: held, model: chosen } = {}) {
     const c = settings.codexCli;
     const profile = profileOf(settings.models, CODEX_PROFILE);
     const vision = visionFrom(settings, { apiKey: held });
+    const text = textFrom(settings, { apiKey: held });
     return {
       model: 'codex-cli' + (c.model ? `/${c.model}` : ''), free: true,
       generate: async ({ prompt, references, aspectRatio, legend, crop }) => codexCli.generateImage({
@@ -264,6 +276,7 @@ export function providerFrom(settings, { apiKey: held, model: chosen } = {}) {
         aspectRatio: requestFor(profile, { model: CODEX_PROFILE, aspectRatio: aspectRatio ?? c.aspectRatio, references: references.length, crop }).aspectRatio,
       }),
       ...(vision ? { vision } : {}),
+      ...(text ? { text } : {}),
     };
   }
   if (settings.use !== 'api') throw new Error(`Настройки: неизвестный провайдер provider.use = «${settings.use}» (есть api и codex-cli).`);
@@ -284,7 +297,10 @@ export function providerFrom(settings, { apiKey: held, model: chosen } = {}) {
   };
   const main = chosen ?? o.model;
   const fallback = o.fallbackModel && o.fallbackModel !== main ? o.fallbackModel : null;
-  return { ...on(main), ...(fallback ? { fallback: on(fallback) } : {}), vision: /** @type {VisionCall} */ (visionFrom(settings, { apiKey })) };
+  return {
+    ...on(main), ...(fallback ? { fallback: on(fallback) } : {}),
+    vision: /** @type {VisionCall} */ (visionFrom(settings, { apiKey })), text: /** @type {import('./fix.js').TextCall} */ (textFrom(settings, { apiKey })),
+  };
 }
 
 /**
@@ -306,6 +322,27 @@ export function visionFrom(settings, { apiKey } = {}) {
     endpoint: o.endpoint, apiKey: k, prices: o.prices, model, prompt, image, maxTokens, reasoning, net: { timeoutMs, retries: o.retries, backoffMs: o.backoffMs },
   });
   return Object.assign(call, { model: o.visionModel });
+}
+
+/**
+ * The text call through the API preset (its endpoint and text model) with the caller's key or the one in the
+ * environment or .env; null without a key. It never throws for a missing key: without one, a failed picture is simply
+ * drawn again from the same prompt.
+ * @param {import('../settings.js').ProviderSettings} settings
+ * @param {{apiKey?: string|null}} [o]
+ * @returns {import('./fix.js').TextCall|null}
+ */
+export function textFrom(settings, { apiKey } = {}) {
+  const o = presetOf(settings);
+  let key = apiKey ?? null;
+  try { key ??= loadApiKey({ envVar: o.keyEnvVar }); } catch { /* no key: no correction */ }
+  if (!key) return null;
+  const k = key;
+  const call = (/** @type {Parameters<import('./fix.js').TextCall>[0]} */ { messages, maxTokens, json, reasoning, timeoutMs }) => apiOf(o.name).complete({
+    endpoint: o.endpoint, apiKey: k, prices: o.prices, model: o.textModel, messages, maxTokens, json, ...(reasoning ? { reasoning } : {}),
+    net: { timeoutMs, retries: o.retries, backoffMs: o.backoffMs },
+  });
+  return Object.assign(call, { model: o.textModel });
 }
 
 /**
@@ -508,6 +545,8 @@ export function cardReport(dir, card, ns) {
  * @param {CardFile} o.card
  * @param {{prompt: string, references: {path: string}[], legend?: string}} o.request  what every attempt sends
  * @param {Partial<Attempt>} [o.mark]  recorded in every attempt of the run (the person's wish, the attempt edited)
+ * @param {Attempt|null} [o.failed]  an earlier attempt whose findings the first attempt of the run corrects (regenerate);
+ *   later attempts correct the findings of the run's own last failed attempt (fix.js, settings card.fix)
  * @param {Provider} o.provider
  * @param {import('../settings.js').Settings} o.settings
  * @param {{attempts: number, maxSpendUsd: number}} o.limits
@@ -521,7 +560,7 @@ async function runAttempts({ what, ...o }) {
 }
 
 /** runAttempts without the busy marker. @param {Omit<Parameters<typeof runAttempts>[0], 'what'>} o */
-async function attemptsRun({ dir, card, request, mark = {}, provider, settings, limits, control = {} }) {
+async function attemptsRun({ dir, card, request, mark = {}, failed = null, provider, settings, limits, control = {} }) {
   const { order } = card;
   const output = outputOf(order);
   const ask = askOf(provider.vision, settings);
@@ -545,14 +584,25 @@ async function attemptsRun({ dir, card, request, mark = {}, provider, settings, 
   let spent = 0;
   /** @type {StopReason|undefined} */
   let stop;
+  /** the attempt whose findings the next one corrects */
+  let last = failed;
   /** @param {Progress['stage']} stage @param {number|null} n  the attempt under way (null: the run is over) */
   const tell = (stage, n) => control.onProgress?.({ stage, n, done: ns.length - (n == null ? 0 : 1), of: limits.attempts, spent });
   for (;;) {
     const limit = control.signal?.aborted ? 'cancelled' : nextStep({ done: ns.length, spent, limits, priceHint: priceHint(provider.model) });
     if (limit) { stop = limit; break; }
+    /** @type {Attempt['fix']} */
+    let fix;
+    try { fix = await fixFor({ last, request, wish: mark.wish, provider, settings }); } catch (/** @type {any} */ e) {
+      // the text model's service refused the key or wants money: no later call of it can succeed
+      if ((keyProblem = keyProblemOf(e))) { stop = 'key'; break; }
+      fix = { from: /** @type {Attempt} */ (last).n, text: null, model: provider.text?.model ?? '', cost: typeof e?.cost === 'number' ? e.cost : 0, error: String(e?.message ?? e) };
+    }
+    spent += fix?.cost ?? 0;
+    const prompt = fix?.text ? `${request.prompt}\n\n${fix.text}` : request.prompt;
     const n = reserveAttempt(dir, Math.max(0, ...card.attempts.map(a => a.n)));
     /** @type {Attempt} */
-    const attempt = { n, at: new Date().toISOString(), model: provider.model, ...mark, prompt: request.prompt, references: request.references.map(r => path.relative(ROOT, r.path)), cost: null };
+    const attempt = { n, at: new Date().toISOString(), model: provider.model, ...mark, prompt, ...(fix ? { fix } : {}), references: request.references.map(r => path.relative(ROOT, r.path)), cost: null };
     card.attempts.push(attempt);
     own.push(attempt);
     ns.push(n);
@@ -564,7 +614,7 @@ async function attemptsRun({ dir, card, request, mark = {}, provider, settings, 
     /** @param {any} e */
     const paid = e => { if (typeof e?.cost === 'number') { failedUsd = (failedUsd ?? 0) + e.cost; spent += e.cost; } };
     try {
-      answer = await provider.generate(req);
+      answer = await provider.generate({ ...req, prompt });
     } catch (/** @type {any} */ e) {
       paid(e);
       const fallback = provider.fallback;
@@ -577,7 +627,7 @@ async function attemptsRun({ dir, card, request, mark = {}, provider, settings, 
         attempt.fallbackFrom = { model: provider.model, error: failure(e) };
         attempt.model = fallback.model;
         used = fallback;
-        try { answer = await fallback.generate(req); } catch (/** @type {any} */ e2) {
+        try { answer = await fallback.generate({ ...req, prompt }); } catch (/** @type {any} */ e2) {
           paid(e2);
           attempt.error = { stage: 'generate', ...failure(e2) };
           stop = (keyProblem = keyProblemOf(e2)) ? 'key' : 'provider-error';
@@ -589,8 +639,9 @@ async function attemptsRun({ dir, card, request, mark = {}, provider, settings, 
     spent += used.free ? 0 : answer.cost ?? 0;
     tell('process', n);
     for (const w of await processInto({ order, attempt, dir: adir, bytes: answer.bytes, mime: answer.mime, settings, output, ask })) warnings.add(w);
-    spent += attemptCost(attempt) - (attempt.cost ?? 0);
+    spent += attemptCost(attempt) - (attempt.cost ?? 0) - (attempt.fix?.cost ?? 0);
     save();
+    if (attempt.check && attempt.check.blocking > 0) last = attempt;
     // the vision model's service refused the key: the next attempts could not be looked at either
     if ((keyProblem = keyProblemOf(attempt.look?.error ? { kind: attempt.look.errorKind, message: attempt.look.error } : null))) { stop = 'key'; break; }
     if (attempt.cost == null) { stop = 'cost-unknown'; break; }
@@ -598,6 +649,20 @@ async function attemptsRun({ dir, card, request, mark = {}, provider, settings, 
   }
   tell('done', null);
   return { ns, spent, stop: /** @type {StopReason} */ (stop), warnings: [...(keyProblem ? [keyProblem.message] : []), ...warnings], ...(keyProblem ? { keyProblem } : {}) };
+}
+
+/**
+ * The correction of the next attempt (fix.js): written by the provider's text model from the findings of `last`, the
+ * attempt it follows, when settings card.fix allow it; undefined when there is nothing to correct or no text model.
+ * Throws when the call fails (a ProviderError carries its cost and kind).
+ * @param {{last: Attempt|null, request: {prompt: string}, wish?: string, provider: Provider, settings: import('../settings.js').Settings}} o
+ * @returns {Promise<Attempt['fix']>}
+ */
+async function fixFor({ last, request, wish, provider, settings }) {
+  const findings = last ? findingsOf(last) : [];
+  if (!last || !findings.length || !settings.card.fix?.use || !provider.text) return undefined;
+  const r = await writeFix({ prompt: request.prompt, findings, previous: last.fix?.text ?? undefined, wish, text: provider.text, settings: settings.card.fix, model: textCallOptions(settings) });
+  return { from: last.n, text: r.text, model: provider.text.model, cost: r.cost ?? 0, ...(r.skipped?.length ? { skipped: r.skipped } : {}), ...(r.error ? { error: r.error } : {}) };
 }
 
 /**
@@ -719,11 +784,15 @@ export async function orderPrompt({ order, settings, buildPrompt = o => styleBui
 }
 
 /**
- * Generates the card again from its order with the person's wish appended to the prompt (as `promptExtra`; added to
- * `promptOverride` when the order has one), as new attempts. The best of them becomes the card.
+ * Generates the card again from its order, as new attempts; the best of them becomes the card. The person's wish, when
+ * given, is appended to the prompt as it is (as `promptExtra`; added to `promptOverride` when the order has one). A
+ * wish is not required: when the attempt the person starts from (`n`, default the chosen one) has findings — FAILs,
+ * what the vision model saw — the text model writes a correction from them, with the wish outranking them, that is
+ * added at the end of the prompt (fix.js, settings card.fix; needs the preset's key).
  * @param {object} o
  * @param {string} o.dir  the card folder
- * @param {string} o.wish  the person's words, sent as they are
+ * @param {string} [o.wish]  the person's words, sent as they are
+ * @param {number} [o.n]  the attempt whose findings the new picture corrects (default: the chosen one)
  * @param {import('../settings.js').Settings} o.settings
  * @param {Provider} o.provider
  * @param {BuildPrompt} [o.buildPrompt]
@@ -731,14 +800,17 @@ export async function orderPrompt({ order, settings, buildPrompt = o => styleBui
  * @param {AbortSignal} [o.signal]  @param {RunControl['onProgress']} [o.onProgress]
  * @returns {Promise<CardReport>}
  */
-export async function regenerateCard({ dir, wish, settings, provider, buildPrompt = o => styleBuildPrompt(o), limits = {}, signal, onProgress }) {
-  const text = needWish(wish);
+export async function regenerateCard({ dir, wish, n, settings, provider, buildPrompt = o => styleBuildPrompt(o), limits = {}, signal, onProgress }) {
+  const text = typeof wish === 'string' ? wish.trim() : '';
   const card = needCard(dir);
   const { order } = card;
+  const from = n ?? card.chosen;
+  const failed = from == null ? null : card.attempts.find(a => a.n === from) ?? null;
+  if (n != null && !failed) throw new Error(`У карточки нет попытки ${n}.`);
   const key = order.promptOverride ? 'promptOverride' : 'promptExtra';
-  const { prompt, references, legend } = await buildPrompt({ ...order, [key]: [order[key], text].filter(Boolean).join(' ') });
+  const { prompt, references, legend } = await buildPrompt(text ? { ...order, [key]: [order[key], text].filter(Boolean).join(' ') } : order);
   const lim = { attempts: limits.attempts ?? REQUEST_ATTEMPTS, maxSpendUsd: limits.maxSpendUsd ?? settings.card.maxSpendUsd };
-  const run = await runAttempts({ what: 'regenerate', dir, card, request: { prompt, references, ...(legend ? { legend } : {}) }, mark: { wish: text }, provider, settings, limits: lim, control: { signal, onProgress } });
+  const run = await runAttempts({ what: 'regenerate', dir, card, request: { prompt, references, ...(legend ? { legend } : {}) }, mark: text ? { wish: text } : {}, failed, provider, settings, limits: lim, control: { signal, onProgress } });
   saveCard(dir, card, [], c => choose(dir, c, 'request', run.ns));
   return runReport(dir, card, run.ns, run, lim);
 }
@@ -766,6 +838,43 @@ export async function editCard({ dir, wish, n, settings, provider, limits = {}, 
   const run = await runAttempts({ what: 'edit', dir, card, request, mark: { wish: text, editOf: attempt.n }, provider, settings, limits: lim, control: { signal, onProgress } });
   saveCard(dir, card, [], c => choose(dir, c, 'request', run.ns));
   return runReport(dir, card, run.ns, run, lim);
+}
+
+/**
+ * Proposes a wish for the card's wish field (the editor's text help, «Сформулировать»): the text model reads what the
+ * attempt (`n`, default the chosen one) was ordered to show and what its checks and the vision model found, with the
+ * person's rough notes first when there are any, and writes what to change in the picture, for the person to read,
+ * edit and send. Nothing is saved; the call's cost goes to the spend ledger (store recordSpend, kind text).
+ * @param {object} o
+ * @param {string} o.dir  the card folder
+ * @param {number} [o.n]
+ * @param {string} [o.notes]  the person's rough notes in the field
+ * @param {string} [o.language]  a key of settings card.fix.languages (default "ru")
+ * @param {string|null} [o.collectionId]  the collection the spend counts for
+ * @param {import('../settings.js').Settings} o.settings
+ * @param {import('./fix.js').TextCall} o.text  the preset's text model with its key (textFrom)
+ * @param {Pick<typeof import('../store/index.js'), 'recordSpend'>} [o.store]
+ * @returns {Promise<{text: string, findings: string[], model: string, cost: number|null}>}  findings: what the wish was written from
+ */
+export async function proposeCardWish({ dir, n, notes, language = 'ru', collectionId = null, settings, text, store = factoryStore }) {
+  const card = needCard(dir);
+  const k = n ?? card.chosen;
+  const attempt = card.attempts.find(a => a.n === k);
+  if (!attempt) throw new Error(k == null ? 'У карточки нет выбранной версии: укажите номер версии.' : `У карточки нет попытки ${k}.`);
+  const findings = findingsOf(attempt);
+  if (!findings.length && !notes?.trim()) throw new Error('Проверки и смотрящая модель ничего не нашли у этой версии: напишите в поле, что хотите изменить, — модель сформулирует.');
+  /** @type {{text: string|null, cost: number|null, error?: string}} */
+  let r;
+  try {
+    r = await proposeWish({ title: String(card.order.title ?? ''), prompt: attempt.prompt || (await styleBuildPrompt(card.order)).prompt, findings, notes, language, text, settings: settings.card.fix, model: textCallOptions(settings) });
+  } catch (e) {
+    const cost = /** @type {any} */ (e)?.cost;
+    if (typeof cost === 'number' && cost > 0) await store.recordSpend(collectionId, { kind: 'text', what: 'card-wish', model: text.model, usd: cost });
+    throw e;
+  }
+  await store.recordSpend(collectionId, { kind: 'text', what: 'card-wish', model: text.model, usd: r.cost });
+  if (!r.text) throw new Error('Текстовая модель не предложила пожелание: попробуйте ещё раз.');
+  return { text: r.text, findings: findings.map(f => f.text), model: text.model, cost: r.cost };
 }
 
 /** @param {unknown} wish */

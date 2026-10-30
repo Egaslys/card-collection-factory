@@ -24,7 +24,7 @@ The box is in card pixels (the card size: `styles/<style>/README.md`), drawn by 
 
 ## 3. Look at the card
 
-With a key the vision model has already looked (`check.look`, the full answer in `attempts/<n>/look.json`): take its issues as leads, not as the review. Measured on 22 cards (`CHANGELOG.md`, the models entry of 2026-10-30), it caught a wrong backdrop or wall colour and a missing costume item, but never a subject drawn as a near kind (a pier that reads as a bench) or fine texture (mesh). An empty `issues` list does not mean the card is right; no `look` at all means nothing looked.
+With a key the vision model has already looked (`check.look`, the full answer in `attempts/<n>/look.json`): take its issues as leads, not as the review. Measured on 22 cards (`CHANGELOG.md`, the models entry of 2026-10-30), it caught a wrong backdrop or wall colour and a missing costume item, but never a subject drawn as a near kind (a pier that reads as a bench) or fine texture (mesh). An empty `issues` list does not mean the card is right; no `look` at all means nothing looked. Since 2026-10-31 it is also asked about drawing errors (`drawing`: limbs and hands, the gaze, repeated parts of one count and size, merged objects) and things with no source (a drop, a spark), but on the 14 measured attempts only gemini-4-argon saw them, gemini-3.8-flash none (`CHANGELOG.md`, 2026-10-31): with flash, look for these yourself.
 
 Open `card.png` (zoom in on small creatures and faces) and go section by section, giving each a pass or fail with a reason:
 
@@ -42,7 +42,7 @@ An order of kind `character-sheet` has no pixel checks: its `chosenVisual` list 
 | only tone: brightness, saturation, sharpness, too-dark shadows | `card adjust CARD_DIR [--saturation X] [--brightness Y] [--sharpen A] [--shadows S]` (bounds: `styles/<style>/processing.json`); values set by hand are never tuned again — `card adjust CARD_DIR --reset` gives back the processing the program tunes | free |
 | an earlier version was better | `card choose CARD_DIR --attempt N`: version N (attempt N) becomes the card; kept on recheck | free |
 | one local defect (a face on a fish, a wrong detail) | `card edit CARD_DIR --wish TEXT [--attempt N]` — that version's model image goes back with the wish | one generation |
-| subject, staging or composition wrong | `card regenerate CARD_DIR --wish TEXT`, or fix the order and `card make ORDER.json --collection ID --card CARD_ID` | generations |
+| subject, staging or composition wrong | `card regenerate CARD_DIR [--wish TEXT] [--attempt N]` (without a wish it fixes the findings of the chosen version, or of version N; `card wish CARD_DIR` proposes a wish), or fix the order and `card make ORDER.json --collection ID --card CARD_ID` | generations |
 | you draw with your own image tool | draw again, then `card import CARD_DIR IMAGE` | free |
 
 `--wish` carries the person's words as they are; a fix of your own is one plain English sentence of what should be seen, not a prohibition. `edit`, `regenerate` and `import` make the new attempt the card even when an earlier one passes more checks (a request outranks the rules); `card make` picks the best attempt by checks. Every attempt stays as a version: when a fix came out worse, `card choose` the better version back — never re-import an old `model.png` for that. After any fix, repeat steps 1–3. Paid fixes stay inside the cap the person agreed (ccf-make-cards step 1).
