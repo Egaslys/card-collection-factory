@@ -340,6 +340,8 @@
 
 Фрагменты для промпта генерации, по постановкам. В фигурных скобках — то, что подставляется под карточку. Цвета подставляются по [COLOUR.md](COLOUR.md), свет и материалы — по [RENDERING.md](RENDERING.md).
 
+Фрагменты волнистых полос, ромбов, спирали, шахматки и кирпича, а также варианты «plain wall» у стены, «deck or pier» и «sand» без задника и «low camera» в обстановке написаны по описанию эталона выше (числа — из «Узоров по видам», «Без задника» и «Горизонта и линии земли») и генерацией ещё не проверены. Списки стен в фрагментах «Стена» и «Предмет на стене» названы одними словами.
+
 Общее для любого абстрактного фона:
 
 <!-- fragment: bg.abstract -->
@@ -388,6 +390,46 @@ of the frame width, in a staggered grid, slightly lighter than the backdrop colo
 reads as texture.
 ```
 
+Волнистые полосы (по «Узорам по видам»: [№50](references/card-050.png), [№118](references/card-118.png), [№134](references/card-134.png), [№135](references/card-135.png)):
+
+<!-- fragment: bg.wavy-stripes -->
+```
+Backdrop: broad wavy stripes running diagonally across the frame, each band between one tenth and one third
+of the frame width, alternating two close tones of one hue, crisp edges.
+```
+
+Ромбы ([№8](references/card-008.png), [№35](references/card-035.png), [№121](references/card-121.png), [№132](references/card-132.png); все — за стоящим предметом):
+
+<!-- fragment: bg.rhombi -->
+```
+Backdrop: a tone-on-tone pattern of large diamonds, each about one fifth to one quarter of the frame width,
+in two very close tones of one hue: the quietest pattern, the diamonds barely visible.
+```
+
+Спираль ([№78](references/card-078.png), [№95](references/card-095.png); два примера):
+
+<!-- fragment: bg.spiral -->
+```
+Backdrop: a broad spiral whose arms, each about one tenth of the frame width, wind around a point directly
+behind the hero or just above it, alternating two close tones of one hue, crisp edges.
+```
+
+Шахматка ([№137](references/card-137.png); один пример):
+
+<!-- fragment: bg.checker -->
+```
+Backdrop: a checkerboard of squares, each about one sixth of the frame width, in two close tones of one
+hue, crisp edges.
+```
+
+Кирпич (стена; [№46](references/card-046.png); один пример):
+
+<!-- fragment: bg.brick -->
+```
+Wall: brick laid in rows, each row about one eleventh of the frame height, each brick about one third of the
+frame width, with thin joints, in two close tones of one hue.
+```
+
 Ровный градиент (только для стоящего или подвешенного предмета):
 
 <!-- fragment: bg.plain-gradient -->
@@ -431,8 +473,8 @@ soft contact shadow.
 
 <!-- fragment: bg.wall -->
 ```
-Backdrop: a wall directly behind the hero — {vertical wallpaper stripes | vertical wooden planks with
-thin dark gaps | brick | curtain} — in one hue, with a floor of {wooden boards | tiles | stage boards}
+Backdrop: a wall directly behind the hero — {wallpaper with vertical stripes | vertical wooden planks with
+thin dark gaps | brick | a plain wall painted in one colour | curtain} — in one hue, with a floor of {wooden boards | tiles | stage boards}
 meeting it along a straight line at about three quarters of the frame height. The hero stands on the
 floor in front of the wall, shows its own thickness and casts a soft shadow; if it faces the viewer
 square-on, its depth must still be clearly visible.
@@ -444,8 +486,8 @@ square-on, its depth must still be clearly visible.
 ```
 Placement: the hero hangs on the wall and faces the viewer, with no support below; it shows its own
 thickness and depth (a visible rim, side or frame edge), and its soft shadow falls on the wall right next
-to its outline. The wall is {wallpaper with vertical stripes | a plain wall painted in one colour |
-painted wooden planks with grooves | brick | plaster with ivy}.
+to its outline. The wall is {wallpaper with vertical stripes | vertical wooden planks with thin dark gaps |
+brick | a plain wall painted in one colour | plaster with ivy}.
 ```
 
 Без задника (единственный фрагмент камеры для такого кадра; углы — по [COMPOSITION.md](COMPOSITION.md#камера)):
@@ -453,8 +495,8 @@ painted wooden planks with grooves | brick | plaster with ivy}.
 <!-- fragment: bg.no-backdrop -->
 ```
 No backdrop: seen from above at an angle of about 30–50 degrees (never straight down), the hero lies on a surface that
-fills the whole frame ({wooden boards running diagonally | a lawn with a white pitch line | pool tiles
-and water}); a diagonal edge or line crosses the frame (a deck edge against water, a court line); no sky,
+fills the whole frame ({wooden boards running diagonally | a wooden deck or pier edge against water | a
+lawn with a white pitch line | pool tiles and water | smooth sand}); a diagonal edge or line crosses the frame (a deck edge against water, a court line); no sky,
 no wall, no horizon. Soft contact shadow; on water, a reflection and ripple rings instead of a shadow.
 ```
 
@@ -465,7 +507,8 @@ no wall, no horizon. Soft contact shadow; on water, a reflection and ripple ring
 Setting: a real place ({environment}) with three or four planes of depth; the far plane softer and less
 detailed than the hero but not blurred, no bokeh. The horizon passes behind the hero; its height follows
 the camera ({eye level: at half to three quarters of the frame height | high camera: in the top third or
-out of frame}). Clouds and foliage stay near the frame edges, leaving clean sky or a simple area right
+out of frame | low camera: low, at about four fifths of the frame height, so the sky fills most of the
+frame}). Clouds and foliage stay near the frame edges, leaving clean sky or a simple area right
 behind the hero's silhouette; tufts of grass or leaves may frame the bottom edge.
 ```
 

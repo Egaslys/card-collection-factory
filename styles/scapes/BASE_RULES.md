@@ -206,12 +206,14 @@
 
 ## 9. Для промпта (англ.)
 
-Фрагменты для описания постановки в промпте генерации. Подставляются по категории карточки.
+Фрагменты для описания постановки в промпте генерации. Подставляются по категории карточки. Фрагменты «hung from above» (подвешенный на поле, как прожектор [№102](references/card-102.png)) и «on furniture» (на столе или постаменте, как [№26](references/card-026.png), [№34](references/card-034.png)) и вариант «wavy stripes» (как веер [№50](references/card-050.png)) написаны по описанию эталона в [BACKGROUNDS.md](BACKGROUNDS.md) и генерацией ещё не проверены.
 
-- Category 1: <!-- fragment: base.cat1-field -->`a single [object] floating in mid-air, no support and no floor, centred, in front of a flat tone-on-tone patterned backdrop ([rays / concentric rings / vertical stripes / diagonal stripes / repeated small icons / spiral / checker]) in one hue, lighter glow right behind the object`
+- Category 1: <!-- fragment: base.cat1-field -->`a single [object] floating in mid-air, no support and no floor, centred, in front of a flat tone-on-tone patterned backdrop ([rays / concentric rings / vertical stripes / diagonal stripes / wavy stripes / repeated small icons / spiral / checker]) in one hue, lighter glow right behind the object`
 - Category 1, sky or water: <!-- fragment: base.cat1-native -->`a single [object] floating in a nearly flat [sky / underwater] gradient, a few [clouds / bubbles] only near the edges, no ground, no horizon`
+- Category 1, hung from above: <!-- fragment: base.cat1-hung -->`a single [object] hanging from above on its own mount that comes in from the top edge of the frame (like a lighting truss), no floor and no ground, in front of a smooth plain backdrop in one hue, lighter glow right behind the object`
 - Category 2: <!-- fragment: base.cat2 -->`a single [object] standing on a smooth plain floor strip of the same hue as the backdrop, no material texture on the floor, plain gradient or tone-on-tone patterned backdrop behind`
-- Category 3: <!-- fragment: base.cat3 -->`a single [object] standing on a small patch of real [sand / grass / wooden planks / deck / water / tiles] with visible texture, flat tone-on-tone patterned backdrop behind`
+- Category 3: <!-- fragment: base.cat3 -->`a single [object] standing on a small patch of real [sand / grass / wooden boards / ship deck / tiles / sea water] with visible texture, flat tone-on-tone patterned backdrop behind`
+- Category 3, on furniture: <!-- fragment: base.cat3-furniture -->`a single [object] standing on a [table / pedestal] with visible material texture, a flat abstract backdrop or a single flat wall behind, no room corner`
 - Category 4: <!-- fragment: base.cat4 -->`a single [object] set in a real [place], ground or horizon visible, three to four depth layers, the object stays the clear centre of attention`
 - Category 4, interior: <!-- fragment: base.cat4-interior -->`a single [object] in a real room interior: a corner where two walls meet, or clearly visible room depth, with the floor visible; the object stays the clear centre of attention`
 - Category 4, structure against the sky: <!-- fragment: base.cat4-sky-structure -->`a tall [structure] rising from below the bottom edge of the frame against an open sky, no ground visible, a few soft clouds only near the edges`

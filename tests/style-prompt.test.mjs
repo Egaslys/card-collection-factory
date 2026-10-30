@@ -153,7 +153,7 @@ const PILOT_EXPECT = {
   },
   'c3-catch-bucket': {
     fragments: ['base.cat3', 'bg.abstract', 'bg.stripes', 'bg.surface-patch', 'comp.field', 'comp.standing', 'comp.volume-boxy', 'render.style[resting]', 'render.materials[metal]', 'render.materials[wood]'],
-    text: ['a small patch of real wooden planks with visible texture', 'a few broad straight stripes, vertical:', 'a band of real wooden boards with clearly visible texture', 'its far edge follows the material (a straight edge)'],
+    text: ['a small patch of real wooden boards with visible texture', 'a few broad straight stripes, vertical:', 'a band of real wooden boards with clearly visible texture', 'its far edge follows the material (a straight edge)'],
   },
   'c4-rowboat': {
     fragments: ['base.cat4', 'bg.setting', 'comp.setting', 'comp.volume-boxy', 'colour.day-sky', 'render.style[resting]', 'render.style[scene]', 'render.materials[wood]'],
@@ -258,7 +258,90 @@ test('валидатор: понятные ошибки на неверные и
   has(errorsOf('c5-gone-fishing', o => { delete o.scene.joke; }), /слот \{twist\} — нужно поле scene\.joke/);
   has(errorsOf('c5-gone-fishing', o => { o.scene.crop = 'ankles'; }), /не найден среди вариантов|не выбран вариант/);
   has(errorsOf('c2-tackle-box', o => { o.staging.placement = 'wall_mounted'; o.staging.backdrop = 'wall'; o.staging.support = 'wall_fixed'; o.staging.wall = 'curtain'; }), /bg\.on-wall.*не выбран вариант/);
-  has(errorsOf('c3-catch-bucket', o => { o.staging.support = 'furniture'; delete o.staging.surface; }), /нет фрагмента раздела «staging»/);
-  assert.deepEqual(errorsOf('c3-catch-bucket', o => { o.staging.support = 'furniture'; delete o.staging.surface; o.promptExtra = 'The bucket stands on a small wooden table.'; }), []);
+  has(errorsOf('c3-catch-bucket', o => { o.staging.support = 'furniture'; delete o.staging.surface; }), /нужно поле staging\.furniture/);
+  has(errorsOf('c3-catch-bucket', o => { o.staging.placement = 'other'; o.staging.support = 'other'; delete o.staging.surface; }), /нет фрагмента раздела «staging»/);
+  assert.deepEqual(errorsOf('c3-catch-bucket', o => { o.staging.placement = 'other'; o.staging.support = 'other'; delete o.staging.surface; o.promptExtra = 'The bucket leans against a post.'; }), []);
   await assert.rejects(buildPrompt({ ...pilot('c1-bobber'), staging: { ...pilot('c1-bobber').staging, time: 'noon' } }), err => err instanceof OrderError && /time = "noon"/.test(err.errors.join('\n')));
+});
+
+const SPEC_FIELDS = ['category', 'backdrop', 'pattern', 'placement', 'support', 'camera', 'characters', 'time', 'sky_top'];
+/** A rule condition checked on the spec fields only (prompt-only fields count as matching). */
+const matchesSpec = (cond, st) => !cond || (Array.isArray(cond) ? cond.some(c => matchesSpec(c, st))
+  : Object.entries(cond).every(([k, v]) => k === 'not' || !SPEC_FIELDS.includes(k) || v.includes(st[k])));
+const sectionRule = name => style.assembly.sections.find(s => s.name === name);
+
+test('у каждой постановки эталона есть фрагмент постановки, у каждого узора поля — фрагмент узора', () => {
+  // The spec keeps the first markup's category for these two; BACKGROUNDS.md «Категория как следствие
+  // постановки» moves both to category 4 (#31 a structure against the sky, #49 a setting), which has fragments.
+  const SPEC_CATEGORY_DIFFERS = [31, 49];
+  for (const card of style.references) {
+    const st = card.staging;
+    if (SPEC_CATEGORY_DIFFERS.includes(card.ref) || [st.placement, st.support].some(v => v === 'other' || v === 'unsure')) continue;
+    assert.ok(sectionRule('staging').parts.some(p => matchesSpec(p.when, st)), `эталон №${card.ref}: нет фрагмента постановки`);
+  }
+  const graphic = style.assembly.fields.pattern.values.filter(p => !['plain_gradient', 'brick', 'other', 'n/a'].includes(p));
+  for (const pattern of graphic) {
+    const st = { backdrop: 'field', pattern, placement: 'floating_field' };
+    const ids = sectionRule('backdrop').parts.filter(p => p.fragment && matchesSpec(p.when, st)).map(p => p.fragment);
+    assert.ok(ids.some(id => id !== 'bg.abstract' && id !== 'bg.floating'), `узор ${pattern}: нет фрагмента`);
+  }
+});
+
+// New stagings: each order is a pilot order with its staging changed; the prompt must hold the named
+// fragments and texts and have no unfilled slot.
+const NEW_STAGINGS = [
+  { name: 'висит на волнистых полосах (№50)', from: 'c1-bobber', staging: { pattern: 'stripes_wavy' },
+    fragments: ['base.cat1-field', 'bg.wavy-stripes'], text: ['patterned backdrop (wavy stripes) in one hue'] },
+  { name: 'висит на спирали (№78)', from: 'c1-bobber', staging: { pattern: 'spiral' }, fragments: ['bg.spiral'], text: ['(spiral)'] },
+  { name: 'висит на шахматке (№137)', from: 'c1-bobber', staging: { pattern: 'checker' }, fragments: ['bg.checker'], text: ['(checker)'] },
+  { name: 'стоит на ромбах (№121)', from: 'c2-tackle-box', staging: { pattern: 'rhombi' }, fragments: ['base.cat2', 'bg.rhombi', 'bg.smooth-floor'], text: [] },
+  { name: 'подвешен на поле (№102)', from: 'c1-bobber', staging: { placement: 'hung_from_above', support: 'other', pattern: 'plain_gradient' },
+    fragments: ['base.cat1-hung', 'colour.gradient'], absent: ['bg.floating', 'comp.floating'], text: ['Staging: a single fishing bobber hanging from above on its own mount'] },
+  { name: 'на столе у стены (№34)', from: 'c2-tackle-box', staging: { category: 3, backdrop: 'wall', support: 'furniture', furniture: 'table' },
+    fragments: ['base.cat3-furniture', 'bg.plain-gradient'], text: ['standing on a table with visible material texture'] },
+  { name: 'растёт из песка на спирали (№95)', from: 'c3-catch-bucket', staging: { placement: 'embedded', pattern: 'spiral', stripes: undefined, surface: 'sand' },
+    fragments: ['base.cat3', 'bg.spiral', 'bg.surface-patch'], text: ['a small patch of real sand', 'a band of real sand'] },
+  { name: 'кусок поверхности перед стеной с ромбами (№35)', from: 'c3-catch-bucket', staging: { backdrop: 'wall', pattern: 'rhombi', stripes: undefined, surface: 'tiles' },
+    fragments: ['base.cat3', 'bg.rhombi', 'bg.surface-patch'], text: [] },
+  { name: 'окно на кирпичной стене (№46)', from: 'c2-tackle-box', staging: { backdrop: 'wall', pattern: 'brick', placement: 'wall_mounted', support: 'wall_fixed', wall: 'brick' },
+    fragments: ['bg.on-wall', 'bg.brick'], text: ['The wall is brick.'] },
+  { name: 'на полу у ровной стены (№25)', from: 'c3-catch-bucket', staging: { backdrop: 'wall', pattern: 'plain_gradient', stripes: undefined, support: 'ground', surface: undefined, wall: 'plain', floor: 'wood' },
+    fragments: ['bg.wall'], text: ['a plain wall painted in one colour', 'a floor of wooden boards'] },
+  { name: 'без задника на песке (№96)', from: 'c4-rowboat', staging: { backdrop: 'none', placement: 'lying_top_down', support: 'fills_frame', camera: 'high', setting: undefined, surface: 'sand', sky_top: false },
+    fragments: ['bg.no-backdrop'], text: ['(smooth sand)'] },
+  { name: 'без задника у причала (№60)', from: 'c4-rowboat', staging: { backdrop: 'none', placement: 'lying_top_down', support: 'fills_frame', camera: 'high', setting: undefined, surface: 'deck', sky_top: false },
+    fragments: ['bg.no-backdrop'], text: ['(a wooden deck or pier edge against water)'] },
+  { name: 'обстановка, камера снизу (№68)', from: 'c4-rowboat', staging: { camera: 'low' },
+    fragments: ['bg.setting', 'comp.low-camera'], text: ['low camera: low, at about four fifths of the frame height'] },
+  { name: 'обстановка в золотой час (№122)', from: 'c4-rowboat', staging: { time: 'golden', sky_top: false },
+    fragments: ['colour.golden', 'render.style[low sun or stage spots]'], absent: ['colour.day-sky'], text: ['Golden hour stays colourful'] },
+];
+
+for (const c of NEW_STAGINGS) {
+  test(`новая постановка: ${c.name}`, async () => {
+    const order = pilot(c.from);
+    for (const [k, v] of Object.entries(c.staging)) { if (v === undefined) delete order.staging[k]; else order.staging[k] = v; }
+    assert.deepEqual(await validateOrder(order), []);
+    const r = await buildPrompt(order);
+    const ids = r.fragments.map(f => f.id);
+    for (const id of c.fragments) assert.ok(ids.includes(id), `нет фрагмента ${id}: ${ids.join(', ')}`);
+    for (const id of c.absent || []) assert.ok(!ids.includes(id), `лишний фрагмент ${id}`);
+    for (const t of c.text) assert.ok(r.prompt.includes(t), `нет текста: ${t}`);
+    assert.ok(!/[{}[\]]/.test(r.prompt.replace(/\(around #[0-9A-F]+( to #[0-9A-F]+)?\)/g, '')), 'в запросе остался незаполненный слот');
+  });
+}
+
+test('стены названы одними словами в «Стене» и «Предмете на стене»', () => {
+  const opts = id => slotsOf(frag(id).text).find(s => s.options?.includes('brick')).options;
+  const wall = opts('bg.wall'), onWall = opts('bg.on-wall');
+  for (const shared of ['wallpaper with vertical stripes', 'brick', 'a plain wall painted in one colour']) {
+    assert.ok(wall.includes(shared) && onWall.includes(shared), shared);
+  }
+  assert.ok(wall.some(o => o.startsWith('vertical wooden planks')) && onWall.some(o => o.startsWith('vertical wooden planks')));
+  assert.ok(!onWall.includes('curtain'), 'занавес — не стена, на которой висит предмет');
+});
+
+test('кусок поверхности: варианты в BASE_RULES и BACKGROUNDS — те же слова в том же порядке', () => {
+  const opts = id => slotsOf(frag(id).text).find(s => s.options?.includes('sand')).options;
+  assert.deepEqual(opts('base.cat3'), opts('bg.surface-patch'));
 });

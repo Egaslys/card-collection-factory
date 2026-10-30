@@ -21,7 +21,7 @@ const JSON_OPTION = { type: 'boolean', help: 'print the result as JSON (for an a
 
 const COMMANDS = {
   'card make': {
-    usage: [`${NAME} card make ORDER.json --collection NAME --set NAME [--attempts N] [--max-spend USD] [--json]`],
+    usage: [`${NAME} card make ORDER.json --collection NAME --set NAME [--provider NAME] [--attempts N] [--max-spend USD] [--json]`],
     about: `Makes one card from an order (a JSON CardOrder: core/style/card-order.js): the prompt is assembled from the
 style's phrases, the image is generated, cropped to the card, post-processed and checked by the style's automatic
 checks. While a check FAILs, the card is generated again, up to the attempt limit and the spend cap (settings/,
@@ -33,12 +33,14 @@ collections/<collection>/sets/<set>/cards/<order id>/; running again appends att
       set: { type: 'string', value: 'NAME', help: 'set folder name (required)' },
       attempts: { type: 'string', value: 'N', help: 'attempt limit of this run (default: settings card.attempts)' },
       'max-spend': { type: 'string', value: 'USD', help: 'spend cap of this run in USD (default: settings card.maxSpendUsd)' },
+      provider: { type: 'string', value: 'NAME', help: 'openrouter | codex-cli: the image provider of this run (default: settings provider.use)' },
       json: JSON_OPTION,
     },
     positionals: { min: 1, max: 1, label: 'ORDER.json' },
     check: (/** @type {any} */ v) => !v.collection || !v.set ? '--collection and --set are required'
       : v.attempts !== undefined && !(Number.isInteger(+v.attempts) && +v.attempts > 0) ? '--attempts must be a whole number above 0'
-      : v['max-spend'] !== undefined && !(+v['max-spend'] >= 0) ? '--max-spend must be a number of USD, 0 or more' : null,
+      : v['max-spend'] !== undefined && !(+v['max-spend'] >= 0) ? '--max-spend must be a number of USD, 0 or more'
+      : v.provider !== undefined && !['openrouter', 'codex-cli'].includes(v.provider) ? '--provider must be openrouter or codex-cli' : null,
     run: cardMake,
   },
   'card check': {
@@ -83,7 +85,7 @@ async function cardMake(v, [orderFile]) {
   const { makeCard, providerFrom } = await import('./core/card/make.js');
   const report = await makeCard({
     order, collection: v.collection, set: v.set, settings,
-    provider: providerFrom(settings.provider),
+    provider: providerFrom({ ...settings.provider, use: v.provider ?? settings.provider.use }),
     limits: { attempts: v.attempts && +v.attempts, maxSpendUsd: v['max-spend'] !== undefined ? +v['max-spend'] : undefined },
   });
   if (v.json) console.log(JSON.stringify(report, null, 2));

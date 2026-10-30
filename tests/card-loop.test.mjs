@@ -55,6 +55,7 @@ test('ccf.mjs: справка, неизвестная команда и неиз
   assert.equal(ccf('card', 'make', 'x.json', '--collection', 'c').status, 2, 'без --set');
   assert.equal(ccf('card', 'make', 'x.json', '--collection', 'c', '--set', 's', '--attempts', '0').status, 2);
   assert.equal(ccf('card', 'check', 'x', '--mask', 'confirmed').status, 2, '--mask без --attempt');
+  assert.equal(ccf('card', 'make', 'x.json', '--collection', 'c', '--set', 's', '--provider', 'dalle').status, 2, 'неизвестный провайдер');
   const missing = ccf('card', 'check', path.join(tmp(), 'none'));
   assert.equal(missing.status, 1);
   assert.match(missing.stderr, /Нет карточки/);

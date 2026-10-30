@@ -25,6 +25,7 @@ import { loadStyle, styleDirOf } from './style.js';
  * @property {string} [setting]  outdoor | interior | sky_structure (category 4 environments; interior also for scenes)
  * @property {string} [wall]     stripes | planks | brick | curtain | plain | plaster
  * @property {string} [floor]    wood | tiles | stage (floor in front of a wall)
+ * @property {string} [furniture]  table | pedestal (category 3 standing on furniture)
  * @property {string} [shape]    boxy (default) | front_facing | flat
  * @property {string|string[]} [material]  main material(s) of the hero: labels of the bible's material fragments
  * @property {boolean} [effects]       steam, smoke, foam, droplets, light cones on the card

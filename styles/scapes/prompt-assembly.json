@@ -14,11 +14,12 @@
     "sky_top":    { "values": [true, false], "required": true },
 
     "stripes":    { "values": ["vertical", "diagonal"], "required_when": [{ "pattern": ["stripes_straight"] }] },
-    "surface":    { "values": ["sand", "grass", "wood", "deck", "tiles", "water"], "required_when": [{ "category": [3], "placement": ["resting"], "support": ["fragment"] }, { "backdrop": ["none"] }] },
+    "surface":    { "values": ["sand", "grass", "wood", "deck", "tiles", "water"], "required_when": [{ "category": [3], "placement": ["resting", "embedded"], "support": ["fragment"] }, { "backdrop": ["none"] }] },
     "medium":     { "values": ["sky", "water"], "required_when": [{ "category": [1], "placement": ["floating_native"] }] },
     "setting":    { "values": ["outdoor", "interior", "sky_structure"], "required_when": [{ "category": [4], "backdrop": ["environment"] }] },
     "wall":       { "values": ["stripes", "planks", "brick", "curtain", "plain", "plaster"], "required_when": [{ "placement": ["wall_mounted"] }, { "category": [3], "backdrop": ["wall"], "placement": ["resting"], "support": ["ground"] }] },
     "floor":      { "values": ["wood", "tiles", "stage"], "required_when": [{ "category": [3], "backdrop": ["wall"], "placement": ["resting"], "support": ["ground"] }] },
+    "furniture":  { "values": ["table", "pedestal"], "required_when": [{ "category": [3], "backdrop": ["field", "wall"], "placement": ["resting"], "support": ["furniture"] }] },
     "shape":      { "values": ["boxy", "front_facing", "flat"], "default": "boxy" },
     "material":   { "values_from": "render.materials", "list": true, "required_when": [{ "category": [1, 2, 3, 4] }] },
     "effects":    { "values": [true, false], "default": false },
@@ -74,7 +75,7 @@
     { "name": "staging", "required": true, "parts": [
       { "fragment": "base.cat1-field", "prefix": "Staging: ", "when": { "placement": ["floating_field"] }, "drop_unfilled": true,
         "pick": [
-          { "field": "pattern", "map": { "rays": "rays", "rings": "concentric rings", "motif_repeat": "repeated small icons", "spiral": "spiral", "checker": "checker" } },
+          { "field": "pattern", "map": { "rays": "rays", "rings": "concentric rings", "stripes_wavy": "wavy stripes", "motif_repeat": "repeated small icons", "spiral": "spiral", "checker": "checker" } },
           { "field": "stripes", "when": { "pattern": ["stripes_straight"] }, "map": { "vertical": "vertical stripes", "diagonal": "diagonal stripes" } }
         ] },
       { "fragment": "base.cat1-native", "prefix": "Staging: ", "when": { "category": [1], "placement": ["floating_native"] },
@@ -82,26 +83,31 @@
           { "field": "medium", "map": { "sky": "sky", "water": "underwater" } },
           { "field": "medium", "map": { "sky": "clouds", "water": "bubbles" } }
         ] },
+      { "fragment": "base.cat1-hung", "prefix": "Staging: ", "when": { "category": [1], "backdrop": ["field"], "placement": ["hung_from_above"] } },
       { "fragment": "base.cat2", "prefix": "Staging: ", "when": { "category": [2], "placement": ["resting"], "support": ["ephemeral", "fragment"] } },
-      { "fragment": "base.cat3", "prefix": "Staging: ", "when": { "category": [3], "placement": ["resting"], "support": ["fragment"] },
+      { "fragment": "base.cat3", "prefix": "Staging: ", "when": { "category": [3], "placement": ["resting", "embedded"], "support": ["fragment"] },
         "pick": [
-          { "field": "surface", "map": { "sand": "sand", "grass": "grass", "wood": "wooden planks", "deck": "deck", "tiles": "tiles", "water": "water" } }
+          { "field": "surface", "map": { "sand": "sand", "grass": "grass", "wood": "wooden boards", "deck": "ship deck", "tiles": "tiles", "water": "sea water" } }
+        ] },
+      { "fragment": "base.cat3-furniture", "prefix": "Staging: ", "when": { "category": [3], "backdrop": ["field", "wall"], "placement": ["resting"], "support": ["furniture"] },
+        "pick": [
+          { "field": "furniture", "map": { "table": "table", "pedestal": "pedestal" } }
         ] },
       { "fragment": "bg.wall", "when": { "category": [3], "backdrop": ["wall"], "placement": ["resting"], "support": ["ground"] },
         "pick": [
-          { "field": "wall", "map": { "stripes": "vertical wallpaper stripes", "planks": "vertical wooden planks", "brick": "brick", "curtain": "curtain" } },
+          { "field": "wall", "map": { "stripes": "wallpaper with vertical stripes", "planks": "vertical wooden planks", "brick": "brick", "plain": "a plain wall", "curtain": "curtain" } },
           { "field": "floor", "map": { "wood": "wooden boards", "tiles": "tiles", "stage": "stage boards" } }
         ] },
       { "fragment": "bg.on-wall", "when": { "placement": ["wall_mounted"] },
         "pick": [
-          { "field": "wall", "map": { "stripes": "wallpaper with vertical stripes", "plain": "a plain wall", "planks": "painted wooden planks", "brick": "brick", "plaster": "plaster with ivy" } }
+          { "field": "wall", "map": { "stripes": "wallpaper with vertical stripes", "planks": "vertical wooden planks", "brick": "brick", "plain": "a plain wall", "plaster": "plaster with ivy" } }
         ] },
       { "fragment": "base.cat4", "prefix": "Staging: ", "when": { "category": [4], "backdrop": ["environment"], "setting": ["outdoor"] } },
       { "fragment": "base.cat4-interior", "prefix": "Staging: ", "when": { "category": [4], "backdrop": ["environment"], "setting": ["interior"] } },
       { "fragment": "base.cat4-sky-structure", "prefix": "Staging: ", "when": { "category": [4], "backdrop": ["environment"], "setting": ["sky_structure"] } },
       { "fragment": "bg.no-backdrop", "when": { "backdrop": ["none"] },
         "pick": [
-          { "field": "surface", "map": { "wood": "wooden boards running diagonally", "deck": "wooden boards running diagonally", "grass": "a lawn", "tiles": "pool tiles", "water": "pool tiles" } }
+          { "field": "surface", "map": { "wood": "wooden boards running diagonally", "deck": "a wooden deck or pier", "grass": "a lawn", "tiles": "pool tiles", "water": "pool tiles", "sand": "smooth sand" } }
         ] },
       { "fragment": "char.scene-frame", "when": { "category": [5] },
         "pick": [ { "path": "scene.crop" } ] }
@@ -113,21 +119,26 @@
 
     { "name": "backdrop", "parts": [
       { "fragment": "bg.abstract", "when": { "backdrop": ["field"], "not": { "pattern": ["plain_gradient", "n/a"] } } },
-      { "fragment": "bg.rays", "when": [{ "backdrop": ["field"], "pattern": ["rays"] }, { "backdrop": ["wall"], "category": [2], "placement": ["resting"], "pattern": ["rays"] }] },
-      { "fragment": "bg.rings", "when": [{ "backdrop": ["field"], "pattern": ["rings"] }, { "backdrop": ["wall"], "category": [2], "placement": ["resting"], "pattern": ["rings"] }] },
-      { "fragment": "bg.stripes", "when": [{ "backdrop": ["field"], "pattern": ["stripes_straight"] }, { "backdrop": ["wall"], "category": [2], "placement": ["resting"], "pattern": ["stripes_straight"] }],
+      { "fragment": "bg.rays", "when": [{ "backdrop": ["field"], "pattern": ["rays"] }, { "backdrop": ["wall"], "placement": ["resting"], "support": ["ephemeral", "fragment"], "pattern": ["rays"] }] },
+      { "fragment": "bg.rings", "when": [{ "backdrop": ["field"], "pattern": ["rings"] }, { "backdrop": ["wall"], "placement": ["resting"], "support": ["ephemeral", "fragment"], "pattern": ["rings"] }] },
+      { "fragment": "bg.stripes", "when": [{ "backdrop": ["field"], "pattern": ["stripes_straight"] }, { "backdrop": ["wall"], "placement": ["resting"], "support": ["ephemeral", "fragment"], "pattern": ["stripes_straight"] }],
         "pick": [ { "field": "stripes", "map": { "vertical": "vertical", "diagonal": "diagonal" } } ] },
-      { "fragment": "bg.motifs", "when": [{ "backdrop": ["field"], "pattern": ["motif_repeat"] }, { "backdrop": ["wall"], "category": [2], "placement": ["resting"], "pattern": ["motif_repeat"] }] },
+      { "fragment": "bg.wavy-stripes", "when": [{ "backdrop": ["field"], "pattern": ["stripes_wavy"] }, { "backdrop": ["wall"], "placement": ["resting"], "support": ["ephemeral", "fragment"], "pattern": ["stripes_wavy"] }] },
+      { "fragment": "bg.rhombi", "when": [{ "backdrop": ["field"], "pattern": ["rhombi"] }, { "backdrop": ["wall"], "placement": ["resting"], "support": ["ephemeral", "fragment"], "pattern": ["rhombi"] }] },
+      { "fragment": "bg.spiral", "when": [{ "backdrop": ["field"], "pattern": ["spiral"] }, { "backdrop": ["wall"], "placement": ["resting"], "support": ["ephemeral", "fragment"], "pattern": ["spiral"] }] },
+      { "fragment": "bg.checker", "when": [{ "backdrop": ["field"], "pattern": ["checker"] }, { "backdrop": ["wall"], "placement": ["resting"], "support": ["ephemeral", "fragment"], "pattern": ["checker"] }] },
+      { "fragment": "bg.motifs", "when": [{ "backdrop": ["field"], "pattern": ["motif_repeat"] }, { "backdrop": ["wall"], "placement": ["resting"], "support": ["ephemeral", "fragment"], "pattern": ["motif_repeat"] }] },
+      { "fragment": "bg.brick", "when": { "backdrop": ["wall"], "pattern": ["brick"] } },
       { "fragment": "bg.plain-gradient", "when": { "backdrop": ["field", "wall"], "pattern": ["plain_gradient"], "placement": ["resting"] } },
       { "fragment": "bg.floating", "when": { "backdrop": ["field"], "placement": ["floating_field"] } },
       { "fragment": "bg.smooth-floor", "when": { "category": [2], "backdrop": ["field", "wall"], "placement": ["resting"] } },
-      { "fragment": "bg.surface-patch", "when": { "category": [3], "backdrop": ["field", "wall"], "placement": ["resting"], "support": ["fragment"] },
+      { "fragment": "bg.surface-patch", "when": { "category": [3], "backdrop": ["field", "wall"], "placement": ["resting", "embedded"], "support": ["fragment"] },
         "pick": [
           { "field": "surface", "map": { "sand": "sand", "grass": "grass", "wood": "wooden boards", "deck": "ship deck", "tiles": "tiles", "water": "sea water" } },
           { "field": "surface", "map": { "sand": "a soft dune crest", "grass": "a ragged line of grass tufts", "wood": "a straight edge", "deck": "a straight edge", "tiles": "a straight edge", "water": "a wave crest" } }
         ] },
       { "fragment": "bg.setting", "when": [{ "category": [4], "backdrop": ["environment"], "setting": ["outdoor"] }, { "category": [5], "not": { "setting": ["interior"] } }],
-        "pick": [ { "field": "camera", "map": { "eye_level": "eye level", "high": "high camera", "low": "eye level" } } ] },
+        "pick": [ { "field": "camera", "map": { "eye_level": "eye level", "high": "high camera", "low": "low camera" } } ] },
       { "fragment": "bg.open-medium", "when": { "category": [1], "placement": ["floating_native"] },
         "pick": [
           { "field": "medium", "map": { "sky": "sky", "water": "water" } },
@@ -157,6 +168,7 @@
       { "template": "Here: {palette}", "attach": true, "optional": true, "when": { "backdrop": ["field"] } },
       { "fragment": "colour.gradient", "when": { "backdrop": ["field"] } },
       { "fragment": "colour.day-sky", "when": { "time": ["day"], "sky_top": [true] } },
+      { "fragment": "colour.golden", "when": { "time": ["golden"] } },
       { "fragment": "colour.night", "when": { "time": ["dusk", "night"] } }
     ] },
 
