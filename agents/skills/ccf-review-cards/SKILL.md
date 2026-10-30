@@ -28,7 +28,7 @@ With a key the vision model has already looked (`check.look`, the full answer in
 
 - each entry of `chosenVisual` (document and check number): read that check in the document's checks section;
 - the card order of `styles/<style>/CHECKLIST.md`: format and category, staging and backdrop, composition, colour, rendering, characters;
-- **adequacy**: the image holds nothing that was not ordered and that the thing does not have — faces or eyes on fish and objects, extra objects, text or letters, a frame — unless the person asked for it;
+- **adequacy**: the image holds nothing that was not ordered and that the thing does not have — a face on fish, animals or objects (mouth, smile, brows, expression; plain natural eyes on a fish or an animal are fine, eyes on an object are not), extra objects, text or letters, a frame — unless the person asked for it;
 - the order's `subject` is what is drawn, and the caption (`title`) names it.
 
 An order of kind `character-sheet` has no pixel checks: its `chosenVisual` list is the whole review.
