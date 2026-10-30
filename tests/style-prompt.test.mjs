@@ -211,8 +211,11 @@ test('эталоны: подбираются по постановке, искл
     const order = { ...pilot('c1-bobber'), staging: { ...card.staging } };
     for (const r of pickReferences(order, style)) assert.ok(!exclude.has(r.ref), `взят исключённый №${r.ref}`);
   }
+  // an evening scene gets evening cards (the time weight), together showing its characters; never the day-light beach #100
   const scene = pickReferences(pilot('c5-gone-fishing'), style);
-  for (const r of scene) assert.deepEqual([...r.cast].sort(), ['man', 'pig']);
+  for (const r of scene) assert.equal(r.staging.time, 'golden', `№${r.ref}`);
+  assert.deepEqual([...new Set(scene.flatMap(r => r.cast))].sort(), ['man', 'pig']);
+  assert.ok(!scene.some(r => r.ref === 100));
   const bobber = pickReferences(pilot('c1-bobber'), style);
   for (const r of bobber) assert.equal(r.staging.placement, 'floating_field');
   const forced = pilot('c1-bobber');
@@ -347,7 +350,9 @@ const NEW_STAGINGS = [
   { name: 'обстановка, камера снизу (№68)', from: 'c4-rowboat', staging: { camera: 'low' },
     fragments: ['bg.setting', 'comp.low-camera'], text: ['low camera: low, at about four fifths of the frame height'] },
   { name: 'обстановка в золотой час (№122)', from: 'c4-rowboat', staging: { time: 'golden', sky_top: false },
-    fragments: ['colour.golden', 'render.style[low sun or stage spots]'], absent: ['colour.day-sky'], text: ['Golden hour: warm low sunlight'] },
+    fragments: ['colour.golden', 'render.style[low sun or stage spots]'], absent: ['colour.day-sky'], text: ['Golden hour: the low sun sits behind or beside the scene'] },
+  { name: 'сумерки — свой фрагмент цвета', from: 'c4-rowboat', staging: { time: 'dusk', sky_top: false },
+    fragments: ['colour.dusk'], absent: ['colour.night', 'colour.golden', 'colour.day-sky'], text: ['Dusk: a blue-violet sky'] },
 ];
 
 for (const c of NEW_STAGINGS) {

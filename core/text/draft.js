@@ -2,7 +2,7 @@
 // collection's description, a set's theme or wishes, a card's wish — and the text model turns them into the finished
 // text of that field. Nothing is saved here: the caller puts the text into the field, the person saves it.
 // The prompt's words live in the settings (text.help), the model is the factory's text model (textModel below).
-import { complete as openrouterComplete } from '../providers/openrouter-text.js';
+import { apiOf, presetOf } from '../providers/preset.js';
 import * as factoryStore from '../store/index.js';
 
 /**
@@ -16,13 +16,14 @@ import * as factoryStore from '../store/index.js';
  */
 
 /**
- * The text model of the factory and how it is called: the model that writes the set plans (settings set.plan).
+ * The text model of the factory and how it is called: the API preset's textModel, which also writes the set plans,
+ * with the reasoning and timeout of settings set.plan.
  * @param {any} settings
  * @returns {{model: string, reasoning: Record<string, unknown>|null, timeoutMs: number}}
  */
 export function textModel(settings) {
   const p = settings.set.plan;
-  return { model: p.model, reasoning: p.reasoning ?? null, timeoutMs: p.timeoutMs };
+  return { model: presetOf(settings.provider).textModel, reasoning: p.reasoning ?? null, timeoutMs: p.timeoutMs };
 }
 
 /**
@@ -49,19 +50,19 @@ export function draftPrompt({ kind, notes, context = {}, help }) {
  * @param {string|null} [o.collectionId]  the collection the spend counts for; none for a collection not made yet
  * @param {any} o.settings
  * @param {string} o.apiKey
- * @param {typeof openrouterComplete} [o.complete]  tests
+ * @param {typeof import('../providers/gemini.js').complete} [o.complete]  tests (default: the preset's)
  * @param {Pick<typeof factoryStore, 'recordSpend'>} [o.store]
  * @returns {Promise<{text: string, model: string, cost: number|null}>}
  */
-export async function draftText({ kind, notes, context, collectionId = null, settings, apiKey, complete = openrouterComplete, store = factoryStore }) {
+export async function draftText({ kind, notes, context, collectionId = null, settings, apiKey, complete, store = factoryStore }) {
   const rough = typeof notes === 'string' ? notes.trim() : '';
   if (!rough) throw new Error('Поле пустое: напишите мысли как есть, модель сформулирует из них текст.');
   const help = /** @type {TextHelpSettings} */ (settings.text.help);
   const prompt = draftPrompt({ kind, notes: rough, context, help });
   const m = textModel(settings);
-  const or = settings.provider.openrouter;
-  const r = await complete({
-    endpoint: or.endpoint, apiKey, model: m.model, messages: [{ role: 'user', content: prompt }], maxTokens: help.maxTokens, temperature: help.temperature,
+  const or = presetOf(settings.provider);
+  const r = await (complete ?? apiOf(or.name).complete)({
+    endpoint: or.endpoint, apiKey, prices: or.prices, model: m.model, messages: [{ role: 'user', content: prompt }], maxTokens: help.maxTokens, temperature: help.temperature,
     ...(m.reasoning ? { reasoning: m.reasoning } : {}), net: { timeoutMs: m.timeoutMs, retries: or.retries, backoffMs: or.backoffMs },
   });
   await store.recordSpend(collectionId, { kind: 'text', what: 'text-help', model: m.model, usd: r.cost });

@@ -9,16 +9,11 @@
  * @property {number} maxReferences  how many input images one request may carry
  * @property {Record<string, unknown>} params  request fields this model needs, sent with every request (e.g. resolution)
  * @property {string} [prompt]  how this model's provider advises writing prompts, with the source (for agents and people)
+ * @property {string} [framing]  a sentence added at the end of this model's image prompt: its correction of the hero's
+ *   size and margins, where the model draws them off the style's (measured against the reference cards)
+ * @property {string} [sameAs]  the same model under another service's id: its profile's fields fill the ones this one
+ *   lacks, and the style's starting post-processing of that id applies (modelIds)
  */
-
-/**
- * The image provider of one run: the one asked for, OpenRouter when only a model is asked for (the model is an
- * OpenRouter one), else the settings' provider.use.
- * @template {string} U
- * @param {U} use  settings provider.use @param {{provider?: string, model?: string}} run
- * @returns {U}
- */
-export const runProvider = (use, { provider, model }) => /** @type {U} */ (provider ?? (model ? 'openrouter' : use));
 
 /** The ratio a model without a profile is asked for. */
 export const SAFE_ASPECT = '1:1';
@@ -44,14 +39,24 @@ export function closestAspect(wanted, accepted, cropTo) {
 }
 
 /**
- * The profile of a model, or the safe one (1:1, no extra fields) when the settings have none.
+ * The profile of a model (with the fields of the model it is the same as, `sameAs`, where its own lack them), or the
+ * safe one (1:1, no extra fields) when the settings have none.
  * @param {Record<string, ModelProfile>|undefined} models  settings provider.models
  * @param {string} id
  * @returns {ModelProfile}
  */
 export function profileOf(models, id) {
-  return (id.startsWith('_') ? undefined : models?.[id]) ?? { aspectRatios: [SAFE_ASPECT], maxReferences: Infinity, params: {} };
+  const own = id.startsWith('_') ? undefined : models?.[id];
+  const same = own?.sameAs ? models?.[own.sameAs] : undefined;
+  return own ? { ...same, ...own } : { aspectRatios: [SAFE_ASPECT], maxReferences: Infinity, params: {} };
 }
+
+/**
+ * The ids a model is known by: its own, then the one its profile says it is the same as (`sameAs`).
+ * @param {Record<string, ModelProfile>|undefined} models @param {string} id
+ * @returns {string[]}
+ */
+export const modelIds = (models, id) => [id, ...(models?.[id]?.sameAs ? [/** @type {string} */ (models[id].sameAs)] : [])];
 
 /**
  * What one request to the model carries: the ratio it accepts (closestAspect), its own fields; refuses more input images

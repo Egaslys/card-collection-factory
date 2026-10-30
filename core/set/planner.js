@@ -22,7 +22,7 @@ import { expandStaging, loadSetRules, seenPatterns, windowSkeleton } from './rul
 
 /**
  * @typedef {object} PlanSettings  settings `set.plan`
- * @property {string} model @property {number} repairs @property {number} maxTokens @property {number} temperature
+ * @property {number} repairs @property {number} maxTokens @property {number} temperature  (the model: provider.<preset>.textModel)
  * @property {Record<string, unknown>|null} reasoning @property {number} timeoutMs @property {number} maxSpendUsd
  */
 
@@ -40,7 +40,7 @@ function fragmentsOf(style, file = 'SETS.md') {
 }
 
 /** @param {string} template @param {Record<string, string>} values  glue slots `{name}` */
-const glue = (template, values) => template.replace(/\{([a-z ]+)\}/g, (m, k) => values[k] ?? m);
+export const glue = (template, values) => template.replace(/\{([a-z ]+)\}/g, (m, k) => values[k] ?? m);
 
 /**
  * Fills a bible fragment; every slot must get a value.
@@ -52,6 +52,34 @@ function fragment(frags, id, values) {
   const { text: out, missing } = fillSlots(text, { named: k => values[k], chosen: new Map() });
   if (missing.length) throw new Error(`Фрагмент «${id}»: нечем заполнить ${missing.map(m => m.raw).join(', ')}.`);
   return out;
+}
+
+/**
+ * A SETS.md fragment of a style, filled (the text model's prompt for sets and for loose cards).
+ * @param {string} style @param {string} id @param {Record<string, string>} values
+ */
+export const setFragment = (style, id, values) => fragment(fragmentsOf(style), id, values);
+
+/**
+ * The end of every planning prompt, for a set and for loose cards: the staging ids with their fields and allowed
+ * values, the answer format, and the producer's wishes.
+ * @param {{style: string, wishes?: string}} o
+ * @returns {string[]}
+ */
+export function answerParts({ style, wishes }) {
+  const { rules, style: st } = loadSetRules(style);
+  const g = rules.prompt.glue;
+  const seen = seenPatterns(rules, st);
+  const stagings = rules.stagings.map(r => {
+    const pats = seen.has(r.id) ? `; pattern only: ${(seen.get(r.id) ?? []).join(' | ')}` : '';
+    return `${r.id} (${r.fill.join(', ')}${pats})`;
+  }).join('; ');
+  const fields = /** @type {Record<string, any>} */ (st.assembly.fields);
+  const values = [...new Set(rules.stagings.flatMap(r => r.fill))].filter(f => fields[f]).map(f => {
+    const v = fields[f].values_from ? (st.fragments.get(fields[f].values_from)?.items || []).flatMap((/** @type {any} */ it) => (it.label ? [it.label] : [])) : fields[f].values;
+    return `${f}: ${v.join(' | ')}`;
+  }).concat(`stripes (with pattern stripes_straight): ${fields.stripes.values.join(' | ')}`).join('; ');
+  return [glue(g.stagings, { stagings, values }), g.answer, ...(wishes ? [glue(g.wishes, { wishes })] : [])];
 }
 
 /** @param {RegistryEntry[]} registry */
@@ -73,7 +101,7 @@ const registryText = registry => {
  * @returns {ChatMessage[]}
  */
 export function setPrompt({ style, theme, wishes, collectionTheme, angle, grand = false, layout, scenes, registry, variants, n, language }) {
-  const { rules, style: st } = loadSetRules(style);
+  const { rules } = loadSetRules(style);
   const frags = fragmentsOf(style);
   const ids = rules.prompt.fragments;
   const g = rules.prompt.glue;
@@ -95,19 +123,7 @@ export function setPrompt({ style, theme, wishes, collectionTheme, angle, grand 
   parts.push(fragment(frags, ids.captions, { language: language || rules.captions.language }));
   const slotText = skeleton.map((s, i) => `slot ${i + 1}: ${s.stars} star${s.stars > 1 ? 's' : ''}, ${s.frame} frame, ${s.scene ? 'scene with characters' : 'item card, no characters'}`).join('; ');
   parts.push(glue(g.slots, { slots: slotText, scenes: String(scenes) }));
-  const seen = seenPatterns(rules, st);
-  const stagings = rules.stagings.map(r => {
-    const pats = seen.has(r.id) ? `; pattern only: ${(seen.get(r.id) ?? []).join(' | ')}` : '';
-    return `${r.id} (${r.fill.join(', ')}${pats})`;
-  }).join('; ');
-  const fields = /** @type {Record<string, any>} */ (st.assembly.fields);
-  const values = [...new Set(rules.stagings.flatMap(r => r.fill))].filter(f => fields[f]).map(f => {
-    const v = fields[f].values_from ? (st.fragments.get(fields[f].values_from)?.items || []).flatMap(it => (it.label ? [it.label] : [])) : fields[f].values;
-    return `${f}: ${v.join(' | ')}`;
-  }).concat(`stripes (with pattern stripes_straight): ${fields.stripes.values.join(' | ')}`).join('; ');
-  parts.push(glue(g.stagings, { stagings, values }));
-  parts.push(g.answer);
-  if (wishes) parts.push(glue(g.wishes, { wishes }));
+  parts.push(...answerParts({ style, wishes }));
   return [{ role: 'system', content: g.system }, { role: 'user', content: parts.join('\n\n') }];
 }
 
@@ -125,33 +141,41 @@ export function parseAnswer(text) {
 const ORDER_FIELDS = ['subject', 'object', 'place', 'environment', 'motif', 'palette', 'staging', 'scene', 'promptExtra', 'humanRequest'];
 
 /**
+ * One card of the model's answer as a slot without stars and frame: its order (the answer's order fields), kind,
+ * facet, sub-kind, hue, wishes and props; hue and palette name a backdrop colour, kept only where the backdrop is
+ * abstract (SETS.md 3.7). Shared by set plans and loose cards.
+ * @param {any} c @param {string} style
+ * @returns {SlotPlan}
+ */
+export function slotFromAnswer(c, style) {
+  const { rules, style: st } = loadSetRules(style);
+  /** @type {Record<string, unknown>} */
+  const order = { style, title: c?.caption ?? c?.title };
+  for (const k of ORDER_FIELDS) if (c?.[k] !== undefined && c[k] !== null && c[k] !== '') order[k] = c[k];
+  /** @type {SlotPlan} */
+  const slot = { stars: 0, frame: '', kind: c?.kind, order: /** @type {any} */ (order) };
+  for (const k of /** @type {const} */ (['facet', 'subkind', 'hue'])) if (typeof c?.[k] === 'string' && c[k]) slot[k] = c[k];
+  if (typeof c?.wishes === 'string') slot.wishes = c.wishes;
+  if (Array.isArray(c?.props)) slot.props = c.props;
+  const staging = expandStaging(/** @type {any} */ (order.staging), rules).staging;
+  if (!staging || !matches(rules.abstract_when, /** @type {any} */ ({ staging }), st)) { delete slot.hue; delete order.palette; }
+  return slot;
+}
+
+/**
  * The model's answer as a SetPlan: the window comes from the skeleton (the model does not choose stars or frames).
  * @param {any} answer
  * @param {{style: string, theme: string, wishes?: string, collectionTheme?: string, grand?: boolean, layout: string, scenes: number, template?: string, number?: number, variant?: {n: number, group: string}, language?: string, place?: string}} o
  * @returns {SetPlan}
  */
 export function planFromAnswer(answer, o) {
-  const { rules, style: st } = loadSetRules(o.style);
+  const { rules } = loadSetRules(o.style);
   const skeleton = windowSkeleton(rules, o.layout, o.scenes);
   const cards = Array.isArray(answer?.cards) ? answer.cards : [];
   /** @param {number} i */
   const cardFor = i => cards.find((/** @type {any} */ c) => Number(c?.slot) === i + 1) ?? cards[i] ?? {};
   /** @type {SlotPlan[]} */
-  const slots = skeleton.map((sk, i) => {
-    const c = cardFor(i);
-    /** @type {Record<string, unknown>} */
-    const order = { style: o.style, title: c.caption ?? c.title };
-    for (const k of ORDER_FIELDS) if (c[k] !== undefined && c[k] !== null && c[k] !== '') order[k] = c[k];
-    /** @type {SlotPlan} */
-    const slot = { stars: sk.stars, frame: sk.frame, kind: c.kind, order: /** @type {any} */ (order) };
-    for (const k of /** @type {const} */ (['facet', 'subkind', 'hue'])) if (typeof c[k] === 'string' && c[k]) slot[k] = c[k];
-    if (typeof c.wishes === 'string') slot.wishes = c.wishes;
-    if (Array.isArray(c.props)) slot.props = c.props;
-    // hue and palette name a backdrop colour: kept only where the backdrop is abstract (SETS.md 3.7)
-    const staging = expandStaging(/** @type {any} */ (order.staging), rules).staging;
-    if (!staging || !matches(rules.abstract_when, /** @type {any} */ ({ staging }), st)) { delete slot.hue; delete order.palette; }
-    return slot;
-  });
+  const slots = skeleton.map((sk, i) => ({ ...slotFromAnswer(cardFor(i), o.style), stars: sk.stars, frame: sk.frame }));
   /** @type {SetPlan} */
   const plan = {
     style: o.style, title: answer?.title || o.theme, theme: o.theme, angle: answer?.angle || '',
@@ -311,17 +335,18 @@ export async function planCollection(o) {
 }
 
 /**
- * The text model from the settings: the OpenRouter-compatible endpoint and key of provider.openrouter, the model
- * and limits of set.plan.
- * @param {{settings: import('../settings.js').Settings & {set: SetSettings}, apiKey: string, complete?: typeof import('../providers/openrouter-text.js').complete}} o
+ * The text model from the settings: the API preset's endpoint, key and textModel (provider.preset), the limits of
+ * set.plan.
+ * @param {{settings: import('../settings.js').Settings & {set: SetSettings}, apiKey: string, complete?: typeof import('../providers/gemini.js').complete}} o
  * @returns {Promise<TextModel>}
  */
 export async function textModelFrom({ settings, apiKey, complete }) {
-  const run = complete ?? (await import('../providers/openrouter-text.js')).complete;
-  const or = settings.provider.openrouter;
+  const { apiOf, presetOf } = await import('../providers/preset.js');
+  const or = presetOf(settings.provider);
+  const run = complete ?? apiOf(or.name).complete;
   const p = settings.set.plan;
   return messages => run({
-    endpoint: or.endpoint, apiKey, model: p.model, messages, maxTokens: p.maxTokens, temperature: p.temperature, json: true,
+    endpoint: or.endpoint, apiKey, prices: or.prices, model: or.textModel, messages, maxTokens: p.maxTokens, temperature: p.temperature, json: true,
     ...(p.reasoning ? { reasoning: p.reasoning } : {}), net: { timeoutMs: p.timeoutMs, retries: or.retries, backoffMs: or.backoffMs },
   });
 }
@@ -330,6 +355,7 @@ export async function textModelFrom({ settings, apiKey, complete }) {
  * @typedef {object} SetSettings  settings `set`
  * @property {number} parallel  cards made at the same time
  * @property {number} maxSpendUsd  the spend cap of one set's cards
+ * @property {{maxCount: number}} cards  loose cards: the most of one run
  * @property {PlanSettings} plan
  */
 

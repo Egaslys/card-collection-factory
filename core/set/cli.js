@@ -3,15 +3,15 @@
 // exit code. Heavy modules (sharp, the card loop) load on demand, so --help works before the packages are installed.
 import fs from 'node:fs';
 import path from 'node:path';
-import { runProvider } from '../providers/models.js';
+import { PRESETS, presetOf, runSettings } from '../providers/preset.js';
 import { loadSettings } from '../settings.js';
 import { validatePlan } from './plan.js';
 
 const JSON_OPTION = { type: 'boolean', help: 'print the result as JSON (for an agent)' };
-const PROVIDER = { type: 'string', value: 'NAME', help: 'openrouter | codex-cli: the image provider of this run (default: settings provider.use)' };
+const PROVIDER = { type: 'string', value: 'NAME', help: `${PRESETS.join(' | ')} | codex-cli: who draws this run — that service\n(its key; its vision model too) or Codex (default: settings provider.use, provider.preset)` };
 const MAKE_OPTIONS = {
   provider: PROVIDER,
-  model: { type: 'string', value: 'ID', help: 'the OpenRouter image model of this run (default: settings provider.openrouter.model);\nimplies --provider openrouter' },
+  model: { type: 'string', value: 'ID', help: 'the image model of this run at the service (default: settings provider.<preset>.model);\nnot with --provider codex-cli' },
   parallel: { type: 'string', value: 'N', help: 'cards made at the same time (default: settings set.parallel)' },
   'max-spend': { type: 'string', value: 'USD', help: 'spend cap in USD (set make: of the set, default settings set.maxSpendUsd;\ncollection make: of the whole run, each set also keeps set.maxSpendUsd)' },
   attempts: { type: 'string', value: 'N', help: 'attempt limit of each card (default: settings card.attempts)' },
@@ -34,8 +34,8 @@ const listOk = v => v === undefined || /^\d+(,\d+)*$/.test(v);
 const makeError = v => !whole(v.parallel) ? '--parallel must be a whole number above 0'
   : !whole(v.attempts) ? '--attempts must be a whole number above 0'
   : v['max-spend'] !== undefined && !(+v['max-spend'] >= 0) ? '--max-spend must be a number of USD, 0 or more'
-  : v.provider !== undefined && !['openrouter', 'codex-cli'].includes(v.provider) ? '--provider must be openrouter or codex-cli'
-  : v.model !== undefined && v.provider === 'codex-cli' ? '--model goes with the openrouter provider (Codex draws with its own model)' : null;
+  : v.provider !== undefined && ![...PRESETS, 'codex-cli'].includes(v.provider) ? `--provider must be ${PRESETS.join(', ')} or codex-cli`
+  : v.model !== undefined && v.provider === 'codex-cli' ? '--model goes with a service provider (Codex draws with its own model)' : null;
 
 /** The settings with the `set` key (settings/defaults.json). */
 const settingsOf = () => /** @type {import('../settings.js').Settings & {set: import('./planner.js').SetSettings}} */ (loadSettings());
@@ -43,26 +43,28 @@ const settingsOf = () => /** @type {import('../settings.js').Settings & {set: im
 /** The limits of the command line, as core/set takes them. @param {any} v */
 const limitsOf = v => ({ parallel: v.parallel && +v.parallel, maxSpendUsd: v['max-spend'] !== undefined ? +v['max-spend'] : undefined, attempts: v.attempts && +v.attempts });
 
-/** @param {any} v */
+/** The settings and the image provider of a run (`--provider`, `--model`): the run's service also looks at its cards. @param {any} v */
 async function providerOf(v) {
-  const settings = settingsOf();
+  const all = settingsOf();
+  const settings = { ...all, provider: runSettings(all.provider, v) };
   const { providerFrom } = await import('../card/make.js');
-  return { settings, provider: providerFrom({ ...settings.provider, use: runProvider(settings.provider.use, v) }, { model: v.model }) };
+  return { settings, provider: providerFrom(settings.provider, { model: v.model }) };
 }
 
 /**
  * A paid run here, or in a running editor with its key when there is no key here (editor/remote.js).
  * @template T
  * @param {{needsKey: boolean, op: string, args: () => Record<string, unknown>, here: () => Promise<T>, signal?: AbortSignal}} o
+ * @param {{provider?: string, model?: string}} [v]  the run's --provider and --model: whose key it needs
  */
-async function paid(o) {
+async function paid(o, v = {}) {
   // a URL, not a literal path: the editor stays outside core's type check (tsconfig.json include)
   /** @type {{hereOrInEditor: (o: any) => Promise<T>}} */
   const { hereOrInEditor } = await import(new URL('../../editor/remote.js', import.meta.url).href);
-  return hereOrInEditor({ ...o, envVar: settingsOf().provider.openrouter.keyEnvVar });
+  return hereOrInEditor({ ...o, envVar: presetOf(runSettings(settingsOf().provider, v)).keyEnvVar });
 }
-/** @param {any} v the image provider of the run needs the OpenRouter key */
-const imagesNeedKey = v => runProvider(settingsOf().provider.use, v) === 'openrouter';
+/** @param {any} v the image provider of the run needs the service's key */
+const imagesNeedKey = v => runSettings(settingsOf().provider, v).use === 'api';
 
 /** @param {string} msg */
 const progress = msg => console.error(`… ${msg}`);
@@ -186,7 +188,7 @@ async function setMake(v, files) {
     here: async () => makeSet({
       collection: v.collection, ...(plan ? { plan } : { set: v.set }), ...await providerOf(v), only: list(v.slots), redo: !!v.redo, progress, signal, limits: limitsOf(v),
     }),
-  });
+  }, v);
   if (v.json) console.log(JSON.stringify(r, null, 2));
   else printSet(r);
   return setOk(r) ? 0 : 1;
@@ -227,7 +229,7 @@ async function collectionMake(v) {
     needsKey: imagesNeedKey(v), signal, op: 'makeCollection',
     args: () => ({ collectionId: v.collection, numbers: list(v.sets), provider: v.provider, model: v.model, limits: limitsOf(v) }),
     here: async () => makeCollection({ collection: v.collection, numbers: list(v.sets), ...await providerOf(v), progress, signal, limits: limitsOf(v) }),
-  });
+  }, v);
   if (v.json) console.log(JSON.stringify(r, null, 2));
   else {
     for (const s of r.sets) printSet(s);

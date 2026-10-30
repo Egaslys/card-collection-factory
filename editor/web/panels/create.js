@@ -11,11 +11,13 @@ async function costLine(/** @type {'set'|'collection'|'cards'} */ what) {
   if (!r) return '';
   const s = r.settings;
   const codex = s.provider.use === 'codex-cli';
-  const model = codex ? 'Codex CLI (по подписке, без оплаты за картинку)' : s.provider.openrouter.model;
+  const p = s.provider[s.provider.preset];
+  const service = r.keys[s.provider.preset].title;
+  const model = codex ? 'Codex CLI (по подписке, без оплаты за картинку)' : `${p.model} (${service})`;
   const cap = what === 'collection' ? s.set.maxSpendUsd * 16 : s.set.maxSpendUsd;
   const keyNeeded = app.key.source === 'none'
-    ? `<p class="field__hint field__hint--fail">${I.alert} Нет ключа OpenRouter: ${what === 'cards' ? 'заказы карточек' : 'план набора'} пишет текстовая модель через OpenRouter. <button type="button" class="btn btn--text btn--s" data-open-key><span>Ввести ключ</span></button></p>` : '';
-  return `<div class="costline"><p class="field__hint">Картинки: ${esc(model)}${codex ? '' : ` · потолок расходов ${{ set: 'на набор', cards: 'на карточки', collection: 'на коллекцию' }[what]} ${usd(cap)}`}. План пишет ${esc(s.set.plan.model)} (до ${usd(s.set.plan.maxSpendUsd)}). Изменить — в настройках.</p>${keyNeeded}</div>`;
+    ? `<p class="field__hint field__hint--fail">${I.alert} Нет ключа ${service}: ${what === 'cards' ? 'заказы карточек' : 'план набора'} пишет текстовая модель через ${service}. <button type="button" class="btn btn--text btn--s" data-open-key><span>Ввести ключ</span></button></p>` : '';
+  return `<div class="costline"><p class="field__hint">Картинки: ${esc(model)}${codex ? '' : ` · потолок расходов ${{ set: 'на набор', cards: 'на карточки', collection: 'на коллекцию' }[what]} ${usd(cap)}`}. План пишет ${esc(p.textModel)} (до ${usd(s.set.plan.maxSpendUsd)}). Изменить — в настройках.</p>${keyNeeded}</div>`;
 }
 
 /** @param {HTMLElement} sheet */
@@ -111,14 +113,16 @@ export async function openCreateSet(col) {
 
 /** Loose cards into the collection's pool: a theme, wishes, how many and how many scenes. @param {any} col */
 export async function openCreateCards(col) {
+  const st = await attempt(() => call('getSettings'));
+  const max = st?.settings.set.cards.maxCount ?? 1;
   const { sheet, close } = openSheet({
     title: 'Новые карточки',
     body: `<form class="form" data-form>
       <label class="field"><span class="field__label">О чём карточки</span><input class="input" name="theme" required autofocus placeholder="Например, снасти для рыбалки">${textHelp('cardsTheme')}</label>
       <label class="field"><span class="field__label">Пожелания</span><textarea class="input" name="wishes" rows="3" placeholder="Свободным текстом: что показать, чего избегать, какое настроение"></textarea>${textHelp('wishes')}</label>
       <div class="row row--fields">
-        <label class="field"><span class="field__label">Сколько карточек</span><input class="input data" name="count" type="number" min="1" max="40" step="1" value="5" inputmode="numeric"></label>
-        <label class="field"><span class="field__label">Из них сцен с персонажами</span><input class="input data" name="scenes" type="number" min="0" max="40" step="1" value="0" inputmode="numeric"></label>
+        <label class="field"><span class="field__label">Сколько карточек</span><input class="input data" name="count" type="number" min="1" max="${max}" step="1" value="${Math.min(5, max)}" inputmode="numeric"></label>
+        <label class="field"><span class="field__label">Из них сцен с персонажами</span><input class="input data" name="scenes" type="number" min="0" max="${Math.min(5, max)}" step="1" value="0" inputmode="numeric"></label>
       </div>
       <p class="field__hint">Карточки лягут в хранилище коллекции, вне наборов; оттуда их можно разложить по наборам.</p>
       <div data-cost></div>
@@ -129,12 +133,16 @@ export async function openCreateCards(col) {
   bindTextHelp(form, () => ({ collectionId: col.id, context: { collection: col.title, description: col.description } }));
   /** @type {HTMLElement} */ (sheet.querySelector('[data-cost]')).innerHTML = await costLine('cards');
   bindKeyLink(sheet);
+  const countEl = /** @type {HTMLInputElement} */ (form.elements.namedItem('count'));
+  const scenesEl = /** @type {HTMLInputElement} */ (form.elements.namedItem('scenes'));
+  // scenes are some of the cards: never more than the count
+  countEl.addEventListener('input', () => { scenesEl.max = String(Math.max(0, Math.min(Number(countEl.value) || 0, max))); });
   sheet.querySelector('[data-submit]')?.addEventListener('click', async () => {
     const f = new FormData(form);
     const theme = String(f.get('theme') ?? '').trim();
     const count = Number(f.get('count')), scenes = Number(f.get('scenes'));
     if (!theme) { /** @type {HTMLInputElement} */ (form.elements.namedItem('theme')).focus(); toast('Напишите, о чём карточки.', { kind: 'fail' }); return; }
-    if (!(Number.isInteger(count) && count >= 1)) { toast('Сколько карточек: целое число от 1.', { kind: 'fail' }); return; }
+    if (!(Number.isInteger(count) && count >= 1 && count <= max)) { toast(`Сколько карточек: целое число от 1 до ${max} за раз.`, { kind: 'fail' }); return; }
     if (!(Number.isInteger(scenes) && scenes >= 0 && scenes <= count)) { toast(`Сцен с персонажами: от 0 до ${count}.`, { kind: 'fail' }); return; }
     const r = await attempt(() => call('makeCards', { collectionId: col.id, theme, wishes: String(f.get('wishes') ?? '').trim(), count, scenes }));
     if (!r) return;

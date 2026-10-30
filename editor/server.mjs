@@ -20,6 +20,7 @@ import { cli } from '../tools/cli-args.mjs';
 import { loadSettings, ROOT } from '../core/settings.js';
 import { COLLECTIONS_DIR } from '../core/store/layout.js';
 import { createJobs } from './server/jobs.js';
+import { presetOf } from '../core/providers/preset.js';
 import { initKey, keyStatus } from './server/key.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -165,7 +166,7 @@ export async function runningEditor() {
  */
 export async function startEditor({ port, quiet = false, discovery = true } = {}) {
   const settings = /** @type {any} */ (loadSettings());
-  initKey(settings.provider.openrouter.keyEnvVar);
+  initKey(presetOf(settings.provider).keyEnvVar);
   const { OPS } = await import('./server/ops.js');
   const store = await import('../core/store/index.js');
   const token = crypto.randomBytes(24).toString('hex');
@@ -359,7 +360,7 @@ a free one is used.`,
     const target = pageUrl(ed.url, /** @type {string|undefined} */ (values.open));
     const key = keyStatus();
     console.log(`Редактор открыт: ${target}`);
-    console.log(key.source === 'none' ? 'Ключа OpenRouter нет: его можно ввести в настройках редактора (временный) или положить в .env (постоянный).' : `Ключ: ${key.source === 'permanent' ? 'постоянный (.env или окружение)' : 'временный'}.`);
+    console.log(key.source === 'none' ? `Ключа нет (${key.envVar}): его можно ввести в настройках редактора (временный) или положить в .env (постоянный).` : `Ключ: ${key.source === 'permanent' ? 'постоянный (.env или окружение)' : 'временный'}.`);
     console.log('Остановить — Ctrl+C.');
     if (browser) openBrowser(target);
     const stop = async () => { await ed.close(); process.exit(0); };

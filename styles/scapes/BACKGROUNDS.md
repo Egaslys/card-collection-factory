@@ -507,7 +507,7 @@ detailed than the hero, yet crisp and in focus. The horizon passes behind the he
 the camera ({eye level: at half to three quarters of the frame height | high camera: in the top third or
 out of frame | low camera: low, at about four fifths of the frame height, so the sky fills most of the
 frame}). Clouds and foliage stay near the frame edges, leaving clean sky or a simple area right
-behind the hero's silhouette; tufts of grass or leaves may frame the bottom edge.
+behind the hero's silhouette; tufts of grass or leaves may frame the bottom edge. The ground and the foliage are a few large soft masses of colour (a broad smooth lawn, rounded bushes, simple tree crowns) with only a handful of small accents: a meadow is a smooth lawn with a few scattered simple blossoms.
 ```
 
 В небе или под водой:

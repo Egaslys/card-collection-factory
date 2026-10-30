@@ -46,7 +46,7 @@ node FACTORY/ccf.mjs set make --collection ID --set SET_ID [--slots 1,2] [--redo
 node FACTORY/ccf.mjs collection make --collection ID [--sets N,N]
 ```
 
-Options: `--provider`, `--model` (another OpenRouter image model for this run, ccf-make-cards step 1), `--parallel`, `--attempts`, `--max-spend`. Caps (`FACTORY/settings/defaults.json`, `_about`): `set.maxSpendUsd` per set, `card.maxSpendUsd` per card inside it, `set.plan.maxSpendUsd` per planning run; `collection make --max-spend` caps the whole run. Tell the person the cap before a paid run and stay inside what they agreed.
+Options: `--provider`, `--model` (another image model of the service for this run, ccf-make-cards step 1), `--parallel`, `--attempts`, `--max-spend`. Caps (`FACTORY/settings/defaults.json`, `_about`): `set.maxSpendUsd` per set, `card.maxSpendUsd` per card inside it, `set.plan.maxSpendUsd` per planning run; `collection make --max-spend` caps the whole run. Tell the person the cap before a paid run and stay inside what they agreed.
 
 Progress: one stderr line per card event. Stop: one Ctrl+C — no new card starts, cards in progress finish, the rest are reported `cancelled`. Running `set make --set SET_ID` again continues: made slots are kept, failed ones are made again.
 

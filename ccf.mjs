@@ -17,14 +17,14 @@ import { loadSettings } from './core/settings.js';
 import { CARDS_DIR, COLLECTIONS_DIR, SLOT_COUNT } from './core/store/layout.js';
 import { setCommands } from './core/set/cli.js';
 import { storeCommands } from './core/store/cli.js';
-import { runProvider } from './core/providers/models.js';
-import { getCredits, listImageModels, loadApiKey } from './core/providers/openrouter.js';
+import { loadApiKey } from './core/providers/openrouter.js';
+import { PRESETS, PRESET_TITLES, apiOf, presetOf, runSettings } from './core/providers/preset.js';
 
 const NAME = 'ccf.mjs';
 const JSON_OPTION = { type: 'boolean', help: 'print the result as JSON (for an agent)' };
 const RUN_OPTIONS = {
-  provider: { type: 'string', value: 'NAME', help: 'openrouter | codex-cli: the image provider of this run (default: settings provider.use)' },
-  model: { type: 'string', value: 'ID', help: 'the OpenRouter image model of this run (default: settings provider.openrouter.model);\nimplies --provider openrouter' },
+  provider: { type: 'string', value: 'NAME', help: `${PRESETS.join(' | ')} | codex-cli: who draws this run — that service\n(its key; its vision model too) or Codex (default: settings provider.use, provider.preset)` },
+  model: { type: 'string', value: 'ID', help: 'the image model of this run at the service (default: settings provider.<preset>.model);\nnot with --provider codex-cli' },
   attempts: { type: 'string', value: 'N', help: 'attempt limit of this run (default: make — settings card.attempts; a request — 1)' },
   'max-spend': { type: 'string', value: 'USD', help: 'spend cap of this run in USD (default: settings card.maxSpendUsd)' },
 };
@@ -38,8 +38,8 @@ const ATTEMPT_OPTION = { type: 'string', value: 'N', help: 'this attempt (defaul
 /** @param {any} v */
 const runError = v => v.attempts !== undefined && !(Number.isInteger(+v.attempts) && +v.attempts > 0) ? '--attempts must be a whole number above 0'
   : v['max-spend'] !== undefined && !(+v['max-spend'] >= 0) ? '--max-spend must be a number of USD, 0 or more'
-  : v.provider !== undefined && !['openrouter', 'codex-cli'].includes(v.provider) ? '--provider must be openrouter or codex-cli'
-  : v.model !== undefined && v.provider === 'codex-cli' ? '--model goes with the openrouter provider (Codex draws with its own model)' : null;
+  : v.provider !== undefined && ![...PRESETS, 'codex-cli'].includes(v.provider) ? `--provider must be ${PRESETS.join(', ')} or codex-cli`
+  : v.model !== undefined && v.provider === 'codex-cli' ? '--model goes with a service provider (Codex draws with its own model)' : null;
 /** @param {any} v */
 const placeError = v => (v.set === undefined) !== (v.slot === undefined) ? '--set and --slot go together'
   : v.slot !== undefined && !(Number.isInteger(+v.slot) && +v.slot >= 1 && +v.slot <= SLOT_COUNT) ? `--slot must be a whole number from 1 to ${SLOT_COUNT}` : null;
@@ -175,13 +175,13 @@ and replaces the earlier verdict on the outline. The vision model is not asked a
   },
   models: {
     usage: [`${NAME} models [--json]`],
-    about: 'Lists the image models of the OpenRouter-compatible endpoint in the settings (provider.openrouter;\nkey from the environment or .env).',
+    about: 'Lists the models of the service in the settings (provider.preset; key from the environment or .env):\nOpenRouter — the image models with prices; Google AI Studio — every model that answers generateContent\n(its listing does not say which draw).',
     options: { json: JSON_OPTION },
     run: models,
   },
   credits: {
     usage: [`${NAME} credits [--json]`],
-    about: 'Shows the balance of the OpenRouter-compatible account in the settings (provider.openrouter).',
+    about: 'Shows the balance of the account of the service in the settings (provider.preset). Only OpenRouter\nreports it; Google AI Studio has no balance call.',
     options: { json: JSON_OPTION },
     run: credits,
   },
@@ -235,14 +235,11 @@ the cards; its cost is recorded as text. With plan errors no card is made and th
 const readOrder = file => JSON.parse(fs.readFileSync(path.resolve(file), 'utf8'));
 /** @param {any} v the set slot of the command line (1-based) as the store's place (0-based) */
 const placeOf = v => (v.set ? { setId: v.set, slot: +v.slot - 1 } : undefined);
-/** @param {any} v @param {import('./core/settings.js').Settings} settings */
-async function runOf(v, settings) {
+/** The settings and provider of a run (`--provider`, `--model`): the run's service also looks at its cards. @param {any} v @param {import('./core/settings.js').Settings} all */
+async function runOf(v, all) {
   const { providerFrom } = await import('./core/card/make.js');
-  return {
-    settings,
-    provider: providerFrom({ ...settings.provider, use: runProvider(settings.provider.use, v) }, { model: v.model }),
-    limits: limitsOf(v),
-  };
+  const settings = { ...all, provider: runSettings(all.provider, v) };
+  return { settings, provider: providerFrom(settings.provider, { model: v.model }), limits: limitsOf(v) };
 }
 /** The limits of the command line, as core/card takes them. @param {any} v */
 const limitsOf = v => ({ attempts: v.attempts && +v.attempts, maxSpendUsd: v['max-spend'] !== undefined ? +v['max-spend'] : undefined });
@@ -254,8 +251,8 @@ const limitsOf = v => ({ attempts: v.attempts && +v.attempts, maxSpendUsd: v['ma
  */
 async function paid(v, settings, op, args, here) {
   const { hereOrInEditor } = await import('./editor/remote.js');
-  const needsKey = runProvider(settings.provider.use, v) === 'openrouter';
-  return hereOrInEditor({ needsKey, envVar: settings.provider.openrouter.keyEnvVar, op, args, here });
+  const run = runSettings(settings.provider, v);
+  return hereOrInEditor({ needsKey: run.use === 'api', envVar: presetOf(run).keyEnvVar, op, args, here });
 }
 /** A card folder as the editor names it. @param {string} dir */
 function cardOf(dir) {
@@ -287,7 +284,7 @@ async function cardsMake(v) {
   const a = { collectionId: v.collection, theme: v.theme, wishes: v.wishes, count: +v.count, scenes: v.scenes !== undefined ? +v.scenes : 0, provider: v.provider, model: v.model, maxSpendUsd: v['max-spend'] !== undefined ? +v['max-spend'] : undefined };
   /** @type {any} */
   const r = await hereOrInEditor({
-    needsKey: true, envVar: settings.provider.openrouter.keyEnvVar, op: 'makeCards', args: () => a,
+    needsKey: true, envVar: presetOf(runSettings(settings.provider, v)).keyEnvVar, op: 'makeCards', args: () => a,
     here: async () => {
       const { makeCardsInto } = await import('./core/set/cards.js');
       const { settings: s, provider } = await runOf(v, settings);
@@ -351,7 +348,7 @@ async function cardImport(v, [target, image]) {
   const { visionFrom } = await import('./core/card/make.js');
   // the vision steps need the key: here, else in a running editor with its key, else here without them
   return finish(v, await hereOrInEditor({
-    needsKey: true, optional: true, envVar: settings.provider.openrouter.keyEnvVar, op: 'importImage',
+    needsKey: true, optional: true, envVar: presetOf(settings.provider).keyEnvVar, op: 'importImage',
     args: () => ({ image: path.resolve(image), ...(isCard ? cardOf(target) : { collectionId: v.collection, order: where.order, place: where.place }) }),
     here: () => importImage({ image: path.resolve(image), ...where, settings, vision: visionFrom(settings.provider) }),
   }), false);
@@ -382,11 +379,13 @@ async function cardCheck(v, [dir]) {
 
 /** @param {any} v */
 async function models(v) {
-  const provider = openrouterSettings();
-  const list = await listImageModels({ endpoint: provider.endpoint, apiKey: loadApiKey({ envVar: provider.keyEnvVar }) });
+  const provider = presetOf(loadSettings().provider);
+  /** @type {{id: string, name?: string, pricing?: object}[]} */
+  const list = await apiOf(provider.name).listImageModels({ endpoint: provider.endpoint, apiKey: loadApiKey({ envVar: provider.keyEnvVar }) });
   if (v.json) console.log(JSON.stringify(list, null, 2));
   else {
-    console.log(`Модели изображений у ${provider.endpoint} (${list.length}); в настройках: ${provider.model}`);
+    const what = provider.name === 'google' ? 'Модели с generateContent' : 'Модели изображений';
+    console.log(`${what} у ${PRESET_TITLES[provider.name]} (${provider.endpoint}, ${list.length}); в настройках: ${provider.model}`);
     for (const m of list) console.log(`  ${m.id === provider.model ? '*' : ' '} ${m.id}${m.name ? ` — ${m.name}` : ''}${m.pricing ? `  цена: ${JSON.stringify(m.pricing)}` : ''}`);
   }
   return 0;
@@ -394,7 +393,9 @@ async function models(v) {
 
 /** @param {any} v */
 async function credits(v) {
-  const provider = openrouterSettings();
+  const provider = presetOf(loadSettings().provider);
+  const getCredits = apiOf(provider.name).getCredits;
+  if (!getCredits) throw new Error(`${PRESET_TITLES[provider.name]} не сообщает баланс через API: расходы смотрите в кабинете сервиса.`);
   const c = await getCredits({ endpoint: provider.endpoint, apiKey: loadApiKey({ envVar: provider.keyEnvVar }) });
   if (v.json) console.log(JSON.stringify(c, null, 2));
   else console.log(`Баланс у ${provider.endpoint}: осталось $${c.remaining.toFixed(2)} (всего $${c.total.toFixed(2)}, потрачено $${c.used.toFixed(2)})`);
@@ -439,9 +440,6 @@ async function editor(v) {
 }
 const EDITOR_START_TRIES = 50;
 const EDITOR_START_STEP_MS = 200;
-
-/** models and credits ask the OpenRouter-compatible endpoint, whichever provider generates (Codex has neither). */
-const openrouterSettings = () => loadSettings().provider.openrouter;
 
 // ---------- output ----------
 

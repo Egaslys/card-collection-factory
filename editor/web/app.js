@@ -111,7 +111,7 @@ function keyChip() {
   const k = app.key;
   const word = !app.online ? 'Редактор не отвечает' : k.source === 'none' ? 'Нет ключа' : k.source === 'temporary' ? 'Временный ключ' : 'Ключ';
   const bad = !app.online || k.source === 'none';
-  return `<button type="button" class="chip${bad ? ' chip--fail' : ''}" data-open-settings="key" title="${esc(bad ? 'Без ключа OpenRouter генерация через OpenRouter не работает. Нажмите, чтобы ввести ключ.' : k.source === 'temporary' ? 'Временный ключ OpenRouter: живёт, пока запущен редактор' : 'Постоянный ключ OpenRouter из файла .env')}"><i class="dot ${bad ? 'dot--fail' : 'dot--done'}"></i><span class="chip__text">${word}</span></button>`;
+  return `<button type="button" class="chip${bad ? ' chip--fail' : ''}" data-open-settings="key" title="${esc(bad ? `Нет ключа сервиса (${k.envVar}): генерация через сервис, план набора и взгляд на карточки не работают. Нажмите, чтобы ввести ключ.` : k.source === 'temporary' ? `Временный ключ (${k.envVar}): живёт, пока запущен редактор` : `Постоянный ключ из файла .env (${k.envVar})`)}"><i class="dot ${bad ? 'dot--fail' : 'dot--done'}"></i><span class="chip__text">${word}</span></button>`;
 }
 
 function jobsChip() {

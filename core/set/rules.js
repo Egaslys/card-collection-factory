@@ -43,6 +43,9 @@ export const RULES_FILE = 'set-rules.json';
  * @property {StagingRow[]} stagings
  * @property {{sets: number, growth_window: number, theme_kinds: string[], reference_positions: {window: string, scenes: number}[]}} collection
  * @property {{window: string}} standalone
+ * @property {{time: {no_characters: string[], golden_max: number},
+ *   contrast: {hue_diff_min_from: {file: string, path: string[]}, colours: Record<string, [number, number]>, neutral: string[], lighter: string[], darker: string[]},
+ *   texture: {words: string[], why: string, instead: string, source: string}[]}} orders  what a plan's orders tell the image model (SETS.md 9.22–9.24)
  * @property {{fragments: Record<string, string>, glue: Record<string, string>}} prompt
  */
 
@@ -151,4 +154,38 @@ export function windowSkeleton(rules, layout, scenes) {
     const gold = (w.gold === 'scenes' && scene) || goldItems.has(i + 1);
     return { stars: s, frame: gold ? 'gold' : w.frame, scene };
   });
+}
+
+/**
+ * The spend cap of cards made a few at a time (a set, loose cards): each card reserves its own cap, at most
+ * `perCard`, out of what is left. A card that finds nothing left while others still run waits until one of them
+ * finishes and gives back what it did not spend; with nothing running and nothing left, its cap is 0 (skip it).
+ * @param {number} cap  the run's cap, USD @param {number} perCard  one card's cap (settings card.maxSpendUsd)
+ */
+export function cardBudget(cap, perCard) {
+  const b = { spent: 0, reserved: 0, price: 0 };
+  /** @type {() => void} */
+  let freed = () => {};
+  let release = new Promise(r => { freed = () => r(undefined); });
+  const left = () => Math.min(perCard, cap - b.spent - b.reserved);
+  return {
+    get spent() { return b.spent; },
+    /** the highest price of one call seen in this run: it stands for a new card's first call */
+    get price() { return b.price; },
+    /** waits while the others hold the budget; reserves and returns this card's cap (≤ 0: nothing left) */
+    async take() {
+      while (left() <= 0 && b.reserved > 0) await release;
+      const here = left();
+      b.reserved += Math.max(0, here);
+      return here;
+    },
+    /** gives back a card's reserve: what it spent and the prices of its calls */
+    done(/** @type {number} */ here, /** @type {number} */ spent = 0, /** @type {number[]} */ prices = []) {
+      b.reserved -= Math.max(0, here);
+      b.spent += spent;
+      b.price = Math.max(b.price, ...prices);
+      freed();
+      release = new Promise(r => { freed = () => r(undefined); });
+    },
+  };
 }

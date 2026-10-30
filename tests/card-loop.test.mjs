@@ -407,7 +407,15 @@ test('профиль модели в запросе: GPT Image получает 
   const chosen = providerFrom(real, { apiKey: 'test-key', model: real.openrouter.fallbackModel });
   assert.equal(chosen.model, real.openrouter.fallbackModel);
   assert.equal(chosen.fallback, undefined, 'запасная совпала с выбранной — её нет');
-  assert.throws(() => providerFrom({ ...real, use: 'codex-cli' }, { model: 'a/b' }), /только у OpenRouter/);
+  assert.throws(() => providerFrom({ ...real, use: 'codex-cli' }, { model: 'a/b' }), /только у сервиса с ключом/);
+  // a model's framing correction ends its own prompt; the fallback model without one gets the prompt as it is
+  const models = structuredClone(real.models);
+  models[real.openrouter.model] = { ...models[real.openrouter.model], framing: 'Draw it larger.' };
+  delete models[real.openrouter.fallbackModel].framing;
+  const framed = providerFrom({ ...real, models }, { apiKey: 'test-key' });
+  await framed.generate({ prompt: 'p', references: [] });
+  await framed.fallback.generate({ prompt: 'p', references: [] });
+  assert.deepEqual(sent.slice(-2).map(b => b.prompt), ['p\n\nDraw it larger.', 'p']);
 });
 
 // ---------- the collection's pool and a person's requests on a card ----------
@@ -681,7 +689,7 @@ test('смотрящая модель в цикле: рамка героя → �
   const p = fakeProvider(fs.readFileSync(path.join(ROOT, 'styles/scapes/references/card-003.png')), 0.04, { vision });
   const r = await makeCard({ order, ...await pool(), settings, provider: p, buildPrompt: fakePrompt });
   assert.equal(p.calls.length, 2, 'первая попытка — «не тот предмет»: перегенерация');
-  assert.equal(asked[0].model, real.vision.model);
+  assert.equal(asked[0].model, real.provider.openrouter.visionModel);
   const card = JSON.parse(fs.readFileSync(path.join(r.dir, 'card.json'), 'utf8'));
   const [a1, a2] = card.attempts;
   assert.equal(a1.hero.source, 'vision');

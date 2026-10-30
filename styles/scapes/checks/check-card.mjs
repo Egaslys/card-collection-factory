@@ -68,16 +68,22 @@ const VALUE_OF = {
   'COLOUR.1': m => m.wc.C_p50, 'COLOUR.2': m => m.wc.grey_share, 'COLOUR.3a': m => m.wc.black_share, 'COLOUR.3b': m => m.wc.darkest2.C,
   'COLOUR.4': m => m.wc.white_share, 'COLOUR.5a': m => m.wc.L_p50, 'COLOUR.5b': m => m.wc.L_p1, 'COLOUR.5c': m => m.wc.L_p99,
   'COLOUR.6': m => m.wc.n_hues, 'COLOUR.8a': m => m.bg.C, 'COLOUR.8b': m => m.bg.s, 'COLOUR.8c': m => m.bg.L,
-  'COLOUR.15a': m => m.wc.L_p50, 'COLOUR.15b': m => m.wc.C_p50,
+  'COLOUR.15a': m => m.wc.L_p50, 'COLOUR.15b': m => m.wc.C_p50, 'COLOUR.15c': m => m.wc.L_p50,
   'RENDERING.16a': m => m.tr.flat_grain, 'RENDERING.17a': m => m.ov.overshoot_med, 'RENDERING.17b': m => m.ov.width_med,
 };
 const isNight = staging => staging.time === 'night' || staging.time === 'dusk';
+const isEvening = staging => staging.time === 'golden' || staging.time === 'dusk';
+// COLOUR.15a and 15b at night or dusk, 15c at golden hour or dusk
+const timeFits = (id, staging) => !id.startsWith('COLOUR.15') || (id === 'COLOUR.15c' ? isEvening(staging) : isNight(staging));
+/** The norm of a check for this staging: its time-of-day norm (`norm_by_time`) where the staging's time is one of its times. */
+const normFor = (id, staging) => (T[id].norm_by_time?.times.includes(staging.time) ? T[id].norm_by_time.norm : T[id].norm);
 const isAbstract = staging => staging.backdrop === 'field' || staging.backdrop === 'wall';
 
 /**
  * The checks `ids` (of VALUE_OF) that apply to this staging, measured on RGB pixels of the card size, each with the
- * range post-processing aims at: the bible's adjustment target where it gives one, else the norm, else the limit.
- * COLOUR.15 only at night or dusk; COLOUR.8 only on an abstract backdrop and with `fg`, a hero outline confirmed by eye.
+ * range post-processing aims at: the bible's adjustment target where it gives one, else the norm (its time-of-day norm where it has one), else the limit.
+ * COLOUR.15a–b only at night or dusk, 15c at golden hour or dusk; COLOUR.8 only on an abstract backdrop and with `fg`, a
+ * hero outline confirmed by eye.
  * @returns {{id: string, value: number, aim: {min?: number, max?: number}}[]}
  */
 export function processingMeasures(rgb, { staging, ids, fg }) {
@@ -88,8 +94,8 @@ export function processingMeasures(rgb, { staging, ids, fg }) {
     wc: { get: once('wc', () => M.wholeCard(P)) }, ov: { get: once('ov', () => M.overshoot(P)) }, tr: { get: once('tr', () => M.traces(P)) },
     bg: { get: once('bg', () => (fg && isAbstract(staging) ? M.heroBackdrop(P, fg).bg?.dominant : null)) },
   });
-  const applies = id => VALUE_OF[id] && (!id.startsWith('COLOUR.15') || isNight(staging)) && (!id.startsWith('COLOUR.8') || m.bg);
-  return ids.filter(applies).map(id => ({ id, value: VALUE_OF[id](m), aim: T[id].target ?? T[id].norm ?? T[id].limit }));
+  const applies = id => VALUE_OF[id] && timeFits(id, staging) && (!id.startsWith('COLOUR.8') || m.bg);
+  return ids.filter(applies).map(id => ({ id, value: VALUE_OF[id](m), aim: T[id].target ?? normFor(id, staging) ?? T[id].limit }));
 }
 
 /** The proposed hero outline of RGB pixels of the card size (the one card.mask.png shows), or null when none is found. */
@@ -197,7 +203,7 @@ export async function checkCard(card, { baseDir, overlaysDir, outline } = {}) {
 
   // ---------- COLOUR, whole card ----------
   const wc = M.wholeCard(P); meas.whole = wc;
-  res.push(range('COLOUR.1', VALUE_OF['COLOUR.1']({ wc })));
+  res.push(range('COLOUR.1', VALUE_OF['COLOUR.1']({ wc }), { norm: normFor('COLOUR.1', s) }));
   res.push(range('COLOUR.2', VALUE_OF['COLOUR.2']({ wc })));
   res.push(range('COLOUR.3a', VALUE_OF['COLOUR.3a']({ wc })));
   res.push(range('COLOUR.3b', VALUE_OF['COLOUR.3b']({ wc })));
@@ -250,6 +256,7 @@ export async function checkCard(card, { baseDir, overlaysDir, outline } = {}) {
   } else res.push(na('COLOUR.14', s.sky_top ? `the sky at the top is not day sky (time ${s.time})` : 'top of the frame is not sky (sky_top not set)'));
   if (night) { res.push(range('COLOUR.15a', VALUE_OF['COLOUR.15a']({ wc }))); res.push(range('COLOUR.15b', VALUE_OF['COLOUR.15b']({ wc }))); }
   else for (const id of ['COLOUR.15a', 'COLOUR.15b']) res.push(na(id, 'not night or dusk'));
+  res.push(isEvening(s) ? range('COLOUR.15c', VALUE_OF['COLOUR.15c']({ wc })) : na('COLOUR.15c', 'not golden hour or dusk'));
 
   // ---------- BACKGROUNDS ----------
   const floorWanted = abstract && METHOD.floor_supports.includes(s.support);
@@ -360,7 +367,8 @@ export async function checkCard(card, { baseDir, overlaysDir, outline } = {}) {
   {
     const b = busyness(P.Y, METHOD.busyness_luma_step_min); meas.busyness = b;
     const g = chars ? 'scene' : abstract ? 'abstract' : 'environment', t = T['RENDERING.18'];
-    res.push(range('RENDERING.18', b.strong_pct, { ...t.groups[g], note: `group ${g}; ${t.note}` }));
+    const low = b.strong_pct < t.groups[g].norm.min;
+    res.push(range('RENDERING.18', b.strong_pct, { ...t.groups[g], soft: t.groups[g].proposed, note: `group ${g}; ${low ? t.note_low : t.note}` }));
   }
 
   for (const r of res) if (restsOnUnconfirmedMask(r, hero))

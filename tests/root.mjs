@@ -13,7 +13,7 @@ import os from 'node:os';
 if (!process.env.CCF_SETTINGS_DIR) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccf-settings-'));
   const defaults = JSON.parse(fs.readFileSync(path.join(ROOT, 'settings/defaults.json'), 'utf8'));
-  defaults.provider.openrouter.keyEnvVar = 'CCF_TEST_NO_KEY';
+  for (const p of ['openrouter', 'google']) defaults.provider[p].keyEnvVar = 'CCF_TEST_NO_KEY';
   fs.writeFileSync(path.join(dir, 'defaults.json'), JSON.stringify(defaults, null, 2));
   process.env.CCF_SETTINGS_DIR = dir;
   process.env.CCF_EDITOR_FILE ??= path.join(dir, 'no-editor.json');

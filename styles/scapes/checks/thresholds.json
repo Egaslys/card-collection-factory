@@ -20,6 +20,14 @@
         "min": 33,
         "max": 78
       },
+      "norm_by_time": {
+        "times": ["golden", "dusk", "night"],
+        "norm": {
+          "min": 26,
+          "max": 78
+        },
+        "source": "COLOUR.md check 1: at golden hour, dusk and night the reference cards run from C* 26.4 (#160) to 54.1, 13 cards without #100 (measured 2026-10-30); the day norm's lower bound 33 would keep post-processing from darkening an evening (COLOUR.md check 15)"
+      },
       "limit": {
         "min": 21
       },
@@ -255,6 +263,18 @@
         "min": 26,
         "max": 50
       }
+    },
+    "COLOUR.15c": {
+      "doc": "COLOUR.md",
+      "check": 15,
+      "title": "golden hour or dusk: median L* evening-dark (at most the lightest reference evening card)",
+      "limit": {
+        "max": 63
+      },
+      "exceptions": [
+        100
+      ],
+      "exceptions_source": "COLOUR.md check 15: the beach #100 is marked golden hour but its white sand, foam and pale sky make it as light as day (median L* 73.7); by eye it reads as a warm day, not as an evening to aim at"
     },
     "BACKGROUNDS.4a": {
       "doc": "BACKGROUNDS.md",
@@ -637,11 +657,12 @@
       "groups": {
         "abstract": { "norm": { "min": 3.7, "max": 10 }, "limit": { "max": 15.3 } },
         "environment": { "norm": { "min": 4.8, "max": 13.6 }, "limit": { "max": 17.6 } },
-        "scene": { "norm": { "min": 7.3, "max": 12.1 }, "limit": { "max": 17.9 } }
+        "scene": { "norm": { "min": 7.3, "max": 12.1 }, "limit": { "max": 17.9 }, "proposed": true }
       },
       "groups_rule": "characters > 0 → scene; otherwise backdrop field or wall → abstract; otherwise (environment, none) → environment",
-      "proposed": true,
-      "note": "busier than the references: small detail on the ground, foliage or props (tiny flowers, photo-like pebbles) instead of a few large soft masses — check by eye"
+      "proposed_note": "a group marked proposed only warns past its limit: scenes, whose improved prompts do not pass yet (2026-10-30); abstract backdrop and environment are blocking",
+      "note": "busier than the references: small detail on the ground, foliage or props (tiny flowers, photo-like pebbles) instead of a few large soft masses — check by eye",
+      "note_low": "calmer than most references of the group — look by eye"
     }
   },
   "visual": [

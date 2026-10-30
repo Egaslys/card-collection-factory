@@ -35,8 +35,9 @@ import path from 'node:path';
 import { adjust } from '../image/adjust.js';
 import { encodePng, prepareCard } from '../image/prepare.js';
 import * as codexCli from '../providers/codex-cli.js';
-import { profileOf, requestFor } from '../providers/models.js';
-import * as openrouter from '../providers/openrouter.js';
+import { modelIds, profileOf, requestFor } from '../providers/models.js';
+import { loadApiKey } from '../providers/openrouter.js';
+import { apiOf, presetOf } from '../providers/preset.js';
 import { ROOT } from '../settings.js';
 import { orderOutput, validateOrder } from '../style/card-order.js';
 import { OrderError, buildPrompt as styleBuildPrompt } from '../style/prompt.js';
@@ -61,18 +62,19 @@ import { tuneProcessing } from './tune.js';
  * aspectRatio: the order kind's own frame, else the provider settings'; crop: the card size the image will be cut to, when
  * it is (a model that lacks the ratio is asked for the one closest to it). fallback: the provider to try, in the same
  * attempt, when this one fails (an error, a refusal, an answer without an image). legend: what the attached images
- * are, for a provider that says it in words (Codex); default: style references. vision: asks a vision model about one
- * image through the same connection (OpenRouter-compatible, with its key); absent when there is no key — the loop then
+ * are, for a provider that says it in words (Codex); default: style references. vision: asks the vision model about one
+ * image through the API preset of the run (provider.preset, with its key); absent when there is no key — the loop then
  * finds no hero box by itself and does not look (settings → vision, hero, look).
  * @typedef {{model: string, free?: boolean, fallback?: Provider, vision?: VisionCall,
  *   generate: (req: {prompt: string, references: {path: string}[], aspectRatio?: string, legend?: string, crop?: {width: number, height: number}}) => Promise<{bytes: Uint8Array, mime?: string, cost: number|null}>}} Provider
  */
 
 /**
- * @typedef {(req: {model: string, prompt: string, image: {path?: string, bytes?: Uint8Array, mime?: string}, maxTokens: number, reasoning?: Record<string, unknown>, timeoutMs: number}) => Promise<{text: string, cost: number|null}>} VisionCall
+ * The vision call of a connection; `model`: its preset's vision model (without it, the settings preset's).
+ * @typedef {((req: {model: string, prompt: string, image: {path?: string, bytes?: Uint8Array, mime?: string}, maxTokens: number, reasoning?: Record<string, unknown>, timeoutMs: number}) => Promise<{text: string, cost: number|null}>) & {model?: string}} VisionCall
  */
 
-/** @typedef {(req: {prompt: string, image: {path?: string, bytes?: Uint8Array, mime?: string}, maxTokens: number, reasoning?: Record<string, unknown>}) => Promise<{text: string, cost: number|null}>} Ask  the vision model of the settings (reasoning: instead of the settings') */
+/** @typedef {((req: {prompt: string, image: {path?: string, bytes?: Uint8Array, mime?: string}, maxTokens: number, reasoning?: Record<string, unknown>}) => Promise<{text: string, cost: number|null}>) & {model: string}} Ask  the vision model of the run (reasoning: instead of the settings'); model: its id, recorded */
 
 /**
  * The prompt of an order (core/style buildPrompt): legend = what the attached images are, as the prompt says it,
@@ -130,7 +132,7 @@ export const AGENT_MODEL = 'agent';
 /** The key of Codex's profile in provider.models. */
 const CODEX_PROFILE = 'codex-cli';
 const EPSILON_USD = 1e-9;
-const NO_VISION = 'Смотрящая модель не спрошена (нет ключа OpenRouter): рамку героя для проверок даёт только агент или человек, взгляда на карточку нет.';
+const NO_VISION = 'Смотрящая модель не спрошена (нет ключа сервиса — provider.preset): рамку героя для проверок даёт только агент или человек, взгляда на карточку нет.';
 
 /**
  * Whether the loop may make one more paid call, or why not.
@@ -162,15 +164,18 @@ export function pickBest(attempts) {
 const styleProcessing = style => JSON.parse(fs.readFileSync(path.join(styleDir(style), 'processing.json'), 'utf8'));
 
 /**
- * Starting post-processing settings for a model: the factory settings' override for the model, else the style's
- * start for it (a name there refers to another entry, e.g. "neutral"), else none (neutral) with a warning.
+ * Starting post-processing settings for a model (or the model its profile says it is the same as, `sameAs`): the
+ * factory settings' override for the model, else the style's start for it (a name there refers to another entry, e.g.
+ * "neutral"), else none (neutral) with a warning.
  * @param {{style: string, model: string, settings: import('../settings.js').Settings}} o
  * @returns {{processing: AdjustSettings, warning?: string}}
  */
 export function processingFor({ style, model, settings }) {
   const own = styleProcessing(style);
-  const start = own.start?.[model];
-  const chosen = settings.processing[model] ?? (typeof start === 'string' ? own[start] : start);
+  const ids = modelIds(settings.provider?.models, model);
+  const id = ids.find(i => settings.processing[i] || own.start?.[i]) ?? model;
+  const start = own.start?.[id];
+  const chosen = settings.processing[id] ?? (typeof start === 'string' ? own[start] : start);
   if (chosen) return { processing: chosen };
   return { processing: own.neutral, warning: `Для модели ${model} нет начальных настроек обработки ни в настройках, ни в styles/${style}/processing.json: начато с нейтральных.` };
 }
@@ -214,34 +219,38 @@ async function readPixels(file) {
 }
 
 /**
- * The provider chosen in the settings (provider.use); for OpenRouter with `fallbackModel` set, that model is the
- * fallback of the main one (`model` replaces the main one for this run). Each model is asked through its profile
- * (provider.models, core/providers/models.js): the ratio it accepts closest to the wanted one, its own request fields,
- * no more input images than it takes. The OpenRouter key is read from the environment or .env, never printed, unless the caller
- * holds it (a running editor's temporary key). With a key, the provider also carries `vision` through
- * provider.openrouter's endpoint — for Codex too, whose images need no key: without one it has no `vision`.
+ * The provider chosen in the settings (provider.use): the image model of the API preset (provider.preset →
+ * provider.<preset>, its key), whose `fallbackModel`, when set, is the fallback of the main one (`model` replaces the
+ * main one for this run); or Codex. Each model is asked through its profile (provider.models,
+ * core/providers/models.js): the ratio it accepts closest to the wanted one, its own request fields, no more input
+ * images than it takes. The key is read from the environment or .env, never printed, unless the caller holds it (a
+ * running editor's temporary key). With a key, the provider also carries `vision` through the preset — for Codex too,
+ * whose images need no key: without one it has no `vision`.
  * @param {import('../settings.js').ProviderSettings} settings
- * @param {{apiKey?: string, model?: string}} [o]  model: the OpenRouter model of this run instead of provider.openrouter.model
+ * @param {{apiKey?: string, model?: string}} [o]  model: the preset's image model of this run instead of its `model`
  * @returns {Provider}
  */
 export function providerFrom(settings, { apiKey: held, model: chosen } = {}) {
-  const o = settings.openrouter;
+  /** the model's own framing correction (its profile's `framing`) at the end of its prompt */
+  const withFraming = (/** @type {string} */ prompt, /** @type {import('../providers/models.js').ModelProfile} */ p) => [prompt, p.framing].filter(Boolean).join('\n\n');
   if (settings.use === 'codex-cli') {
-    if (chosen) throw new Error(`Модель ${chosen} выбирается только у OpenRouter; Codex рисует своей (provider.codexCli.model).`);
+    if (chosen) throw new Error(`Модель ${chosen} выбирается только у сервиса с ключом (provider.use = api); Codex рисует своей (provider.codexCli.model).`);
     const c = settings.codexCli;
     const profile = profileOf(settings.models, CODEX_PROFILE);
     const vision = visionFrom(settings, { apiKey: held });
     return {
       model: 'codex-cli' + (c.model ? `/${c.model}` : ''), free: true,
       generate: async ({ prompt, references, aspectRatio, legend, crop }) => codexCli.generateImage({
-        settings: c, prompt, references, legend,
+        settings: c, prompt: withFraming(prompt, profile), references, legend,
         aspectRatio: requestFor(profile, { model: CODEX_PROFILE, aspectRatio: aspectRatio ?? c.aspectRatio, references: references.length, crop }).aspectRatio,
       }),
       ...(vision ? { vision } : {}),
     };
   }
-  if (settings.use !== 'openrouter') throw new Error(`Настройки: неизвестный провайдер provider.use = «${settings.use}» (есть openrouter и codex-cli).`);
-  const apiKey = held ?? openrouter.loadApiKey({ envVar: o.keyEnvVar });
+  if (settings.use !== 'api') throw new Error(`Настройки: неизвестный провайдер provider.use = «${settings.use}» (есть api и codex-cli).`);
+  const o = presetOf(settings);
+  const api = apiOf(o.name);
+  const apiKey = held ?? loadApiKey({ envVar: o.keyEnvVar });
   const net = { timeoutMs: o.timeoutMs, retries: o.retries, backoffMs: o.backoffMs };
   /** @param {string} model @returns {Provider} */
   const on = model => {
@@ -250,7 +259,7 @@ export function providerFrom(settings, { apiKey: held, model: chosen } = {}) {
       model,
       generate: async ({ prompt, references, aspectRatio, crop }) => {
         const r = requestFor(profile, { model, aspectRatio: aspectRatio ?? o.aspectRatio, references: references.length, crop });
-        return openrouter.generateImage({ endpoint: o.endpoint, apiKey, model, prompt, references, aspectRatio: r.aspectRatio, params: { ...o.params, ...r.params }, net });
+        return api.generateImage({ endpoint: o.endpoint, apiKey, prices: o.prices, model, prompt: withFraming(prompt, profile), references, aspectRatio: r.aspectRatio, params: { ...o.params, ...r.params }, net });
       },
     };
   };
@@ -260,31 +269,41 @@ export function providerFrom(settings, { apiKey: held, model: chosen } = {}) {
 }
 
 /**
- * The vision call through provider.openrouter's endpoint with the caller's key (a running editor's) or the one in the
- * environment or .env; null without a key. It never throws: an image an agent hands in is checked without the vision
- * model when there is no key, as Codex's images are.
+ * The vision call through the API preset (provider.preset: its endpoint and vision model) with the caller's key (a
+ * running editor's) or the one in the environment or .env; null without a key. It never throws: an image an agent
+ * hands in is checked without the vision model when there is no key, as Codex's images are.
  * @param {import('../settings.js').ProviderSettings} settings
  * @param {{apiKey?: string|null}} [o]
  * @returns {VisionCall|null}
  */
 export function visionFrom(settings, { apiKey } = {}) {
-  const o = settings.openrouter;
+  const o = presetOf(settings);
   let key = apiKey ?? null;
-  try { key ??= openrouter.loadApiKey({ envVar: o.keyEnvVar }); } catch { /* no key: nothing looks */ }
+  try { key ??= loadApiKey({ envVar: o.keyEnvVar }); } catch { /* no key: nothing looks */ }
   if (!key) return null;
   const k = key;
-  return ({ model, prompt, image, maxTokens, reasoning, timeoutMs }) => openrouter.askVision({
-    endpoint: o.endpoint, apiKey: k, model, prompt, image, maxTokens, reasoning, net: { timeoutMs, retries: o.retries, backoffMs: o.backoffMs },
+  /** @type {VisionCall} */
+  const call = ({ model, prompt, image, maxTokens, reasoning, timeoutMs }) => apiOf(o.name).askVision({
+    endpoint: o.endpoint, apiKey: k, prices: o.prices, model, prompt, image, maxTokens, reasoning, net: { timeoutMs, retries: o.retries, backoffMs: o.backoffMs },
   });
+  return Object.assign(call, { model: o.visionModel });
 }
 
 /**
- * The vision model of the settings (settings → vision) through a connection (the provider's `vision`), or null without one.
+ * The vision model of the run through a connection (the provider's `vision`: its preset's vision model, else the
+ * settings preset's), asked as settings → vision says; null without a connection.
  * @param {VisionCall|null|undefined} call @param {import('../settings.js').Settings} settings @returns {Ask|null}
  */
 function askOf(call, settings) {
+  if (!call) return null;
   const v = settings.vision;
-  return call ? req => call({ model: v.model, reasoning: v.reasoning ?? undefined, timeoutMs: v.timeoutMs, ...req }) : null;
+  const model = call.model ?? presetOf(settings.provider).visionModel;
+  /** @type {Ask} */
+  const ask = Object.assign(
+    /** @type {(req: Parameters<Ask>[0]) => ReturnType<Ask>} */ (req => call({ model, reasoning: v.reasoning ?? undefined, timeoutMs: v.timeoutMs, ...req })),
+    { model },
+  );
+  return ask;
 }
 
 /**
@@ -365,7 +384,7 @@ const trustedFg = hero => (hero?.fg && hero.confidence === 'high' ? hero.fg : nu
 async function lookAt({ order, attempt, dir, ask, settings }) {
   const checked = JSON.parse(fs.readFileSync(path.join(dir, ATTEMPT_FILES.check), 'utf8'));
   const visual = (checked.visual ?? []).map((/** @type {any} */ v) => ({ ...v, id: v.id ?? `${String(v.doc).replace(/\.md$/, '')}.${v.check}` }));
-  const { record, prompt, text } = await lookAtCard({ image: { path: path.join(dir, ATTEMPT_FILES.card) }, order, visual, wish: attempt.wish, model: settings.vision.model, settings: settings.look, ask });
+  const { record, prompt, text } = await lookAtCard({ image: { path: path.join(dir, ATTEMPT_FILES.card) }, order, visual, wish: attempt.wish, model: ask.model, settings: settings.look, ask });
   fs.writeFileSync(path.join(dir, ATTEMPT_FILES.look), JSON.stringify({ ...record, prompt, answer: text }, null, 1));
   attempt.look = record;
 }

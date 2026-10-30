@@ -2,6 +2,7 @@
 // (openrouter.ai/docs: POST /images, POST /chat/completions with image input, GET /models?output_modalities=image,
 // GET /credits).
 // Every value comes from the caller: the factory keeps them in settings/defaults.json (provider.openrouter).
+// `request`, `readImage`, `loadApiKey` and ProviderError are shared with the other HTTP providers (gemini.js).
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -48,12 +49,13 @@ const redact = (text, apiKey) => (apiKey ? String(text).split(apiKey).join('[к�
 const defaultSleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * One HTTP call with timeout and retry on 429/5xx (exponential backoff). Returns parsed JSON.
+ * One HTTP call with timeout and retry on 429/5xx (exponential backoff). Returns parsed JSON. The key goes in
+ * `Authorization: Bearer` unless `auth` names another header (Gemini API: x-goog-api-key); it is never in the URL.
  * Timeouts and network errors are not retried: a generation that timed out may still be billed.
- * @param {{endpoint: string, apiKey: string, method?: string, route: string, body?: object, query?: Record<string, string>} & NetOptions} o
+ * @param {{endpoint: string, apiKey: string, auth?: string, method?: string, route: string, body?: object, query?: Record<string, string>} & NetOptions} o
  * @returns {Promise<any>}
  */
-async function request({ endpoint, apiKey, method = 'GET', route, body, query, timeoutMs = 30000, retries = 0, backoffMs = 1000, fetchImpl = globalThis.fetch, sleep = defaultSleep }) {
+export async function request({ endpoint, apiKey, auth, method = 'GET', route, body, query, timeoutMs = 30000, retries = 0, backoffMs = 1000, fetchImpl = globalThis.fetch, sleep = defaultSleep }) {
   const url = new URL(endpoint.replace(/\/+$/, '') + route);
   for (const [k, v] of Object.entries(query || {})) url.searchParams.set(k, v);
   for (let attempt = 0; ; attempt++) {
@@ -61,7 +63,7 @@ async function request({ endpoint, apiKey, method = 'GET', route, body, query, t
     try {
       res = await fetchImpl(url, {
         method,
-        headers: { Authorization: `Bearer ${apiKey}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+        headers: { ...(auth ? { [auth]: apiKey } : { Authorization: `Bearer ${apiKey}` }), ...(body ? { 'Content-Type': 'application/json' } : {}) },
         body: body ? JSON.stringify(body) : undefined,
         signal: AbortSignal.timeout(timeoutMs),
       });
@@ -83,12 +85,21 @@ async function request({ endpoint, apiKey, method = 'GET', route, body, query, t
   }
 }
 
-/** @param {{bytes?: Uint8Array, path?: string, mime?: string}} ref */
-async function toDataUrl(ref) {
+/**
+ * An image as base64 with its mime type (from `mime`, else the file's extension).
+ * @param {{bytes?: Uint8Array, path?: string, mime?: string}} ref @returns {Promise<{mime: string, base64: string}>}
+ */
+export async function readImage(ref) {
   const bytes = ref.bytes ?? await fs.promises.readFile(/** @type {string} */ (ref.path));
   const mime = ref.mime ?? MIME_BY_EXT[path.extname(ref.path || '').toLowerCase()];
   if (!mime) throw new Error('У образца не указан mime, и его нельзя определить по имени файла.');
-  return `data:${mime};base64,${Buffer.from(bytes).toString('base64')}`;
+  return { mime, base64: Buffer.from(bytes).toString('base64') };
+}
+
+/** @param {{bytes?: Uint8Array, path?: string, mime?: string}} ref */
+async function toDataUrl(ref) {
+  const { mime, base64 } = await readImage(ref);
+  return `data:${mime};base64,${base64}`;
 }
 
 /**

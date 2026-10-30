@@ -1,8 +1,9 @@
 // Making sets and collections from their plans: the plan goes into the store (set.json `plan`), then the set's ten
 // cards are made with core/card makeCard — a few at a time, under one spend cap for the whole set — and each card is
 // put into its slot as soon as it is made, so an open editor sees the set fill up. A collection is its sets in order.
+import { presetOf } from '../providers/preset.js';
 import { validatePlan, registryOf, normalizePlan } from './plan.js';
-import { loadSetRules } from './rules.js';
+import { cardBudget, loadSetRules } from './rules.js';
 
 /** @typedef {import('./plan.js').SetPlan} SetPlan */
 /** @typedef {import('../card/make.js').CardReport} CardReport */
@@ -155,36 +156,38 @@ export async function makeSet({ collection, plan: input, set: setId, settings, p
     if (made && !redo) report({ slot: i + 1, title: String(s.order.title), card: id, result: 'kept', spent: 0 }, 'уже сделана');
     else queue.push(i);
   });
-  const budget = { spent: 0, reserved: 0, price: 0 };
+  const budget = cardBudget(cap, settings.card.maxSpendUsd);
   /** @param {number} i */
   const one = async i => {
     const s = plan.slots[i];
     const title = String(s.order.title);
     const existing = set.slots[i] ?? null;
-    const capHere = Math.min(settings.card.maxSpendUsd, cap - budget.spent - budget.reserved);
+    const capHere = await budget.take();
     const free = provider.free && !provider.fallback;
     // a new card's first call has no price of its own yet: the highest price seen in this set stands for it
-    if (!free && (capHere <= 0 || capHere < budget.price)) {
+    if (capHere <= 0 || (!free && capHere < budget.price)) {
+      budget.done(capHere);
       report({ slot: i + 1, title, card: existing, result: 'skipped', spent: 0 }, 'пропущена: потолок расходов набора');
       return;
     }
-    budget.reserved += Math.max(0, capHere);
+    /** @type {{spent: number, prices: number[]}} */
+    const used = { spent: 0, prices: [] };
     progress(`слот ${i + 1}: «${title}» — генерация`, { set: set.id, slot: i + 1, cardId: existing, title, status: 'start', spent: 0 });
     try {
       const r = await make({
         order: s.order, collection, ...(existing ? { card: existing } : {}), place: { setId: set.id, slot: i },
-        settings, provider, store: st, limits: { maxSpendUsd: Math.max(0, capHere), ...(limits.attempts ? { attempts: limits.attempts } : {}) },
+        settings, provider, store: st, limits: { maxSpendUsd: capHere, ...(limits.attempts ? { attempts: limits.attempts } : {}) },
         ...(signal ? { signal } : {}),
       });
-      budget.spent += r.spent ?? 0;
-      budget.price = Math.max(budget.price, ...r.attempts.map(x => x.cost ?? 0));
+      used.spent = r.spent ?? 0;
+      used.prices = r.attempts.map(x => x.cost ?? 0);
       const blocking = r.chosenCheck?.blocking ?? null;
       report({ slot: i + 1, title, card: r.id, result: 'made', stop: r.stop, spent: r.spent ?? 0, blocking, image: r.image },
         `${r.image ? `готово (блокирующих FAIL ${blocking ?? '—'})` : 'картинки нет'}, $${(r.spent ?? 0).toFixed(4)}`);
     } catch (/** @type {any} */ e) {
       report({ slot: i + 1, title, card: existing, result: 'failed', spent: 0, error: String(e?.message ?? e) }, `ошибка: ${e?.message ?? e}`);
     } finally {
-      budget.reserved -= Math.max(0, capHere);
+      budget.done(capHere, used.spent, used.prices);
     }
   };
   const workers = Array.from({ length: Math.min(parallel, queue.length) }, async () => {
@@ -260,7 +263,7 @@ export async function makeCollection({ collection, numbers, settings, provider, 
 async function planningModel({ settings, apiKey, model }) {
   if (model) return model;
   const { textModelFrom } = await import('./planner.js');
-  const key = apiKey ?? (await import('../providers/openrouter.js')).loadApiKey({ envVar: settings.provider.openrouter.keyEnvVar });
+  const key = apiKey ?? (await import('../providers/openrouter.js')).loadApiKey({ envVar: presetOf(settings.provider).keyEnvVar });
   return textModelFrom({ settings, apiKey: key });
 }
 
@@ -299,7 +302,7 @@ export async function planSetInto({ collection, theme, wishes, variants, window,
     limits: { repairs: settings.set.plan.repairs, maxSpendUsd: maxSpendUsd ?? settings.set.plan.maxSpendUsd },
   });
   // the planning calls are in no card: the factory's spend ledger keeps them (the collection's, or the factory's)
-  await (st ?? store ?? await defaultStore()).recordSpend(collection ?? null, { kind: 'text', what: 'plan', model: settings.set.plan.model, usd: r.spent });
+  await (st ?? store ?? await defaultStore()).recordSpend(collection ?? null, { kind: 'text', what: 'plan', model: presetOf(settings.provider).textModel, usd: r.spent });
   /** @type {PlannedSet[]} */
   const plans = [];
   for (const p of r.plans) {
@@ -341,7 +344,7 @@ export async function planCollectionInto({ collection, title, theme, wishes, var
     limits: { repairs: settings.set.plan.repairs, maxSpendUsd: maxSpendUsd ?? settings.set.plan.maxSpendUsd },
     progress: text => progress(text),
   });
-  await st.recordSpend(id, { kind: 'text', what: 'plan', model: settings.set.plan.model, usd: r.spent });
+  await st.recordSpend(id, { kind: 'text', what: 'plan', model: presetOf(settings.provider).textModel, usd: r.spent });
   /** @type {(PlannedSet & {number?: number})[]} */
   const out = [];
   for (const p of r.plans) {

@@ -54,14 +54,14 @@ export async function callEditor(editor, op, args = {}, { onLog, signal } = {}) 
 }
 
 /**
- * Runs an operation here, or — when it needs the OpenRouter key, there is none here and an editor is running — in
+ * Runs an operation here, or — when it needs a service's key, there is none here and an editor is running — in
  * the editor, with the editor's key. The terminal commands (ccf.mjs) call their operations through this.
  * @template T
  * @param {object} o
- * @param {boolean} o.needsKey  the run calls OpenRouter (an image, text or vision model)
+ * @param {boolean} o.needsKey  the run calls the service of its preset (an image, text or vision model)
  * @param {boolean} [o.optional]  the run can do without the key (it skips its vision steps): with no key here and no
  *   editor running it runs here instead of failing
- * @param {string} o.envVar  the key's variable (settings provider.openrouter.keyEnvVar)
+ * @param {string} o.envVar  the key's variable (the run's preset: provider.<preset>.keyEnvVar)
  * @param {string} o.op  the editor's operation (editor/server/ops.js)
  * @param {() => Record<string, unknown>} o.args  its arguments (built only when the call goes to the editor)
  * @param {() => Promise<T>} o.here  the same operation in this process

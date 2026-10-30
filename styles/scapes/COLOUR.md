@@ -152,6 +152,7 @@
 | ночь | 4 | 44 | 44 | густой ультрамарин: [№125](references/card-125.png) `#083089`, [№152](references/card-152.png) `#2656a8`, [№159](references/card-159.png) `#224174` |
 
 - Правило, которое отсюда следует: ночь и сумерки темнее дня, но не серее — насыщенность остаётся дневной. На глаз: ночью тёплый жёлтый свет окон, вывесок и гирлянд стоит против синего неба ([№125](references/card-125.png), [№157](references/card-157.png), [№159](references/card-159.png), [№160](references/card-160.png)); герой остаётся освещён и насыщен.
+- На глаз: вечерняя «дымка» эталона — свет в самой сцене, а не обработка. В золотой час и в сумерках небо — самое светлое место кадра, низкий тёплый свет висит в воздухе между планами, и дальние деревья, холмы и вода тонут в цвете неба, мягкие и малоконтрастные ([№70](references/card-070.png), [№127](references/card-127.png), [№156](references/card-156.png), [№157](references/card-157.png)); перед героя при этом освещён.
 
 ### 2.5. Насыщенность и постановка
 
@@ -218,7 +219,7 @@
 
 Вся карточка:
 
-1. **Насыщенность.** Медианная C\* карточки: норма 33–78, предел — не ниже 21. Ниже 30 — только когда большую часть кадра занимают белое или дерево, или это ночь и вечер (в эталоне так у 6 карточек, 1.1).
+1. **Насыщенность.** Медианная C\* карточки: норма 33–78, предел — не ниже 21. Ниже 30 — только когда большую часть кадра занимают белое или дерево, или это ночь и вечер (в эталоне так у 6 карточек, 1.1). В золотой час, сумерки и ночь норма — 26–78: у 13 таких эталонных карточек (без №100) медианная C\* от 26,4 ([№160](references/card-160.png)) до 54,1 (измерено 2026-10-30). Иначе обработка не могла затемнить вечер (проверка 15): убавленная яркость уводила насыщенность ниже дневной нормы.
 2. **Серый.** Доля пикселей с C\* < 8: норма не больше 11 %, предел 25 %. Если больше 11 % (в эталоне так у 18 карточек), проверить глазами, что серое — это материал (белое, металл, асфальт, камень, шерсть), а не обесцвеченный цвет.
 3. **Чёрное.** Доля почти чёрных пикселей (все каналы < 24): не больше 3 %, и только на чёрных вещах (шина, корпус, мяч). Самые тёмные 2 % пикселей должны иметь медианную C\* от 8, если в кадре нет чёрных или серых вещей (эталон: медиана 24; ниже 8 — у 13 карточек из 160, все с такими вещами).
 4. **Белое.** Доля чистого белого (все каналы > 245): обычно 0, норма до 1 %, предел 9 %.
@@ -241,7 +242,7 @@
 Сцены и набор:
 
 14. **Дневное небо**, если оно занимает верх кадра (только днём, `time: day`; золотой час, сумерки и ночь этой проверкой не меряются — с 2026-10-30, раньше проверка ошибочно браковала и правильное утреннее небо): оттенок верхней полосы (12 % высоты) 185–220°, насыщенность C\* 20–75, обычно около 43 (в эталоне у 25 дневных карточек, где верх — небо: оттенок 186–218°, насыщенность 23–72; 2.4).
-15. **Ночь и сумерки.** Медианная C\* карточки — около дневной (эталон: ночью от 26 до 50, медиана 44; в сумерках от 32 до 49, медиана 40; днём медиана 42); медианная светлота карточки ниже дневной медианы 65 (эталон: ночью от 33 до 47, в сумерках от 44 до 52). Небо — синее, ультрамариновое или сине-фиолетовое, свет окон и ламп — тёплый жёлтый.
+15. **Ночь и сумерки.** Медианная C\* карточки — около дневной (эталон: ночью от 26 до 50, медиана 44; в сумерках от 32 до 49, медиана 40; днём медиана 42); медианная светлота карточки ниже дневной медианы 65 (эталон: ночью от 33 до 47, в сумерках от 44 до 52). Небо — синее, ультрамариновое или сине-фиолетовое, свет окон и ламп — тёплый жёлтый. **Вечер выглядит вечером** (решение автора, 2026-10-30): в золотой час и в сумерках медианная светлота карточки — не больше 63 (у 9 вечерних эталонных карточек, кроме №100, — от 43,8 до 62,9, медиана 51,6; самая светлая — заправка в пустыне [№122](references/card-122.png)). Исключение — пляж [№100](references/card-100.png): по разметке золотой час, но белый песок, пена и светлое небо дают светлоту дня (73,7), на глаз он читается тёплым днём, а не вечером (исключение предложил агент, автор его не подтверждал). Зачем: у карточек фабрики в золотой час и сумерках медианная светлота 57–76 — полдень с тёплым небом.
 16. **Набор.** Главные цвета фонов десяти карточек занимают не меньше 5 разных оттенков из 11; одного оттенка — не больше 6 карточек из 10.
 
 ## Для промпта (англ.)
@@ -253,8 +254,9 @@
 - Герой и абстрактный фон: <!-- fragment: colour.hero-backdrop -->`The background is a single deep, fully saturated, rich hue — bold colour, as strong as the hero's — chosen to contrast with the hero, roughly opposite on the colour wheel: for example a blue object on golden yellow, an orange or red object on sky blue, a yellow object on violet, a red object on bright green, a green object on pink. If the hero and background share a hue, make the background clearly lighter or darker than the hero.`
 - Градиент фона: <!-- fragment: colour.gradient -->`The background is a smooth radial gradient of that one hue: lightest directly behind the hero, deeper and richer towards the corners, shifting slightly the way a shadow would (golden yellow deepening to orange, sky blue deepening to royal blue). It stays fully coloured out to the corners. Any pattern is tone-on-tone in the same hue, low contrast.`
 - Дневное небо: <!-- fragment: colour.day-sky -->`A clear, saturated azure sky (around #2CAEED), deeper at the top and lighter towards the horizon, with soft white clouds shaded in lavender-blue.`
-- Золотой час (по таблице времени суток в 2.4; генерацией ещё не проверено): <!-- fragment: colour.golden -->`Golden hour: warm low sunlight and a glowing sky in peach, pale yellow and lilac (around #F8D793 to #8D5D7D), a little darker than day and richly coloured.`
-- Ночь и сумерки: <!-- fragment: colour.night -->`Night stays colourful: a deep ultramarine sky (around #083089 to #2656A8) and dark blue shadows, lit by warm yellow window and lamp light; darker than day and richly coloured. Dusk is blue-violet (around #5751B7).`
+- Золотой час (по таблице времени суток в 2.4 и проверке 15; проверено одним прогоном 2026-10-30: у Codex вечерние сцены стали темнее, медианная L* 65–67 на пробах и 62 в наборе, у Nano Banana 55–57; одного прогона мало): <!-- fragment: colour.golden -->`Golden hour: the low sun sits behind or beside the scene, and the sky is the brightest, glowing part of the picture, in peach, pale yellow and lilac (around #F8D793 to #8D5D7D). A soft warm glow and a light atmospheric haze fill the air between the planes: distant trees and bushes fade into the sky colour, with soft edges and low contrast. The whole picture is warm and clearly darker than midday in the middle tones, while the front of the subject stays well lit; shadows are light and coloured, in lilac and warm brown.`
+- Сумерки (по таблице в 2.4 и проверке 15; генерацией ещё не проверено): <!-- fragment: colour.dusk -->`Dusk: a blue-violet sky (around #5751B7) with a warm pink and orange glow low near the horizon; that glow softly hazes the far plane, and distant shapes fade into the sky colour; shadows are blue-violet. The picture is clearly darker than day and richly coloured.`
+- Ночь: <!-- fragment: colour.night -->`Night stays colourful: a deep ultramarine sky (around #083089 to #2656A8) and dark blue shadows, lit by warm yellow window and lamp light; darker than day and richly coloured.`
 
 ## Не решено и не измерено
 

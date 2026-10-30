@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import './root.mjs';
 import { loadSettings } from '../core/settings.js';
+import { presetOf } from '../core/providers/preset.js';
 import { draftPrompt, draftText, textModel } from '../core/text/draft.js';
 
 test('помощь с текстом: запрос из настроек — что за текст, его форма, к чему он относится, заметки как есть', () => {
@@ -24,11 +25,11 @@ test('помощь с текстом: модель и ключ из настро
   const store = { recordSpend: async (c, e) => { spent.push([c, e]); } };
   const r = await draftText({ kind: 'collection', notes: '  рыбалка, рассвет  ', collectionId: 'leto', settings, apiKey: 'k', complete, store });
   assert.deepEqual(r, { text: 'Летняя коллекция о рыбалке на рассвете.', model: textModel(settings).model, cost: 0.0012 });
-  assert.equal(sent[0].model, settings.set.plan.model);
+  assert.equal(sent[0].model, presetOf(settings.provider).textModel);
   assert.equal(sent[0].apiKey, 'k');
   assert.equal(sent[0].maxTokens, settings.text.help.maxTokens);
   assert.match(sent[0].messages[0].content, /рыбалка, рассвет/);
-  assert.deepEqual(spent, [['leto', { kind: 'text', what: 'text-help', model: settings.set.plan.model, usd: 0.0012 }]]);
+  assert.deepEqual(spent, [['leto', { kind: 'text', what: 'text-help', model: presetOf(settings.provider).textModel, usd: 0.0012 }]]);
   await assert.rejects(draftText({ kind: 'collection', notes: ' ', settings, apiKey: 'k', complete, store }), /Поле пустое/);
   assert.equal(sent.length, 1, 'пустое поле — без платного вызова');
 });

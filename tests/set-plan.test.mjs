@@ -169,12 +169,40 @@ test('план: пожелания набора ложатся в заказ к�
   assert.equal(validatePlan(lakePlan()).warnings.filter(w => /пожелани/.test(w)).length, 0, 'без пожеланий — без предупреждений');
 });
 
+test('план: что прочтёт модель картинок — день у предметов, золотой час редко, контрастный фон, без тонкой фактуры', () => {
+  const p = lakePlan();
+  p.slots[3].order.staging.time = 'golden';
+  p.slots[4].order.palette = 'a dark green object on olive';
+  p.slots[4].hue = 'olive';
+  p.slots[0].order.subject = 'a bee with a fuzzy striped body and a woven wire mesh veil.';
+  p.slots[6].order.subject = 'a chrome thermos.';
+  const e = errorsOf(p);
+  has(e, /слот 4.*время суток «golden» у карточки без персонажей.*time: "day"/);
+  has(e, /золотой час у 3 карточек \(слоты 4, 9, 10\)/);
+  has(e, /слот 5.*фон «olive» почти того же цвета, что герой \(«dark green»\)/);
+  has(e, /слот 1.*«fuzzy» в subject.*a round, smooth body/);
+  has(e, /слот 1.*«mesh» в subject/);
+  has(e, /слот 7.*«chrome».*painted toy metal/);
+  // lighter or darker is enough (COLOUR.md 7); an achromatic hero passes
+  p.slots[4].order.palette = 'a dark green object on lime';
+  p.slots[4].hue = 'lime';
+  p.slots[1].order.palette = 'a white object on pink';
+  assert.ok(!errorsOf(p).some(x => /почти того же цвета/.test(x)));
+  // the person's word: the set rules only warn
+  p.humanRequest = 'неоновая вывеска ночью';
+  const r = validatePlan(p);
+  assert.deepEqual(r.errors, []);
+  assert.ok(r.warnings.some(w => /по просьбе человека.*время суток «golden»/.test(w)), r.warnings.join('\n'));
+});
+
 test('план: гранд-набор — 10 сцен в одном месте, кристальные рамки, подписи в одно слово', () => {
   const s = lakePlan().slots[8];
   const grand = {
     style: 'scapes', title: 'Lake Party', theme: 'party', angle: 'one evening at the lake', grand: true, place: 'small wooden dock on a calm lake', window: { layout: 'grand' },
     slots: Array.from({ length: 10 }, (_, i) => ({ ...structuredClone(s), stars: 5, frame: 'crystal', kind: `moment ${i}`, props: [`thing ${i}`], order: { ...structuredClone(s.order), title: `Moment${i}` } })),
   };
+  // from day to night, as the reference grand set (Summer Party): golden hour is rare (SETS.md 9.22)
+  grand.slots.forEach((/** @type {any} */ g, /** @type {number} */ i) => { g.order.staging.time = i < 3 ? 'day' : i < 7 ? 'dusk' : 'night'; });
   assert.deepEqual(errorsOf(grand), []);
   grand.slots[3].order.place = 'a garden';
   grand.slots[4].order.title = 'Two Words';

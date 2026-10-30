@@ -12,7 +12,7 @@ import { ROOT } from './root.mjs';
 import { pageUrl, startEditor, withUrls } from '../editor/server.mjs';
 import { callEditor, hereOrInEditor } from '../editor/remote.js';
 import { COLLECTIONS_DIR } from '../core/store/layout.js';
-import { readLocalSettings, saveLocalSettings } from '../core/settings.js';
+import { loadSettings, readLocalSettings, saveLocalSettings } from '../core/settings.js';
 
 /** A raw request (fetch cannot set Host). @returns {Promise<{status: number, body: string}>} */
 function request(port, { method = 'GET', path: p = '/', headers = {}, body } = {}) {
@@ -69,8 +69,16 @@ test('настройки: запись в local.json — только отлич
   const s = saveLocalSettings({ provider: { use: 'codex-cli' }, card: { attempts: 3 } }, { dir });
   assert.equal(s.provider.use, 'codex-cli');
   assert.deepEqual(readLocalSettings({ dir }), { provider: { use: 'codex-cli' } }, 'значение по умолчанию не записано');
-  saveLocalSettings({ provider: { use: 'openrouter' } }, { dir });
+  saveLocalSettings({ provider: { use: 'api' } }, { dir });
   assert.deepEqual(readLocalSettings({ dir }), {}, 'возврат к умолчанию убирает ключ');
+  // a local.json of the shape before the API presets: read in today's shape, the old keys gone when written again
+  fs.writeFileSync(path.join(dir, 'local.json'), JSON.stringify({ provider: { use: 'openrouter' }, vision: { model: 'a/vision', timeoutMs: 5 }, set: { plan: { model: 'a/text' } } }));
+  const old = loadSettings({ dir });
+  assert.deepEqual([old.provider.use, old.provider.preset, old.provider.openrouter.visionModel, old.provider.openrouter.textModel, old.vision.timeoutMs], ['api', 'openrouter', 'a/vision', 'a/text', 5]);
+  assert.ok(!('model' in old.vision) && !('model' in old.set.plan));
+  saveLocalSettings({ provider: { preset: 'google' } }, { dir });
+  assert.deepEqual(readLocalSettings({ dir }), { provider: { preset: 'google', openrouter: { visionModel: 'a/vision', textModel: 'a/text' } }, vision: { timeoutMs: 5 } });
+  fs.writeFileSync(path.join(dir, 'local.json'), '{}');
   assert.throws(() => saveLocalSettings({ nope: 1 }, { dir }), /неизвестный ключ/);
   assert.deepEqual(readLocalSettings({ dir }), {}, 'отвергнутая запись файл не меняет');
 });

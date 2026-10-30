@@ -46,7 +46,7 @@ export function pickAnchors(order, style) {
 
 /**
  * The reference cards for an order: forced by `order.references`, else the `count` best by score
- * (ties: the lower card number), never one of `exclude`; with anchors, no more than `max_images` in all.
+ * (ties: the lower card number), never one of `exclude` (nor of an `exclude_when` the order matches); with anchors, no more than `max_images` in all.
  * @param {CardOrder} order
  * @param {Style} style
  * @returns {ReferenceCard[]}
@@ -67,7 +67,7 @@ export function pickReferences(order, style) {
       return card;
     });
   }
-  const exclude = new Set(rules.exclude);
+  const exclude = new Set([...rules.exclude, ...(rules.exclude_when ?? []).filter(x => matches(x.when, order, style)).flatMap(x => x.refs)]);
   const room = rules.anchors ? rules.anchors.max_images - pickAnchors(order, style).length : Infinity;
   return style.references
     .filter(r => !exclude.has(r.ref))

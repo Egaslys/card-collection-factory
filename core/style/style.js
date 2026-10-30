@@ -38,6 +38,7 @@ export const ASSEMBLY_FILE = 'prompt-assembly.json';
  * @property {string} index
  * @property {string} index_cast_column
  * @property {number[]} exclude
+ * @property {{when: Condition, refs: number[]}[]} [exclude_when]  cards left out only for the orders matching `when`
  * @property {Record<string, number>} weights
  * @property {string} note_style
  * @property {string} note_cast

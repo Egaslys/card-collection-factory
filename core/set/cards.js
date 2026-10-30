@@ -4,15 +4,12 @@
 // frames, no slot rules. Each order is checked by the style as in a set (checkOrder, category by staging, one item
 // kind once); the mix of categories is only a warning, as loose cards are not a set. Then each card is made into the
 // pool with core/card makeCard under one spend cap.
-import { fillSlots, parseFragments } from '../style/fragments.js';
-import { styleDirOf } from '../style/style.js';
 import { checkOrder } from '../style/card-order.js';
 import { matches } from '../style/assembly.js';
-import { normalizePlan, wishWarnings } from './plan.js';
-import { parseAnswer } from './planner.js';
-import { expandStaging, kindKey, loadSetRules, rowCategories, seenPatterns, stagingRow } from './rules.js';
-import fs from 'node:fs';
-import path from 'node:path';
+import { presetOf } from '../providers/preset.js';
+import { normalizePlan, slotLookErrors, wishWarnings } from './plan.js';
+import { answerParts, glue, parseAnswer, setFragment, slotFromAnswer } from './planner.js';
+import { cardBudget, kindKey, loadSetRules, rowCategories, stagingRow } from './rules.js';
 
 /** @typedef {import('./plan.js').SlotPlan} LooseCard  a planned card: kind, wishes, props, hue, order (no stars or frame) */
 /** @typedef {import('./planner.js').TextModel} TextModel */
@@ -35,18 +32,6 @@ const isScene = c => Number(c.order?.staging?.characters ?? 0) > 0;
 const where = (i, c) => `карточка ${i + 1}${c?.order?.title ? ` («${c.order.title}»)` : ''}`;
 /** @param {string} s */
 const slug = s => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-/** @param {string} template @param {Record<string, string>} values  glue slots `{name}` */
-const glue = (template, values) => template.replace(/\{([a-z ]+)\}/g, (m, k) => values[k] ?? m);
-
-/** @param {string} style @param {string} id @param {Record<string, string>} values */
-function fragment(style, id, values) {
-  const text = parseFragments(fs.readFileSync(path.join(styleDirOf(style), 'SETS.md'), 'utf8'), 'SETS.md').find(f => f.id === id)?.text;
-  if (!text) throw new Error(`В SETS.md нет фрагмента «${id}» (метка <!-- fragment: ${id} --> в разделе «Для промпта (англ.)»).`);
-  const { text: out, missing } = fillSlots(text, { named: k => values[k], chosen: new Map() });
-  if (missing.length) throw new Error(`Фрагмент «${id}»: нечем заполнить ${missing.map(m => m.raw).join(', ')}.`);
-  return out;
-}
-
 /**
  * The text-model prompt for loose cards.
  * @param {object} o
@@ -55,30 +40,19 @@ function fragment(style, id, values) {
  * @returns {ChatMessage[]}
  */
 export function cardsPrompt({ style, theme, wishes, collectionTheme, count, scenes, language }) {
-  const { rules, style: st } = loadSetRules(style);
+  const { rules } = loadSetRules(style);
   const ids = rules.prompt.fragments, g = rules.prompt.glue;
   if (!g.cards) throw new Error(`В ${style}/set-rules.json нет prompt.glue.cards: нечем просить отдельные карточки.`);
   const items = count - scenes;
   /** @type {string[]} */
   const parts = [glue(g.cards, { theme, 'collection theme': collectionTheme || theme, count: String(count), items: String(items), scenes: String(scenes) })];
   // the staging fragment asks for every category 1–4: only when there are enough item cards to hold them
-  if (items >= rules.categories.regular.length) parts.push(fragment(style, ids.staging, {}));
-  if (scenes) parts.push(fragment(style, ids.scenes, { n: String(scenes), registry: 'none yet' }));
-  parts.push(fragment(style, ids.captions, { language: language || rules.captions.language }));
-  const seen = seenPatterns(rules, st);
-  const stagings = rules.stagings.map(r => `${r.id} (${r.fill.join(', ')}${seen.has(r.id) ? `; pattern only: ${(seen.get(r.id) ?? []).join(' | ')}` : ''})`).join('; ');
-  const fields = /** @type {Record<string, any>} */ (st.assembly.fields);
-  const values = [...new Set(rules.stagings.flatMap(r => r.fill))].filter(f => fields[f]).map(f => {
-    const v = fields[f].values_from ? (st.fragments.get(fields[f].values_from)?.items || []).flatMap(it => (it.label ? [it.label] : [])) : fields[f].values;
-    return `${f}: ${v.join(' | ')}`;
-  }).concat(`stripes (with pattern stripes_straight): ${fields.stripes.values.join(' | ')}`).join('; ');
-  parts.push(glue(g.stagings, { stagings, values }));
-  parts.push(g.answer);
-  if (wishes) parts.push(glue(g.wishes, { wishes }));
+  if (items >= rules.categories.regular.length) parts.push(setFragment(style, ids.staging, {}));
+  if (scenes) parts.push(setFragment(style, ids.scenes, { n: String(scenes), registry: 'none yet' }));
+  parts.push(setFragment(style, ids.captions, { language: language || rules.captions.language }));
+  parts.push(...answerParts({ style, wishes }));
   return [{ role: 'system', content: g.system }, { role: 'user', content: parts.join('\n\n') }];
 }
-
-const ORDER_FIELDS = ['subject', 'object', 'place', 'environment', 'motif', 'palette', 'staging', 'scene', 'promptExtra', 'humanRequest'];
 
 /**
  * The model's answer as loose cards (not yet normalized or checked).
@@ -86,22 +60,11 @@ const ORDER_FIELDS = ['subject', 'object', 'place', 'environment', 'motif', 'pal
  * @returns {LooseCard[]}
  */
 export function cardsFromAnswer(answer, { style }) {
-  const { rules, style: st } = loadSetRules(style);
   const list = Array.isArray(answer?.cards) ? answer.cards : [];
   return list.map((/** @type {any} */ c) => {
-    /** @type {Record<string, unknown>} */
-    const order = { style, title: c?.caption ?? c?.title };
-    for (const k of ORDER_FIELDS) if (c?.[k] !== undefined && c[k] !== null && c[k] !== '') order[k] = c[k];
+    const card = slotFromAnswer(c, style);
     const id = slug(c?.object ?? c?.kind);
-    if (id) order.id = id;
-    /** @type {LooseCard} */
-    const card = { stars: 0, frame: '', kind: c?.kind, order: /** @type {any} */ (order) };
-    for (const k of /** @type {const} */ (['facet', 'subkind', 'hue'])) if (typeof c?.[k] === 'string' && c[k]) card[k] = c[k];
-    if (typeof c?.wishes === 'string') card.wishes = c.wishes;
-    if (Array.isArray(c?.props)) card.props = c.props;
-    // hue and palette name a backdrop colour: kept only where the backdrop is abstract (SETS.md 3.7)
-    const staging = expandStaging(/** @type {any} */ (order.staging), rules).staging;
-    if (!staging || !matches(rules.abstract_when, /** @type {any} */ ({ staging }), st)) { delete card.hue; delete order.palette; }
+    if (id) card.order.id = id;
     return card;
   });
 }
@@ -128,6 +91,8 @@ export function validateCards(input, { style, count, scenes, wishes }) {
   cards.forEach((c, i) => {
     if (!c?.order || typeof c.order !== 'object') { errors.push(`${where(i, c)}: нет заказа`); return; }
     for (const e of checkOrder(c.order, st)) errors.push(`${where(i, c)}: ${e}`);
+    // what the image model will read (SETS.md 9.22–9.24); a person's request on the order makes them warnings
+    for (const e of slotLookErrors(c, style)) (c.order.humanRequest ? warnings : errors).push(`${where(i, c)}: ${e}`);
     if (typeof c.kind !== 'string' || !c.kind.trim()) errors.push(`${where(i, c)}: нет поля kind — вид предмета по-английски (для сцены — её ситуация)`);
     if (c.props?.length && !isScene(c)) errors.push(`${where(i, c)}: props — только у сцены с персонажами`);
     const row = rules.stagings.find(r => r.id === stagingRow(c.order, rules, st));
@@ -157,11 +122,12 @@ export function validateCards(input, { style, count, scenes, wishes }) {
  * @param {string} o.style @param {string} o.theme @param {string} [o.wishes] @param {string} [o.collectionTheme]
  * @param {number} o.count @param {number} [o.scenes]  default 0 @param {string} [o.language]
  * @param {TextModel} o.model
- * @param {{repairs: number, maxSpendUsd: number}} o.limits
+ * @param {{repairs: number, maxSpendUsd: number, maxCount: number}} o.limits  maxCount: the most cards of one run (settings
+ *   set.cards.maxCount)
  * @returns {Promise<CardsPlan & {spent: number, calls: number}>}
  */
 export async function planCards({ style, theme, wishes, collectionTheme, count, scenes = 0, language, model, limits }) {
-  if (!Number.isInteger(count) || count < 1) throw new Error('Сколько карточек: целое число от 1.');
+  if (!Number.isInteger(count) || count < 1 || count > limits.maxCount) throw new Error(`Сколько карточек: целое число от 1 до ${limits.maxCount} за один запуск (настройки set.cards.maxCount).`);
   if (!Number.isInteger(scenes) || scenes < 0 || scenes > count) throw new Error(`Сцен с персонажами: целое от 0 до ${count}.`);
   const { rules } = loadSetRules(style);
   const messages = cardsPrompt({ style, theme, wishes, collectionTheme, count, scenes, language });
@@ -219,7 +185,7 @@ export async function makeCardsInto({ collection, theme, wishes, count, scenes =
   let text = model;
   if (!text) {
     const { textModelFrom } = await import('./planner.js');
-    const key = apiKey ?? (await import('../providers/openrouter.js')).loadApiKey({ envVar: settings.provider.openrouter.keyEnvVar });
+    const key = apiKey ?? (await import('../providers/openrouter.js')).loadApiKey({ envVar: presetOf(settings.provider).keyEnvVar });
     text = await textModelFrom({ settings, apiKey: /** @type {string} */ (key) });
   }
   const n10 = count % 10, n100 = count % 100;
@@ -227,17 +193,17 @@ export async function makeCardsInto({ collection, theme, wishes, count, scenes =
   progress(`план: ${count} ${word} «${theme}»`, { status: 'planning' });
   const p = await planCards({
     style: col.style, theme, wishes, collectionTheme: col.description || col.title, count, scenes, model: text,
-    limits: { repairs: settings.set.plan.repairs, maxSpendUsd: settings.set.plan.maxSpendUsd },
+    limits: { repairs: settings.set.plan.repairs, maxSpendUsd: settings.set.plan.maxSpendUsd, maxCount: settings.set.cards.maxCount },
   });
   const { spent: planSpent, calls, ...plan } = p;
-  if (calls) await st.recordSpend(collection, { kind: 'text', what: 'plan', model: settings.set.plan.model, usd: planSpent });
+  if (calls) await st.recordSpend(collection, { kind: 'text', what: 'plan', model: presetOf(settings.provider).textModel, usd: planSpent });
   if (plan.errors.length) {
     progress(`план не прошёл проверку (${plan.errors.length}): ${plan.errors[0]}`, { status: 'invalid' });
     return { plan, cards: [], spent: planSpent, planSpent };
   }
   progress('план готов — делаю карточки', { status: 'planned' });
   const cap = maxSpendUsd ?? settings.set.maxSpendUsd;
-  const budget = { spent: 0, reserved: 0, price: 0 };
+  const budget = cardBudget(cap, settings.card.maxSpendUsd);
   /** @type {LooseReport[]} */
   const reports = [];
   /** @param {LooseReport} r @param {string} msg */
@@ -246,22 +212,23 @@ export async function makeCardsInto({ collection, theme, wishes, count, scenes =
   /** @param {number} i */
   const one = async i => {
     const order = plan.cards[i].order, title = String(order.title);
-    const capHere = Math.min(settings.card.maxSpendUsd, cap - budget.spent - budget.reserved);
+    const capHere = await budget.take();
     // a card's first call has no price of its own yet: the highest price seen in this run stands for it
-    if (!(provider.free && !provider.fallback) && (capHere <= 0 || capHere < budget.price)) { report({ title, card: null, result: 'skipped', spent: 0 }, 'пропущена: потолок расходов'); return; }
-    budget.reserved += Math.max(0, capHere);
+    if (capHere <= 0 || (!(provider.free && !provider.fallback) && capHere < budget.price)) { budget.done(capHere); report({ title, card: null, result: 'skipped', spent: 0 }, 'пропущена: потолок расходов'); return; }
+    /** @type {{spent: number, prices: number[]}} */
+    const used = { spent: 0, prices: [] };
     progress(`«${title}» — генерация`, { title, status: 'start', spent: 0 });
     try {
-      const r = await make({ order, collection, settings, provider, store: st, limits: { maxSpendUsd: Math.max(0, capHere) }, ...(signal ? { signal } : {}) });
-      budget.spent += r.spent ?? 0;
-      budget.price = Math.max(budget.price, ...r.attempts.map(x => x.cost ?? 0));
+      const r = await make({ order, collection, settings, provider, store: st, limits: { maxSpendUsd: capHere }, ...(signal ? { signal } : {}) });
+      used.spent = r.spent ?? 0;
+      used.prices = r.attempts.map(x => x.cost ?? 0);
       const blocking = r.chosenCheck?.blocking ?? null;
       report({ title, card: r.id, result: 'made', stop: r.stop, spent: r.spent ?? 0, blocking, image: r.image },
         `${r.image ? `готово (блокирующих FAIL ${blocking ?? '—'})` : 'картинки нет'}, $${(r.spent ?? 0).toFixed(4)}`);
     } catch (/** @type {any} */ e) {
       report({ title, card: null, result: 'failed', spent: 0, error: String(e?.message ?? e) }, `ошибка: ${e?.message ?? e}`);
     } finally {
-      budget.reserved -= Math.max(0, capHere);
+      budget.done(capHere, used.spent, used.prices);
     }
   };
   await Promise.all(Array.from({ length: Math.min(Math.max(1, settings.set.parallel), queue.length) }, async () => {

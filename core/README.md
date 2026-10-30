@@ -6,7 +6,7 @@ For agents. The product's vision: `docs/plans/VISION.md` («Устройство
 
 | Folder | What | Owner of the contract |
 |---|---|---|
-| `providers/` | image generation: OpenRouter-compatible endpoint, Codex CLI; each model's profile (ratios, reference images, request fields) | `openrouter.js`, `codex-cli.js`, `models.js` |
+| `providers/` | the services every keyed call goes to — API presets (`provider.preset`): OpenRouter (`openrouter.js`, `openrouter-text.js`) and Google AI Studio, the Gemini API (`gemini.js`), each with images, vision and text behind one contract; Codex CLI for images; each image model's profile (ratios, reference images, request fields, `sameAs`) | `preset.js`, `openrouter.js`, `gemini.js`, `codex-cli.js`, `models.js` |
 | `image/` | model image → card pixels (`prepare.js`), post-processing shared with the browser (`adjust.js`, no imports) | |
 | `style/` | card orders, prompt assembly from the bible's fragments, reference picking | `style/README.md` |
 | `card/` | one card: generate → prepare → hero outline (`hero.js`) → tune → check → the vision model's look (`look.js`) → regenerate (`make.js`); a person's requests: regenerate with a wish, edit, adjust by hand (or reset to the program's own), import an image (checked as strictly as a generated one), choose any version (attempt) as the card; recheck | `card/card-file.js` |
@@ -49,4 +49,4 @@ watch(onEvent, { debounceMs?, pollMs?, poll? }?) → stop   // { type: 'collecti
 - Every operation is an exported async function taking one options object and returning plain JSON-able data; errors throw with a Russian message a person can act on.
 - Paid operations take a spend cap and report cost.
 - Writes go through `store/` only, so the editor's live view (file events) sees every change, whoever made it.
-- The API key: from the environment / `.env` (permanent) or held in memory by a running editor (temporary). An agent without a key uses a running editor's key by sending the operation to the editor server; the key never leaves the editor process.
+- The API key: one per service (`provider.<preset>.keyEnvVar`), from the environment / `.env` (permanent) or held in memory by a running editor (temporary). An agent without a key uses a running editor's key by sending the operation to the editor server; the key never leaves the editor process.

@@ -13,17 +13,16 @@
 // Measured accuracy, cost and time: CHANGELOG.md, entry of 2026-10-30 on the hero outline.
 import sharp from 'sharp';
 import { boxIou, boxOf, outlineInBox } from '../image/segment.js';
-import { askVision } from '../providers/openrouter.js';
+import { apiOf, presetOf } from '../providers/preset.js';
 
 /** @typedef {import('../image/segment.js').Box} Box */
 /** @typedef {import('../style/card-order.js').CardOrder} CardOrder */
 /** @typedef {{bytes?: Uint8Array, path?: string, mime?: string}} ImageRef */
 
 /**
- * @typedef {object} VisionSettings  settings/defaults.json → vision: the vision model asked through provider.openrouter
- * @property {string} model
+ * @typedef {object} VisionSettings  settings/defaults.json → vision: how the preset's visionModel is asked (provider.<preset>)
  * @property {string} format  answer format of the model's family: a key of FORMATS
- * @property {Record<string, unknown>|null} reasoning  the request's `reasoning` field as is; null = not sent
+ * @property {Record<string, unknown>|null} reasoning  the reasoning field ({effort}); null = not sent
  * @property {number} timeoutMs  per call
  */
 
@@ -144,7 +143,7 @@ export const unmirror = (b, width) => [width - 1 - b[2], b[1], width - 1 - b[0],
 
 /**
  * Asks the vision model for the hero's box on the card and, with mirrorCheck, on its mirror image. `ask` is the
- * provider call (openrouterAsk); a failed call is recorded, not thrown.
+ * provider call (visionAsk); a failed call is recorded, not thrown.
  * @param {{image: ImageRef, order: CardOrder, width: number, height: number, vision: VisionSettings, settings: HeroSettings,
  *   ask: (req: {prompt: string, image: ImageRef, maxTokens: number}) => Promise<{text: string, cost: number|null}>}} o
  * @returns {Promise<VisionAnswer[]>}
@@ -167,16 +166,16 @@ export async function locateHero({ image, order, width, height, vision, settings
 }
 
 /**
- * The `ask` of locateHero through the OpenRouter provider of the settings (its endpoint, retries and backoff) and
- * the vision model of settings → vision.
+ * The `ask` of locateHero through the API preset of the settings (its endpoint, vision model, retries and backoff),
+ * asked as settings → vision says.
  * @param {{settings: import('../settings.js').Settings, apiKey: string}} o
  */
-export function openrouterAsk({ settings, apiKey }) {
-  const or = settings.provider.openrouter, v = settings.vision;
+export function visionAsk({ settings, apiKey }) {
+  const p = presetOf(settings.provider), v = settings.vision;
   /** @param {{prompt: string, image: ImageRef, maxTokens: number}} req */
-  return ({ prompt, image, maxTokens }) => askVision({
-    endpoint: or.endpoint, apiKey, model: v.model, prompt, image, maxTokens, reasoning: v.reasoning ?? undefined,
-    net: { timeoutMs: v.timeoutMs, retries: or.retries, backoffMs: or.backoffMs },
+  return ({ prompt, image, maxTokens }) => apiOf(p.name).askVision({
+    endpoint: p.endpoint, apiKey, prices: p.prices, model: p.visionModel, prompt, image, maxTokens, reasoning: v.reasoning ?? undefined,
+    net: { timeoutMs: v.timeoutMs, retries: p.retries, backoffMs: p.backoffMs },
   });
 }
 

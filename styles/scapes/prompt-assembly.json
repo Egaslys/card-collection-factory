@@ -1,5 +1,5 @@
 {
-  "_about": "How the program assembles the image-model prompt of a Scapes card from the bible's fragments (core/style/prompt.js reads this file; the format is described in core/style/README.md). The fragment texts are NOT here: they live in the bible documents listed under `documents`, each marked by `<!-- fragment: <id> -->`; this file only says which fragment goes where, in the order of PROMPTS.md, and how its slots are filled. `fields` is the staging vocabulary of a card order: the first nine fields are the spec fields of checks/check-card.mjs (same names and values; tests/style-prompt.test.mjs compares them with its --help), the rest are prompt-only choices that pick a variant inside a fragment. `templates` and `references.note_*` are glue text written for the program, not bible fragments: the labels «Subject:», «Staging:», «Here:», «This card's colours:» (the order's palette on a wall: added 2026-10-30, before it the wall colour of an order never reached the prompt) and the reference-image notes come from the pilot generation (styles/scapes/research/pilot, local) and are not yet in the bible. `references.count` = 2 is the pilot's value; the bible has not decided how many references to pass (PROMPTS.md «Не решено»). `references.weights` and `references.exclude` are the program's choice of how to rank reference cards; exclude lists the cards the bible says not to repeat (RENDERING.md «Чего избегать»: flat drawing #23 #83, fine texture #14 #47 #71 #97 #137, main light from the right #14 #56).",
+  "_about": "How the program assembles the image-model prompt of a Scapes card from the bible's fragments (core/style/prompt.js reads this file; the format is described in core/style/README.md). The fragment texts are NOT here: they live in the bible documents listed under `documents`, each marked by `<!-- fragment: <id> -->`; this file only says which fragment goes where, in the order of PROMPTS.md, and how its slots are filled. `fields` is the staging vocabulary of a card order: the first nine fields are the spec fields of checks/check-card.mjs (same names and values; tests/style-prompt.test.mjs compares them with its --help), the rest are prompt-only choices that pick a variant inside a fragment. `templates` and `references.note_*` are glue text written for the program, not bible fragments: the labels «Subject:», «Staging:», «Here:», «This card's colours:» (the order's palette on a wall: added 2026-10-30, before it the wall colour of an order never reached the prompt) and the reference-image notes come from the pilot generation (styles/scapes/research/pilot, local) and are not yet in the bible. `references.count` = 2 is the pilot's value; the bible has not decided how many references to pass (PROMPTS.md «Не решено»). `references.weights` and `references.exclude` are the program's choice of how to rank reference cards; exclude lists the cards the bible says not to repeat (RENDERING.md «Чего избегать»: flat drawing #23 #83, fine texture #14 #47 #71 #97 #137, main light from the right #14 #56); exclude_when leaves a card out only for the orders its `when` matches: the beach #100 for golden hour and dusk (COLOUR.md check 15: marked golden hour, but as light as day, not an evening to aim at). The `time` weight was raised from 1 to 5 on 2026-10-30 (the lead's helper «look»), so that an evening order gets evening cards: with 1, a golden-hour scene got day cards and the bright #100 by the cast weight, and the evening came out as light as midday.",
   "documents": ["BASE_RULES.md", "BACKGROUNDS.md", "COMPOSITION.md", "COLOUR.md", "RENDERING.md", "CHARACTERS.md"],
 
   "fields": {
@@ -205,7 +205,8 @@
       { "fragment": "colour.gradient", "when": { "backdrop": ["field"] } },
       { "fragment": "colour.day-sky", "when": { "time": ["day"], "sky_top": [true] } },
       { "fragment": "colour.golden", "when": { "time": ["golden"] } },
-      { "fragment": "colour.night", "when": { "time": ["dusk", "night"] } }
+      { "fragment": "colour.dusk", "when": { "time": ["dusk"] } },
+      { "fragment": "colour.night", "when": { "time": ["night"] } }
     ] },
 
     { "name": "rendering", "parts": [
@@ -228,7 +229,8 @@
     "index": "references/README.md",
     "index_cast_column": "Персонажи",
     "exclude": [14, 23, 47, 56, 71, 83, 97, 137],
-    "weights": { "category": 3, "backdrop": 3, "placement": 3, "pattern": 2, "support": 2, "camera": 1, "time": 1, "sky_top": 1, "characters": 2, "cast": 4 },
+    "exclude_when": [ { "when": { "time": ["golden", "dusk"] }, "refs": [100] } ],
+    "weights": { "category": 3, "backdrop": 3, "placement": 3, "pattern": 2, "support": 2, "camera": 1, "time": 5, "sky_top": 1, "characters": 2, "cast": 4 },
     "note_style": "Reference images: {images} are style references from the same card series. Take only their rendering style from them: materials, soft lighting, colour treatment, backdrop treatment and level of detail; this card's subject, layout and backdrop come from the description above.",
     "note_cast": "Reference images: {images} show {who} of this card series. Keep them exactly as drawn there (faces, proportions, colours) and copy the rendering style of those images; their poses, costumes, props and backgrounds come from the description above.",
     "anchors": {

@@ -11,7 +11,7 @@ import { tempStore } from './store-helpers.mjs';
 const hasSharp = fs.existsSync(path.join(ROOT, 'node_modules/sharp/package.json'));
 const skip = !hasSharp && 'пакеты не установлены (node tools/setup.mjs): нет node_modules/sharp';
 
-const SETTINGS = /** @type {any} */ ({ card: { attempts: 3, maxSpendUsd: 0.2, tuneProcessing: false }, processing: {}, set: { parallel: 3, maxSpendUsd: 2 } });
+const SETTINGS = /** @type {any} */ ({ card: { attempts: 3, maxSpendUsd: 0.2, tuneProcessing: false }, processing: {}, set: { parallel: 3, maxSpendUsd: 2, cards: { maxCount: 10 } }, provider: { preset: 'openrouter', openrouter: { textModel: 'text-model' } } });
 const reference = () => fs.readFileSync(path.join(ROOT, 'styles/scapes/references/card-003.png'));
 
 /** A fake provider answering with one image and price; counts the calls and the most at the same time. */
@@ -94,6 +94,29 @@ test('makeSet: сигнал отмены — новые карточки не н
   assert.ok(events.filter(e => e.status === 'cancelled').length === 8);
 });
 
+test('makeSet: потолок набора меньше, чем parallel × потолок карточки — карточки ждут освободившийся бюджет, а не идут с нулём', async t => {
+  const { makeSet } = await import('../core/set/make.js');
+  const { store } = tempStore(t);
+  const collection = (await store.createCollection({ title: 'Лето' })).id;
+  /** @type {number[]} */
+  const caps = [];
+  let running = 0, most = 0;
+  // free images, a paid look (as Codex with a key): each card spends 0.01 of its cap
+  const makeCard = /** @type {any} */ (async (/** @type {any} */ o) => {
+    caps.push(o.limits.maxSpendUsd);
+    most = Math.max(most, ++running);
+    await new Promise(r => setTimeout(r, 5));
+    running--;
+    return { id: `card-${o.place.slot + 1}`, spent: 0.01, attempts: [{ cost: 0 }], chosenCheck: { blocking: 0 }, image: 'x.png', stop: 'passed' };
+  });
+  const provider = /** @type {any} */ ({ model: 'codex-cli', free: true, generate: async () => { throw new Error('не должен вызываться'); } });
+  const r = await makeSet({ collection, plan: lakePlan(), settings: SETTINGS, provider, store, makeCard, limits: { parallel: 4, maxSpendUsd: 0.5 } });
+  assert.deepEqual(r.slots.map(s => s.result), Array(10).fill('made'));
+  assert.ok(caps.every(c => c > 0), `потолки карточек: ${caps.join(', ')}`);
+  assert.ok(most <= 3, `одновременно ${most}: бюджета хватает на 2,5 карточки`);
+  assert.ok(Math.abs(r.spent - 0.1) < 1e-9);
+});
+
 test('planSetInto и planCollectionInto: план от модели сохраняется наборами коллекции, ход работы — событиями', async t => {
   const { planSetInto, planCollectionInto } = await import('../core/set/make.js');
   const { store } = tempStore(t);
@@ -142,7 +165,7 @@ test('planCards: запрос без окна из фрагментов SETS.md;
   const seen = [];
   const answers = [looseAnswer(3, 0), looseAnswer(4, 1)];
   const model = async (/** @type {any[]} */ m) => { seen.push(structuredClone(m)); return { text: /** @type {string} */ (answers.shift()), cost: 0.001 }; };
-  const r = await planCards({ style: 'scapes', theme: 'Рыбалка', wishes: 'утро', count: 5, scenes: 1, model, limits: { repairs: 1, maxSpendUsd: 1 } });
+  const r = await planCards({ style: 'scapes', theme: 'Рыбалка', wishes: 'утро', count: 5, scenes: 1, model, limits: { repairs: 1, maxSpendUsd: 1, maxCount: 10 } });
   assert.deepEqual(r.errors, []);
   assert.equal(r.calls, 2);
   assert.equal(r.spent, 0.002);
@@ -166,14 +189,15 @@ test('planCards: запрос без окна из фрагментов SETS.md;
   const mix = validateCards(cardsFromAnswer({ cards: [0, 1, 4, 5].map(i => lake[i]) }, { style: 'scapes' }), { style: 'scapes', count: 4, scenes: 0 });
   assert.deepEqual(mix.errors, []);
   assert.ok(mix.warnings.some(w => /нет категори/.test(w)), mix.warnings.join('\n'));
-  await assert.rejects(planCards({ style: 'scapes', theme: 't', count: 2, scenes: 3, model, limits: { repairs: 0, maxSpendUsd: 1 } }), /Сцен с персонажами/);
-  await assert.rejects(planCards({ style: 'scapes', theme: 't', count: 2, model: async () => ({ text: '{}', cost: null }), limits: { repairs: 0, maxSpendUsd: 1 } }), /не сообщила цену/);
+  await assert.rejects(planCards({ style: 'scapes', theme: 't', count: 2, scenes: 3, model, limits: { repairs: 0, maxSpendUsd: 1, maxCount: 10 } }), /Сцен с персонажами/);
+  await assert.rejects(planCards({ style: 'scapes', theme: 't', count: 11, model, limits: { repairs: 0, maxSpendUsd: 1, maxCount: 10 } }), /от 1 до 10 за один запуск/);
+  await assert.rejects(planCards({ style: 'scapes', theme: 't', count: 2, model: async () => ({ text: '{}', cost: null }), limits: { repairs: 0, maxSpendUsd: 1, maxCount: 10 } }), /не сообщила цену/);
 });
 
 test('makeCardsInto: план от модели, карточки — в хранилище коллекции, расход плана записан как текст', async t => {
   const { makeCardsInto } = await import('../core/set/cards.js');
   const { store } = tempStore(t);
-  const settings = /** @type {any} */ ({ ...SETTINGS, set: { ...SETTINGS.set, plan: { repairs: 0, maxSpendUsd: 1, model: 'text-model' } } });
+  const settings = /** @type {any} */ ({ ...SETTINGS, set: { ...SETTINGS.set, plan: { repairs: 0, maxSpendUsd: 1 } } });
   const collection = (await store.createCollection({ title: 'Лето', description: 'Summer' })).id;
   /** @type {any[]} */
   const calls = [];

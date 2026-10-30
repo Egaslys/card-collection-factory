@@ -2,8 +2,11 @@
 // order of each of its 10 slots — and its validation by the style's set rules (styles/<style>/set-rules.json, from
 // SETS.md). The agent writes a plan itself, or the planning model writes it (planner.js); makeSet (make.js) executes
 // only a plan without errors. Format and rules: core/set/README.md.
+import fs from 'node:fs';
+import path from 'node:path';
 import { checkOrder } from '../style/card-order.js';
 import { matches, stagingValue } from '../style/assembly.js';
+import { styleDirOf } from '../style/style.js';
 import { windowTemplates } from '../store/layout.js';
 import { expandStaging, kindKey, loadSetRules, rowCategories, stagingRow } from './rules.js';
 
@@ -122,8 +125,67 @@ export function wishWarnings(plan) {
   const missing = plan.slots.map((s, i) => (typeof s.wishes === 'string' ? 0 : i + 1)).filter(Boolean);
   if (missing.length) out.push(`пожелания набора («${plan.wishes.trim()}») не перенесены в карточки: у слот${missing.length > 1 ? 'ов' : 'а'} ${missing.join(', ')} нет поля wishes — что пожелания значат для этой карточки, по-английски, как то, что видно; "" — если к ней они не относятся`);
   plan.slots.forEach((s, i) => {
-    if (typeof s.wishes === 'string' && NEGATION.test(s.wishes)) out.push(`${where(i, s)}: wishes «${s.wishes}» — запрет, а не описание: напишите, что должно быть видно (не «no faces», а «small dark round eyes and a smooth fuzzy body»)`);
+    if (typeof s.wishes === 'string' && NEGATION.test(s.wishes)) out.push(`${where(i, s)}: wishes «${s.wishes}» — запрет, а не описание: напишите, что должно быть видно (не «no faces», а «small dark round eyes and a round, smooth body»)`);
   });
+  return out;
+}
+
+/** @type {Map<string, number>} */
+const hueDiffMin = new Map();
+/** COLOUR.7's least hue difference of the style, read from its checks (set-rules.json orders.contrast names where). */
+function hueDiffMinOf(/** @type {string} */ style, /** @type {SetRules['orders']['contrast']} */ c) {
+  if (!hueDiffMin.has(style)) {
+    const t = JSON.parse(fs.readFileSync(path.join(styleDirOf(style), c.hue_diff_min_from.file), 'utf8'));
+    hueDiffMin.set(style, Number(c.hue_diff_min_from.path.reduce((v, k) => v?.[k], t)));
+  }
+  return /** @type {number} */ (hueDiffMin.get(style));
+}
+
+/**
+ * The first colour word of a text with its hue and lightness class (orders.contrast); null when there is none or the
+ * first is achromatic (an achromatic hero passes COLOUR.md 7 without the hue condition).
+ * @param {string} text @param {SetRules['orders']['contrast']} c
+ * @returns {{word: string, hue: number, light: number}|null}
+ */
+function colourOf(text, c) {
+  const words = text.toLowerCase().match(/[a-z]+/g) ?? [];
+  for (const [i, w] of words.entries()) {
+    if (c.neutral.includes(w)) return null;
+    const e = c.colours[w];
+    if (!e) continue;
+    const mods = words.slice(Math.max(0, i - 2), i).filter(m => c.lighter.includes(m) || c.darker.includes(m));
+    const light = Math.max(-1, Math.min(1, e[1] + mods.filter(m => c.lighter.includes(m)).length - mods.filter(m => c.darker.includes(m)).length));
+    return { word: [...mods, w].join(' '), hue: e[0], light };
+  }
+  return null;
+}
+
+/**
+ * What the image model will read in one slot's order, by the set rules (SETS.md 9.22–9.24, set-rules.json orders):
+ * a card without characters in day light, a backdrop hue unlike the hero's main colour, no fine texture or mirror
+ * metal in the words. Returns the problems without the slot's name, each with what to write instead.
+ * @param {SlotPlan} s @param {string} styleName
+ * @returns {string[]}
+ */
+export function slotLookErrors(s, styleName) {
+  const o = loadSetRules(styleName).rules.orders;
+  /** @type {string[]} */
+  const out = [];
+  const time = s.order?.staging?.time;
+  if (!isScene(s) && time && !o.time.no_characters.includes(time)) out.push(`время суток «${time}» у карточки без персонажей — ей нужен день, time: "day" (BACKGROUNDS.md 13, SETS.md 9.22); утро и вечер из пожеланий — в сценах. Свет, который нужен самому предмету (неон, фары, закат над дорогой), — исключение, его назначает человек (humanRequest)`);
+  const at = String(s.order?.palette ?? '').toLowerCase().lastIndexOf(' on ');
+  if (s.hue && at > 0) {
+    const hero = colourOf(String(s.order.palette).slice(0, at), o.contrast), bg = colourOf(String(s.hue), o.contrast);
+    const min = hueDiffMinOf(styleName, o.contrast);
+    const d = hero && bg ? Math.min(Math.abs(hero.hue - bg.hue), 360 - Math.abs(hero.hue - bg.hue)) : 360;
+    if (hero && bg && d < min && hero.light === bg.light) out.push(`фон «${s.hue}» почти того же цвета, что герой («${hero.word}»): оттенки расходятся на ${d}°, нужно от ${min}° (COLOUR.md 7, SETS.md 9.23) — дайте фон противоположного цвета (синий предмет на золотисто-жёлтом, оранжевый или красный на голубом, жёлтый на фиолетовом, красный на ярко-зелёном, зелёный на розовом) или заметно светлее либо темнее героя (light / pale или dark / deep)`);
+  }
+  const texts = [['subject', s.order?.subject], ['environment', s.order?.environment], ['wishes', s.wishes], ['scene', s.order?.scene && JSON.stringify(s.order.scene)]];
+  for (const t of o.texture) for (const w of t.words) {
+    const re = new RegExp(`\\b${w.replace(/[-\s]+/g, '[-\\s]+')}\\b`, 'i');
+    const hit = texts.find(([, v]) => typeof v === 'string' && re.test(v));
+    if (hit) out.push(`«${w}» в ${hit[0]} — ${t.why} (${t.source}, SETS.md 9.24); напишите вместо этого: «${t.instead}»`);
+  }
   return out;
 }
 
@@ -175,6 +237,10 @@ export function validatePlan(input, { registry = [], variants = [], titles = [] 
 
   errors.push(...orderErrors);
   warnings.push(...wishWarnings(plan));
+  // ---- what the image model will read: time of day, backdrop against the hero, textures (SETS.md 9.22–9.24) ----
+  slots.forEach((s, i) => errors.push(...slotLookErrors(s, plan.style).map(e => `${where(i, s)}: ${e}`)));
+  const golden = slots.map((s, i) => (s.order.staging?.time === 'golden' ? i + 1 : 0)).filter(Boolean);
+  if (golden.length > rules.orders.time.golden_max) errors.push(`золотой час у ${golden.length} карточек (слоты ${golden.join(', ')}), а в наборе — не больше ${rules.orders.time.golden_max}: в эталоне он редкий, 5 карточек из 160 (SETS.md 9.22); остальным — день`);
   // the category follows from the staging (BACKGROUNDS.md «Категория как следствие постановки»)
   slots.forEach((s, i) => {
     const row = rules.stagings.find(r => r.id === stagingRow(s.order, rules, style));

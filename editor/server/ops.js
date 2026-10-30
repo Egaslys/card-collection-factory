@@ -8,6 +8,7 @@ import * as store from '../../core/store/index.js';
 import { COLLECTIONS_DIR, EXPORT_DIR } from '../../core/store/index.js';
 import { loadSettings, readLocalSettings, saveLocalSettings, ROOT } from '../../core/settings.js';
 import { readCardFile, attemptDir, attemptSpend, ATTEMPT_FILES } from '../../core/card/card-file.js';
+import { PRESETS, PRESET_TITLES, apiOf, presetOf, runSettings } from '../../core/providers/preset.js';
 import { clearTemporaryKey, currentKey, initKey, keyStatus, setTemporaryKey } from './key.js';
 
 /**
@@ -26,29 +27,38 @@ const need = (name, v) => {
   return v;
 };
 
-/** The settings, with the key's variable read again (it may have been changed in the settings). */
+/** The settings, with the key's variable of their preset selected again (the preset may have been changed). */
 function settings() {
   const s = /** @type {any} */ (loadSettings());
-  initKey(s.provider.openrouter.keyEnvVar);
+  initKey(presetOf(s.provider).keyEnvVar);
   return s;
 }
 
-/** The OpenRouter key or a message a person can act on. */
-function keyOrThrow() {
-  const key = currentKey();
-  if (!key) throw new Error('Нет ключа OpenRouter: введите временный ключ в настройках редактора или положите постоянный в файл .env проекта.');
+/** The key of each preset: whether there is one and of which kind. @param {any} s */
+const keysOf = s => Object.fromEntries(PRESETS.map(n => [n, { ...keyStatus(presetOf(s.provider, n).keyEnvVar), title: PRESET_TITLES[n] }]));
+
+/**
+ * The key of a preset's service (default: the settings') or a message a person can act on.
+ * @param {any} [provider]  provider settings (a run's)
+ */
+function keyOrThrow(provider = settings().provider) {
+  const p = presetOf(provider);
+  const key = currentKey(p.keyEnvVar);
+  if (!key) throw new Error(`Нет ключа ${PRESET_TITLES[p.name]}: введите временный ключ в настройках редактора или положите постоянный в файл .env проекта (${p.keyEnvVar}=…).`);
   return key;
 }
 
+/** The settings of a run: its `provider` (a service or codex-cli) and `model` over the settings'. @param {any} s @param {{provider?: string, model?: string}} [run] */
+const runOf = (s, run = {}) => ({ ...s, provider: runSettings(s.provider, run) });
+
 /**
- * The image provider of a run, with the editor's key: the settings', or the run's `provider` and OpenRouter `model`.
+ * The image provider of a run, with the editor's key of the run's service: the settings', or the run's `provider` and `model`.
  * @param {any} s @param {{provider?: string, model?: string}} [run]
  */
 async function providerOf(s, run = {}) {
   const { providerFrom } = await import('../../core/card/make.js');
-  const { runProvider } = await import('../../core/providers/models.js');
-  const p = { ...s.provider, use: runProvider(s.provider.use, run) };
-  return providerFrom(p, p.use === 'openrouter' ? { apiKey: keyOrThrow(), model: run.model } : { model: run.model });
+  const p = runOf(s, run).provider;
+  return providerFrom(p, p.use === 'api' ? { apiKey: keyOrThrow(p), model: run.model } : { model: run.model, apiKey: currentKey(presetOf(p).keyEnvVar) ?? undefined });
 }
 
 /** A card's folder in a collection. @param {{collectionId: string, cardId: string}} a */
@@ -100,19 +110,27 @@ async function getCard(a) {
 /** @type {Record<string, Op>} */
 export const OPS = {
   // ---------- status and settings ----------
+  // key: the key of the settings' preset; keys: of every preset (the settings screen shows the one chosen there)
   health: { run: async () => { settings(); return { ok: true, key: keyStatus() }; } },
-  getSettings: { run: async () => ({ settings: settings(), local: readLocalSettings(), key: keyStatus() }) },
-  saveSettings: { run: async ({ patch }) => { saveLocalSettings(need('patch', patch)); return { settings: settings(), local: readLocalSettings(), key: keyStatus() }; } },
-  setKey: { run: async ({ key }) => { settings(); setTemporaryKey(key); return keyStatus(); } },
-  clearKey: { run: async () => { settings(); clearTemporaryKey(); return keyStatus(); } },
+  getSettings: { run: async () => { const s = settings(); return { settings: s, local: readLocalSettings(), key: keyStatus(), keys: keysOf(s) }; } },
+  saveSettings: { run: async ({ patch }) => { saveLocalSettings(need('patch', patch)); const s = settings(); return { settings: s, local: readLocalSettings(), key: keyStatus(), keys: keysOf(s) }; } },
+  // preset: whose key (default: the settings'); the answer is that key's status
+  setKey: { run: async ({ key, preset }) => { const s = settings(); const v = presetOf(s.provider, preset ?? s.provider.preset).keyEnvVar; setTemporaryKey(key, v); return keyStatus(v); } },
+  clearKey: { run: async ({ preset } = {}) => { const s = settings(); const v = presetOf(s.provider, preset ?? s.provider.preset).keyEnvVar; clearTemporaryKey(v); return keyStatus(v); } },
   checkKey: {
-    run: async () => {
-      const o = settings().provider.openrouter;
-      const { getCredits } = await import('../../core/providers/openrouter.js');
+    // OpenRouter: the balance; Google has no balance call, so its key is checked by listing the models (free)
+    run: async ({ preset } = {}) => {
+      const s = settings();
+      const o = presetOf(s.provider, preset ?? s.provider.preset);
+      const p = { ...s.provider, preset: o.name };
+      const api = apiOf(o.name);
       try {
-        return { key: keyStatus(), credits: await getCredits({ endpoint: o.endpoint, apiKey: keyOrThrow(), net: { timeoutMs: 15000 } }) };
+        const net = { timeoutMs: 15000 };
+        if (api.getCredits) return { key: keyStatus(o.keyEnvVar), credits: await api.getCredits({ endpoint: o.endpoint, apiKey: keyOrThrow(p), net }) };
+        const models = await api.listImageModels({ endpoint: o.endpoint, apiKey: keyOrThrow(p), net });
+        return { key: keyStatus(o.keyEnvVar), credits: null, models: models.length, hasModel: models.some(m => m.id === o.model) };
       } catch (/** @type {any} */ e) {
-        if (e?.status === 401 || e?.status === 403) throw new Error(`Ключ не подошёл: ${o.endpoint} его не принял. Проверьте, что ключ вставлен целиком и не отозван.`);
+        if (e?.status === 400 || e?.status === 401 || e?.status === 403) throw new Error(`Ключ не подошёл: ${o.endpoint} его не принял. Проверьте, что ключ вставлен целиком и не отозван.`);
         throw e;
       }
     },
@@ -222,7 +240,7 @@ export const OPS = {
       const s = settings();
       const { importImage, visionFrom } = await import('../../core/card/make.js');
       const where = cardId ? { dir: cardDirOf({ collectionId, cardId }) } : { order: need('order', order), collection: need('collectionId', collectionId), place };
-      const run = (/** @type {string} */ file) => importImage({ image: file, ...where, settings: s, vision: visionFrom(s.provider, { apiKey: currentKey() }) });
+      const run = (/** @type {string} */ file) => importImage({ image: file, ...where, settings: s, vision: visionFrom(s.provider, { apiKey: currentKey(presetOf(s.provider).keyEnvVar) }) });
       if (image) return run(path.resolve(String(image)));
       const m = String(need('data', data)).match(/^data:image\/(png|jpeg|webp);base64,(.+)$/);
       if (!m) throw new Error('Картинка должна быть PNG, JPEG или WebP.');
@@ -299,11 +317,11 @@ export const OPS = {
     scope: a => ({ collectionId: a.collectionId }),
     spentOf: r => r?.spent ?? null,
     run: async (a, { progress, signal }) => {
-      const s = settings();
+      const s = runOf(settings(), a);
       const { makeCardsInto } = await import('../../core/set/cards.js');
       return makeCardsInto({
         collection: need('collectionId', a.collectionId), theme: need('theme', a.theme), wishes: a.wishes, count: Number(need('count', a.count)),
-        scenes: Number(a.scenes ?? 0), maxSpendUsd: a.maxSpendUsd, settings: s, provider: await providerOf(s, a), apiKey: keyOrThrow(), signal, progress,
+        scenes: Number(a.scenes ?? 0), maxSpendUsd: a.maxSpendUsd, settings: s, provider: await providerOf(s), apiKey: keyOrThrow(s.provider), signal, progress,
       });
     },
   },

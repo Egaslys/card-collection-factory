@@ -10,18 +10,7 @@ export const SETTINGS_DIR = path.join(ROOT, 'settings');
  * when a test needs one, its own local.json), so that the person's real settings/local.json never reaches a test. */
 const settingsDir = () => (process.env.CCF_SETTINGS_DIR ? path.resolve(process.env.CCF_SETTINGS_DIR) : SETTINGS_DIR);
 
-/**
- * @typedef {object} OpenRouterSettings
- * @property {string} endpoint
- * @property {string} model
- * @property {string|null} fallbackModel  tried in the same attempt when `model` fails; null = none
- * @property {string} aspectRatio  wanted for a card; each model gets the closest ratio of its profile
- * @property {string} keyEnvVar  name of the environment variable holding the key; the key itself is never in settings
- * @property {Record<string, unknown>} params  other request fields, passed as is
- * @property {number} timeoutMs
- * @property {number} retries
- * @property {number} backoffMs
- */
+/** @typedef {import('./providers/preset.js').PresetSettings} PresetSettings */
 
 /**
  * @typedef {object} CodexCliSettings  also the `defaults` of core/providers/codex-cli.js
@@ -36,8 +25,10 @@ const settingsDir = () => (process.env.CCF_SETTINGS_DIR ? path.resolve(process.e
 
 /**
  * @typedef {object} ProviderSettings
- * @property {'openrouter'|'codex-cli'} use
- * @property {OpenRouterSettings} openrouter
+ * @property {'api'|'codex-cli'} use  who draws: the preset's image model, or Codex
+ * @property {import('./providers/preset.js').PresetName} preset  the service of every keyed call (images, vision, text)
+ * @property {PresetSettings} openrouter
+ * @property {PresetSettings} google
  * @property {CodexCliSettings} codexCli
  * @property {Record<string, import('./providers/models.js').ModelProfile>} models  per model id ("codex-cli" for Codex)
  */
@@ -54,6 +45,32 @@ const settingsDir = () => (process.env.CCF_SETTINGS_DIR ? path.resolve(process.e
 
 /** @param {unknown} v @returns {v is Record<string, any>} */
 const isObject = v => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/**
+ * Personal settings written before the API presets (2026-10-30), in today's shape: provider.use "openrouter" → "api"
+ * with the openrouter preset; vision.model and set.plan.model (OpenRouter ids then) → provider.openrouter.visionModel
+ * and textModel. Anything else is returned as it is.
+ * @param {Record<string, any>} local
+ * @returns {Record<string, any>}
+ */
+export function migrateLocal(local) {
+  const out = structuredClone(local);
+  /** @param {Record<string, any>} o @param {string[]} keys */
+  const dropEmpty = (o, keys) => { for (const k of keys) if (isObject(o[k]) && !Object.keys(o[k]).length) delete o[k]; };
+  if (out.provider?.use === 'openrouter') { out.provider.use = 'api'; out.provider.preset ??= 'openrouter'; }
+  /** @param {Record<string, any>|undefined} from @param {string} to */
+  const move = (from, to) => {
+    if (!isObject(from) || !('model' in from)) return;
+    const or = ((out.provider ??= {}).openrouter ??= {});
+    or[to] ??= from.model;
+    delete from.model;
+  };
+  move(out.vision, 'visionModel');
+  move(out.set?.plan, 'textModel');
+  if (isObject(out.set)) dropEmpty(out.set, ['plan']);
+  dropEmpty(out, ['vision', 'set']);
+  return out;
+}
 
 /**
  * Merges the local override into the defaults: objects key by key, anything else replaced. A key the defaults do
@@ -91,18 +108,18 @@ export function loadSettings({ dir = settingsDir() } = {}) {
   /** @param {string} name */
   const read = name => JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'));
   const defaults = read('defaults.json');
-  const local = fs.existsSync(path.join(dir, 'local.json')) ? read('local.json') : {};
+  const local = fs.existsSync(path.join(dir, 'local.json')) ? migrateLocal(read('local.json')) : {};
   return /** @type {Settings} */ (mergeSettings(defaults, local));
 }
 
 /**
- * Personal settings only (settings/local.json), `{}` when there is none.
+ * Personal settings only (settings/local.json, in today's shape: migrateLocal), `{}` when there is none.
  * @param {{dir?: string}} [o]
  * @returns {Record<string, any>}
  */
 export function readLocalSettings({ dir = settingsDir() } = {}) {
   const file = path.join(dir, 'local.json');
-  return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
+  return fs.existsSync(file) ? migrateLocal(JSON.parse(fs.readFileSync(file, 'utf8'))) : {};
 }
 
 /**
@@ -133,7 +150,7 @@ export function saveLocalSettings(patch, { dir = settingsDir() } = {}) {
     }
     return out;
   };
-  const local = prune(deep(readLocalSettings({ dir }), patch), defaults);
+  const local = prune(migrateLocal(deep(readLocalSettings({ dir }), patch)), defaults);
   const merged = mergeSettings(defaults, local);
   const file = path.join(dir, 'local.json');
   fs.writeFileSync(file + '.tmp', JSON.stringify(local, null, 2) + '\n');

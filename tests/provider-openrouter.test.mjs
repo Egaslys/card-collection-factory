@@ -124,7 +124,8 @@ test('askVision: сначала текст, затем картинка data URL
 });
 
 test('профиль модели: ближайшая принятая пропорция, свои поля запроса, лимит образцов; без профиля — 1:1', async () => {
-  const { closestAspect, profileOf, requestFor, runProvider, SAFE_ASPECT } = await import('../core/providers/models.js');
+  const { closestAspect, modelIds, profileOf, requestFor, SAFE_ASPECT } = await import('../core/providers/models.js');
+  const { runSettings } = await import('../core/providers/preset.js');
   const { loadSettings } = await import('../core/settings.js');
   const models = loadSettings().provider.models;
   const gpt = profileOf(models, 'openai/gpt-image-2.5-flare');
@@ -138,7 +139,13 @@ test('профиль модели: ближайшая принятая проп�
   assert.deepEqual(requestFor(profileOf(models, 'some/new-model'), { model: 'x', aspectRatio: '4:5', references: 9 }), { aspectRatio: SAFE_ASPECT, params: {} });
   assert.equal(profileOf(models, '_open').aspectRatios?.[0], SAFE_ASPECT, 'служебный ключ — не профиль');
   assert.throws(() => requestFor(profileOf(models, 'codex-cli'), { model: 'codex-cli', aspectRatio: '4:5', references: 6 }), /не больше 5 картинок-образцов, а в запросе 6/);
-  assert.equal(runProvider('codex-cli', { model: 'a/b' }), 'openrouter');
-  assert.equal(runProvider('codex-cli', {}), 'codex-cli');
-  assert.equal(runProvider('openrouter', { provider: 'codex-cli' }), 'codex-cli');
+  const nb = profileOf(models, 'gemini-nano-banana-2.1');
+  assert.deepEqual(requestFor(nb, { model: 'nb', aspectRatio: '4:5', references: 14 }), { aspectRatio: '4:5', params: { imageConfig: { imageSize: '1K' } } }, 'та же модель у Google: пропорции и образцы — из её профиля у OpenRouter, поля запроса — свои');
+  assert.deepEqual(modelIds(models, 'gemini-nano-banana-2.1'), ['gemini-nano-banana-2.1', 'google/gemini-nano-banana-2.1']);
+  const p = /** @type {any} */ ({ use: 'codex-cli', preset: 'openrouter', openrouter: {}, google: {} });
+  assert.deepEqual([runSettings(p, { model: 'a/b' }).use, runSettings(p, { model: 'a/b' }).preset], ['api', 'openrouter']);
+  assert.equal(runSettings(p, {}), p);
+  assert.deepEqual([runSettings({ ...p, use: 'api' }, { provider: 'codex-cli' }).use], ['codex-cli']);
+  assert.deepEqual([runSettings(p, { provider: 'google' }).use, runSettings(p, { provider: 'google' }).preset], ['api', 'google']);
+  assert.throws(() => runSettings(p, { provider: 'nope' }), /неизвестный сервис/);
 });
