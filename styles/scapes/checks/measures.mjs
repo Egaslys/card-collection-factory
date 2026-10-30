@@ -13,12 +13,13 @@
 // Image reading and writing: sharp. Added for the checks: decode with alpha, frame detection, pattern steps along lines (BACKGROUNDS.md check 4),
 // composition numbers from the mask, safe-zone counts.
 //
-// Coordinates: x right, y down, origin top-left, 430 x 480 px. Luma = 0.299R + 0.587G + 0.114B (0..255).
-// L*, C* = CIE Lab (D65, sRGB); C* = hypot(a*, b*). Hue = HSV hue in degrees.
+// Coordinates: x right, y down, origin top-left, W x H px = the card size of thresholds.json → BASE_RULES.1.size.
+// Luma = 0.299R + 0.587G + 0.114B (0..255). L*, C* = CIE Lab (D65, sRGB); C* = hypot(a*, b*). Hue = HSV hue in degrees.
 import { readFileSync } from 'node:fs';
 import sharp from 'sharp';
 
-export const W = 430, H = 480, N = W * H;
+export const [W, H] = JSON.parse(readFileSync(new URL('./thresholds.json', import.meta.url), 'utf8')).checks['BASE_RULES.1'].size;
+export const N = W * H;
 
 // ---------- decoding ----------
 // Async (sharp). Returns { width, height, transparent, rgb }: rgb is 8-bit R,G,B per pixel, transparent counts pixels with alpha < 255.
