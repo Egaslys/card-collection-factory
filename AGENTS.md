@@ -2,17 +2,16 @@
 
 An agentic pipeline with a web editor that creates collections of collectible card images (style → collection → set → card) "turnkey". For a set, it takes the theme and free-form wishes of a producer, and returns several variants of the ordered set. The main mode is agentic: a person asks Claude Code or Codex for a set, the agent works autonomously and has access to every function a person has in the web editor, and more. The web editor is for the person: to check the work, change settings, rearrange cards, generate without an agent. The author's vision, which owns these decisions, is [docs/plans/VISION.md](docs/plans/VISION.md); the stages of the work are in [docs/plans/ROADMAP.md](docs/plans/ROADMAP.md).
 
-**State: preparation.** Only the agent setup exists; there is no application code yet. Not decided yet:
+**State: the foundation is being built.** The agent setup and the Scapes style bible exist; application code is starting. The stack and the overall shape are decided — see «Устройство и стек» in `VISION.md`: one core of operations called by agent commands and by the editor server; Node only, no framework; JavaScript ES modules with JSDoc types checked by TypeScript, no build step; data as plain files; `sharp` for image decoding and encoding, own code for post-processing (shared by Node and the editor page); npm. Not decided yet:
 
-- the stack of the application: language (plain JavaScript, TypeScript or other), framework, package manager, the one-command install;
-- the structure of the pipeline and the web editor, and what the editor can do;
+- the structure of the pipeline and the web editor beyond that shape, and what the editor can do;
 - the format of sets and cards;
 - how image providers are configured: endpoint, models, keys;
 - how the product is split into project skills.
 
 Do not present any of these as decided. Decisions are made with the author; accepted ones go to `VISION.md` and `CHANGELOG.md`.
 
-The agent setup below (`tools/`, `tests/`, `.claude/hooks/`) is plain Node scripts. It does not set the stack of the application and works with whatever stack is chosen.
+The agent setup (`tools/`, `tests/`, `.claude/hooks/`) is plain Node scripts with no dependencies; keep it that way, so it works before `npm install`.
 
 ## Skills — read before working
 
