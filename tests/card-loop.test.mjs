@@ -218,7 +218,7 @@ test('цикл: ошибка провайдера и неизвестная це
   assert.equal(f.id, 'test-card-2', 'без --card — новая карточка с незанятым id');
   assert.equal(f.stop, 'attempts');
   assert.deepEqual(f.attempts.map(a => a.cost), [0, 0]);
-  assert.deepEqual(f.warnings.filter(w => !/Смотрящая модель не спрошена/.test(w)), [], 'у codex-cli свои начальные настройки обработки (нейтральные)');
+  assert.deepEqual(f.warnings.filter(w => !/Смотрящая модель не спрошена|выше карточки/.test(w)), [], 'у codex-cli свои начальные настройки обработки (нейтральные)');
 });
 
 test('цикл: опорный портрет персонажа — свой кадр, без обрезки до карточки, без пиксельных проверок, список для глаз', { skip: noSharp }, async () => {
@@ -241,10 +241,13 @@ test('цикл: опорный портрет персонажа — свой к
   const re = await recheckCard({ dir: r.dir });
   assert.deepEqual(re.chosenCheck, r.chosenCheck);
 
-  // an ordinary card asks for the provider settings' frame
+  // an ordinary card asks for the provider settings' frame; an image taller than the card loses only its bottom, with
+  // a warning and the cut recorded in the attempt (grey() is 800 × 1000: 1000 × 430 / 800 = 538 px high, 58 cut)
   const card = fakeProvider(await grey(), 0.04);
-  await makeCard({ order: ORDER, ...await pool(), settings: SETTINGS, provider: card, buildPrompt: fakePrompt, limits: { attempts: 1 } });
+  const made = await makeCard({ order: ORDER, ...await pool(), settings: SETTINGS, provider: card, buildPrompt: fakePrompt, limits: { attempts: 1 } });
   assert.ok(!('aspectRatio' in card.calls[0]));
+  assert.equal(cardOf(made.dir).attempts[0].cutBottom, 58);
+  assert.ok(made.warnings.some((/** @type {string} */ w) => /выше карточки: срезано 58 px снизу/.test(w)), made.warnings.join('\n'));
 });
 
 test('цикл: провайдер из настроек — неизвестный отклоняется, codex-cli бесплатный и без ключа', { skip: noSharp }, () => {
@@ -395,7 +398,7 @@ test('запасная модель из настроек: fallbackModel у Open
   delete process.env.CCF_TEST_KEY;
 });
 
-test('профиль модели в запросе: GPT Image получает 3:4 вместо 4:5 (1:1 для карточки), Nano Banana — 4:5 и 1K; --model меняет основную', { skip: noSharp }, async t => {
+test('профиль модели в запросе: карточка — 1:1 (кадр не выше карточки), GPT Image без карточки — пропорция из своего списка, Nano Banana — 1K; --model меняет основную', { skip: noSharp }, async t => {
   const { providerFrom } = /** @type {any} */ (loop);
   const real = loadSettings().provider;
   /** @type {any[]} */
@@ -409,9 +412,9 @@ test('профиль модели в запросе: GPT Image получает 
   await p.generate({ prompt: 'p', references: [] });
   await p.fallback.generate({ prompt: 'p', references: [] });
   await p.fallback.generate({ prompt: 'p', references: [], crop: { width: 430, height: 480 } });
-  assert.deepEqual([sent[0].model, sent[0].aspect_ratio, sent[0].resolution], [real.openrouter.model, '4:5', '1K']);
-  assert.deepEqual([sent[1].model, sent[1].aspect_ratio, 'resolution' in sent[1]], ['openai/gpt-image-2.5-flare', '3:4', false]);
-  assert.equal(sent[2].aspect_ratio, '1:1', 'режется до карточки — пропорция с наименьшим срезом');
+  assert.deepEqual([sent[0].model, sent[0].aspect_ratio, sent[0].resolution], [real.openrouter.model, real.openrouter.aspectRatio, '1K']);
+  assert.deepEqual([sent[1].model, 'resolution' in sent[1]], ['openai/gpt-image-2.5-flare', false]);
+  assert.equal(sent[2].aspect_ratio, '1:1', 'режется до карточки — кадр не выше карточки');
   const chosen = providerFrom(real, { apiKey: 'test-key', model: real.openrouter.fallbackModel });
   assert.equal(chosen.model, real.openrouter.fallbackModel);
   assert.equal(chosen.fallback, undefined, 'запасная совпала с выбранной — её нет');

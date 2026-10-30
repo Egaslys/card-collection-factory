@@ -400,6 +400,7 @@ async function processAttempt({ order, attempt, dir, bytes, mime, processing, ou
   attempt.original = ATTEMPT_FILES.original + (EXT_BY_MIME[mime ?? ''] ?? '.bin');
   fs.writeFileSync(path.join(dir, attempt.original), bytes);
   const card = await prepareCard(bytes, output.crop ? CARD_SIZE : undefined);
+  if (card.cutBottom) attempt.cutBottom = card.cutBottom;
   fs.writeFileSync(path.join(dir, ATTEMPT_FILES.prepared), await encodePng(card.pixels, card.width, card.height));
   const hero = output.checks ? await findAttemptHero({ order, attempt, dir, ask, settings }) : null;
   const fg = trustedFg(hero);
@@ -537,7 +538,8 @@ async function runAttempts({ dir, card, request, mark = {}, provider, settings, 
  * Prepares, finds the hero, post-processes, checks and looks at an image in its attempt; a failure is recorded in the
  * attempt.
  * @param {{order: CardOrder, attempt: Attempt, dir: string, bytes: Uint8Array, mime?: string, settings: import('../settings.js').Settings, output: OrderOutput, ask?: Ask|null}} o
- * @returns {Promise<string[]>} warnings: about the start of post-processing; that the vision model gave no answer
+ * @returns {Promise<string[]>} warnings: about the start of post-processing; that the image was taller than the card;
+ *   that the vision model gave no answer
  */
 async function processInto({ order, attempt, dir, bytes, mime, settings, output, ask = null }) {
   const { processing, warning } = processingFor({ style: order.style, model: attempt.model, settings });
@@ -548,6 +550,7 @@ async function processInto({ order, attempt, dir, bytes, mime, settings, output,
   }
   return [
     ...(warning ? [warning] : []),
+    ...(attempt.cutBottom ? [`Картинка попытки ${attempt.n} (${attempt.model}) выше карточки: срезано ${attempt.cutBottom} px снизу. Модель надо просить о кадре не выше карточки — проверьте её профиль (settings provider.models).`] : []),
     ...(attempt.look?.error ? [`Смотрящая модель не дала ответа на попытку ${attempt.n}: ${attempt.look.error}`] : []),
   ];
 }

@@ -72,7 +72,7 @@ test('adjust: неверные настройки и размер отклоня
   assert.throws(() => adjust(new Uint8Array(10), 2, 2, neutral()), /RGB или RGBA/);
 });
 
-test('prepareCard: картинка другой формы масштабируется до покрытия и обрезается по центру', { skip: noSharp }, async () => {
+test('prepareCard: картинка другой формы уменьшается до карточки; срезаются только бока поровну, а у слишком высокой — только низ', { skip: noSharp }, async () => {
   const { default: sharp } = await import('sharp');
   const { prepareCard, encodePng } = await import('../core/image/prepare.js');
   const size = { width: 430, height: 480 }; // a reference card's own size: the test checks the rule, not the style
@@ -83,16 +83,21 @@ test('prepareCard: картинка другой формы масштабиру
   // the twice-as-large card comes back close to the card (only resampling loses a little)
   const plain = await prepareCard(await big.clone().png().toBuffer(), size);
   assert.ok(mean(card, plain.pixels) < 3, `после увеличения и уменьшения отличие ${mean(card, plain.pixels).toFixed(2)}`);
-  // magenta bands that the cover scale and centre crop must cut away exactly: the result equals the unpadded one
-  for (const pad of [{ top: 100, bottom: 100 }, { left: 80, right: 80 }]) {
+  // magenta bands that the cover scale and the crop must cut away exactly: the result equals the unpadded one. A wider
+  // image loses its sides equally; a taller one (the model's profile is wrong) loses only its bottom, reported in cutBottom
+  for (const pad of [{ bottom: 200 }, { left: 80, right: 80 }]) {
     const master = await big.clone().extend({ top: 0, bottom: 0, left: 0, right: 0, ...pad, background: '#ff00ff' }).png().toBuffer();
     const out = await prepareCard(master, size);
     assert.equal(out.width, size.width); assert.equal(out.height, size.height);
     assert.equal(out.pixels.length, size.width * size.height * 3);
+    assert.equal(out.cutBottom, pad.bottom ? 100 : undefined, 'срезанное снизу — в пикселях карточки');
     assert.ok(mean(plain.pixels, out.pixels) < 0.1, `полосы срезаны не точно: отличие ${mean(plain.pixels, out.pixels).toFixed(3)}`);
     const png = await encodePng(out.pixels, out.width, out.height);
     assert.deepEqual(await sharp(png).raw().toBuffer(), out.pixels, 'PNG без потерь');
   }
+  // the top is never cut: a band added on top of a too-tall image stays in the card
+  const topBand = await prepareCard(await big.clone().extend({ top: 200, bottom: 0, left: 0, right: 0, background: '#ff00ff' }).png().toBuffer(), size);
+  assert.deepEqual([...topBand.pixels.slice(0, 3)], [255, 0, 255], 'верх высокой картинки не срезан');
 });
 
 test('prepareCard без размера: картинка остаётся своего размера, без обрезки', { skip: noSharp }, async () => {

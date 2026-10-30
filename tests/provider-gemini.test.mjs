@@ -123,7 +123,7 @@ test('пресет Google: providerFrom рисует Nano Banana 2.1 через 
   const loop = await import('../core/card/make.js').catch(() => null);
   if (!loop) return t.skip('sharp не установлен');
   const real = loadSettings();
-  const { calls, endpoint } = await fakeGemini(t, imageAnswer, { candidates: [{ content: { parts: [{ text: 'ok' }] } }], usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 1 } });
+  const { calls, endpoint } = await fakeGemini(t, imageAnswer, { candidates: [{ content: { parts: [{ text: 'ok' }] } }], usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 1 } }, imageAnswer);
   const provider = { ...real.provider, use: /** @type {'api'} */ ('api'), preset: /** @type {'google'} */ ('google'), google: { ...real.provider.google, endpoint } };
   const p = loop.providerFrom(provider, { apiKey: KEY });
   assert.equal(p.model, 'gemini-nano-banana-2.1');
@@ -131,10 +131,12 @@ test('пресет Google: providerFrom рисует Nano Banana 2.1 через 
   const r = await p.generate({ prompt: 'p', references: [] });
   assert.ok(r.cost && r.cost > 0.03 && r.cost < 0.04, `цена картинки 1K около $0.034: ${r.cost}`);
   assert.equal(calls[0].url, '/v1beta/models/gemini-nano-banana-2.1:generateContent');
-  assert.deepEqual(calls[0].body.generationConfig.imageConfig, { aspectRatio: '4:5', imageSize: '1K' });
+  assert.deepEqual(calls[0].body.generationConfig.imageConfig, { aspectRatio: real.provider.google.aspectRatio, imageSize: '1K' });
   assert.equal(p.vision?.model, 'gemini-3.8-flash');
   await /** @type {any} */ (p.vision)({ model: 'gemini-3.8-flash', prompt: 'q', image: { bytes: png, mime: 'image/png' }, maxTokens: 100, timeoutMs: 5000 });
   assert.equal(calls[1].url, '/v1beta/models/gemini-3.8-flash:generateContent');
+  await p.generate({ prompt: 'p', references: [], crop: { width: 430, height: 480 } });
+  assert.equal(calls.at(-1).body.generationConfig.imageConfig.aspectRatio, '1:1', 'карточка: кадр не выше карточки (сверху и снизу не режем)');
   assert.equal(presetOf(provider).name, 'google');
   const same = loop.processingFor({ style: 'scapes', model: 'gemini-nano-banana-2.1', settings: real });
   assert.deepEqual(same, loop.processingFor({ style: 'scapes', model: 'google/gemini-nano-banana-2.1', settings: real }));

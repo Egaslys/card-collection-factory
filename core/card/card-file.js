@@ -116,6 +116,8 @@ export const attemptSpend = a => ({ images: a.cost ?? 0, vision: (a.hero?.cost ?
  * @property {number} [editOf]  an edit: the attempt whose model image was edited
  * @property {number|null} cost  USD as reported by the provider; null = unknown
  * @property {string} [original]  file name of the model image in the attempt folder
+ * @property {number} [cutBottom]  card pixels cut from the bottom of the model image because it came back taller than
+ *   the card (core/image/prepare.js); the model's profile should ask it for a frame no taller than the card
  * @property {import('../image/adjust.js').AdjustSettings} [processing]  post-processing applied (the editor's slider positions)
  * @property {boolean} [processingFixed]  `processing` was set by hand (`card adjust`): never tuned again
  * @property {import('./tune.js').Tuning} [tuning]  how `processing` was found: start, measures before and after, basis

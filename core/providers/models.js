@@ -1,7 +1,8 @@
 // Model profiles: what one image model accepts, read from the factory settings (provider.models, keyed by the model id;
 // "codex-cli" for Codex). The values and their sources are in settings/defaults.json; this module only applies them.
-// A model without a profile is asked for 1:1 (every image model takes it) with no extra request fields; the card is
-// cut from whatever comes back (core/image/prepare.js).
+// A model without a profile is asked for 1:1 (every image model takes it) with no extra request fields. A card is cut
+// from what comes back by scaling it down and trimming only the sides (core/image/prepare.js), so a request never asks
+// for a frame taller than the card (closestAspect).
 
 /**
  * @typedef {object} ModelProfile
@@ -26,16 +27,24 @@ function ratioOf(r) {
 }
 
 /**
- * The wanted ratio when the model takes it (or any); otherwise the accepted ratio closest to what the image will be cut
- * to — `cropTo`, the card's width / height, when the image is cut to the card (the least cut, so the margins the model
- * drew stay), else the wanted one.
+ * The ratio one request asks for. When the image is cut to the card (`cropTo`, the card's width / height), the frame
+ * is never taller than the card (Scapes BASE_RULES.md «Формат карточки», the author's decision, clarified 2026-10-31:
+ * the image is scaled down and only its sides are cut, never the top or the bottom): the wanted ratio when the model
+ * takes it and it is not taller than the card, else the accepted ratio closest to the card among those not taller
+ * than it (a model that takes any ratio, `accepted` null, then gets 1:1); only a model that takes no such ratio gets
+ * the closest one overall, and prepare.js cuts its image from the bottom with a warning. Without `cropTo` (a frame
+ * kept as drawn, e.g. a character sheet): the wanted ratio when the model takes it, else the closest accepted one.
  * @param {string} wanted @param {string[]|null} accepted @param {number} [cropTo]
  * @returns {string}
  */
 export function closestAspect(wanted, accepted, cropTo) {
-  if (!accepted || accepted.includes(wanted)) return wanted;
+  const notTaller = (/** @type {string} */ r) => cropTo == null || ratioOf(r) >= cropTo - 1e-9;
+  if ((!accepted || accepted.includes(wanted)) && notTaller(wanted)) return wanted;
+  if (!accepted) return SAFE_ASPECT;
   const w = Math.log(cropTo ?? ratioOf(wanted));
-  return accepted.reduce((best, r) => (Math.abs(Math.log(ratioOf(r)) - w) < Math.abs(Math.log(ratioOf(best)) - w) ? r : best));
+  const closest = (/** @type {string[]} */ list) => list.reduce((best, r) => (Math.abs(Math.log(ratioOf(r)) - w) < Math.abs(Math.log(ratioOf(best)) - w) ? r : best));
+  const fit = accepted.filter(notTaller);
+  return closest(fit.length ? fit : accepted);
 }
 
 /**

@@ -131,11 +131,16 @@ test('профиль модели: ближайшая принятая проп�
   const gpt = profileOf(models, 'openai/gpt-image-2.5-flare');
   assert.equal(closestAspect('4:5', gpt.aspectRatios), '3:4', '4:5 у GPT Image нет, ближайшая — 3:4');
   assert.equal(closestAspect('4:5', gpt.aspectRatios, 430 / 480), '1:1', 'картинку режут до карточки 430 × 480: меньше всего срезает 1:1');
-  assert.equal(closestAspect('4:5', profileOf(models, 'google/gemini-nano-banana-2.1').aspectRatios, 430 / 480), '4:5', 'принятую пропорцию не меняем');
+  const nbRatios = profileOf(models, 'google/gemini-nano-banana-2.1').aspectRatios;
+  assert.equal(closestAspect('4:5', nbRatios, 430 / 480), '1:1', 'кадр выше карточки не заказываем даже у модели, что его принимает: сверху и снизу не режем');
+  assert.equal(closestAspect('1:1', nbRatios, 430 / 480), '1:1');
+  assert.equal(closestAspect('4:5', null, 430 / 480), SAFE_ASPECT, 'модели с любой пропорцией — 1:1, а не кадр выше карточки');
+  assert.equal(closestAspect('9:16', ['9:16', '2:3'], 430 / 480), '2:3', 'нет пропорции не выше карточки — ближайшая из принятых (prepare.js срежет снизу и предупредит)');
   assert.equal(closestAspect('4:5', profileOf(models, 'google/gemini-nano-banana-2.1').aspectRatios), '4:5');
   assert.equal(closestAspect('2:3', gpt.aspectRatios), '2:3');
   assert.equal(closestAspect('4:5', null), '4:5', 'любая пропорция — словами (Codex)');
-  assert.deepEqual(requestFor(profileOf(models, 'google/gemini-nano-banana-2.1'), { model: 'nb', aspectRatio: '4:5', references: 2 }), { aspectRatio: '4:5', params: { resolution: '1K' } });
+  assert.deepEqual(requestFor(profileOf(models, 'google/gemini-nano-banana-2.1'), { model: 'nb', aspectRatio: '4:5', references: 2 }), { aspectRatio: '4:5', params: { resolution: '1K' } }, 'без обрезки до карточки (лист персонажа) — заказанная пропорция');
+  assert.equal(requestFor(profileOf(models, 'google/gemini-nano-banana-2.1'), { model: 'nb', aspectRatio: '4:5', references: 2, crop: { width: 430, height: 480 } }).aspectRatio, '1:1');
   assert.deepEqual(requestFor(profileOf(models, 'some/new-model'), { model: 'x', aspectRatio: '4:5', references: 9 }), { aspectRatio: SAFE_ASPECT, params: {} });
   assert.equal(profileOf(models, '_open').aspectRatios?.[0], SAFE_ASPECT, 'служебный ключ — не профиль');
   assert.throws(() => requestFor(profileOf(models, 'codex-cli'), { model: 'codex-cli', aspectRatio: '4:5', references: 6 }), /не больше 5 картинок-образцов, а в запросе 6/);
