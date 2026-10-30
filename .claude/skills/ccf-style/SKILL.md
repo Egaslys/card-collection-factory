@@ -11,12 +11,12 @@ The only style so far is `styles/scapes/`. Its entry point is `styles/scapes/REA
 |---|---|
 | prompt fragments, their markers, the assembly rules format | `core/style/README.md`; order of assembly for a person: `PROMPTS.md` |
 | how fragments are picked and joined, staging vocabulary, references and anchors | `prompt-assembly.json` |
-| set and collection rules as data | `set-rules.json` (source: `SETS.md`); how core uses it: `core/set/README.md` |
-| post-processing numbers | `processing.json` |
+| set and collection rules as data, including what a card order may say to the image model (`orders`, SETS.md 9.22–9.24) and the text model's prompt glue for plans and loose cards (`prompt`) | `set-rules.json` (source: `SETS.md`); how core uses it: `core/set/README.md` |
+| post-processing numbers: bounds, shadow lift, the start per image model (a new model needs a `start` entry, or `sameAs` in its settings profile `provider.models`) | `processing.json` (its `_about`) |
 | automated checks, thresholds, the control run, the hero outline | `checks/README.md` |
 | the order of checks for a person or agent | `CHECKLIST.md` |
 | reference cards / character anchors | `references/README.md` / `characters/README.md` |
-| window templates and their slot geometry (read by the editor) | `windows/windows.json` |
+| window kinds (large, small, grand), colour templates, frames (`windows/frames/`) and slot geometry — read by the store and the editor | `windows/windows.json` |
 
 ## Rules of the bible
 
@@ -33,7 +33,7 @@ The only style so far is `styles/scapes/`. Its entry point is `styles/scapes/REA
 - After a check, threshold or measure change, the full control run must exit 0: `node styles/scapes/checks/check-card.mjs --summary --quiet --no-visual`. A new unexpected FAIL on a reference card means the threshold or the measure is wrong: fix one of them (`checks/README.md`, «Keeping it in sync with the bible»).
 - After a fragment or assembly change, read the assembled prompt for real: `node ccf.mjs card prompt ORDER.json` on orders from `tests/style-pilot-orders.mjs`.
 - Processing changes: `styles/scapes/checks/adjust-trial.mjs` (`--help`), then `check-card.mjs` on the chosen copies.
-- Paid generation to test fragments only with the author's consent; the factory's own trial runs use `--provider codex-cli`.
+- Paid generation to test fragments only with the author's consent; the factory's own trial runs use the services `docs/plans/VISION.md` names at the end of its image source section. Each image model reads the prompt differently: a fragment proven on one model is unproven on another. A per-model closing phrase is the profile's `framing` (settings `provider.models`), not a fragment.
 - Update `MAP.md` and `CHANGELOG.md` when a document, a rule file or a decision changes.
 
-TODO: a second style. No contract yet lists what a style folder must contain; today core reads `prompt-assembly.json`, `set-rules.json`, `processing.json` and `checks/check-card.mjs` from `styles/<style>/`, and the editor reads `windows/windows.json`.
+TODO: a second style. No contract yet lists what a style folder must contain; today core reads the bible documents' fragments and `BACKGROUNDS.md` staging table, `prompt-assembly.json`, `set-rules.json`, `processing.json`, `checks/thresholds.json` and `checks/check-card.mjs` from `styles/<style>/`; the store and the editor read `windows/windows.json`.

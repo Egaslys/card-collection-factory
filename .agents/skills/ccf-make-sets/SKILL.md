@@ -5,11 +5,11 @@ description: Make sets and collections with the card factory — plan a 10-card 
 
 # Make sets and collections
 
-A set is 10 cards in a window; a collection is 16 sets, the 16th the grand set. `FACTORY` is the factory's folder; commands are `node FACTORY/ccf.mjs …` from any folder, `--help` gives exact options, `--json` a result for an agent (progress lines go to stderr).
+A set is 10 cards in a window; a collection is 16 sets, the 16th the grand set. `FACTORY` is the factory's folder; commands are `node FACTORY/ccf.mjs …` from any folder, `node FACTORY/ccf.mjs <command> --help` gives exact options, `--json` a result for an agent (progress lines go to stderr).
 
-The one sources: `FACTORY/core/set/README.md` (two ways to a plan, the `SetPlan` format, what the program checks and what it leaves to eyes, how making works); the style's set rules `FACTORY/styles/<style>/SETS.md` (§6 the algorithm for the agent, §9 the checks) and their checkable part as data `styles/<style>/set-rules.json` (window layouts, staging presets, shares, the collection curve). The person's word outranks every set rule: put their words in the plan's `humanRequest` and set-rule errors become warnings.
+The one sources: `FACTORY/core/set/README.md` (two ways to a plan, the `SetPlan` format, what the program checks and what it leaves to eyes, how making works); the style's set rules `FACTORY/styles/<style>/SETS.md` (§6 the algorithm for the agent, §9 the checks) and their checkable part as data `styles/<style>/set-rules.json`. The person's word outranks every set rule: put their words in the plan's `humanRequest` and set-rule errors become warnings.
 
-Readiness, who draws (provider), money and the collection: steps 1–2 of ccf-make-cards. Every set lives in a collection.
+Readiness, who draws (`--provider`, `--model`), money and the collection: steps 1–2 of ccf-make-cards. Every set lives in a collection.
 
 ## 1. Choose the pace
 
@@ -18,15 +18,21 @@ Readiness, who draws (provider), money and the collection: steps 1–2 of ccf-ma
 
 ## 2. Plan
 
-**You write the plan (agent mode, the default).** Follow `SETS.md` §6: §6.2 collection, §6.3 a regular set, §6.4 the grand set, §6.5 variants. Write each set as a `SetPlan` JSON file (`core/set/README.md`). Card orders inside it follow ccf-make-cards step 3; `order.staging` may be a preset (`stagings` of `set-rules.json`). Then check until it reports no errors:
+**You write the plan (agent mode, the default).** Follow `SETS.md` §6: §6.2 collection, §6.3 a regular set, §6.4 the grand set, §6.5 variants. Write each set as a `SetPlan` JSON file (`core/set/README.md`). Card orders inside it follow ccf-make-cards step 3; in a plan `order.staging` may be a preset and `order.id` may be left out (both are filled in when the plan is saved). Then check until it reports no errors:
 
 ```sh
 node FACTORY/ccf.mjs set check PLAN.json [VARIANT2.json …] --collection ID
 ```
 
-`--collection` checks against the collection's other sets (no repeated item kinds or captions). The person's wishes reach the images only through the cards: give every slot `wishes` — one English sentence of what the wishes ask of that card, said as what is seen («warm low morning sun, long soft shadows»), `""` when they do not concern it — and let them shape the card's own fields too (the staging `time` for «morning»); the program appends `wishes` to the order's `promptExtra`, and `set check` warns about a slot without it or one phrased as a prohibition. Variants: one file per variant with `variant: { n, group }` and the same window layout, all checked in one call. Then go through the items the program cannot check («Not checkable by the program» in `core/set/README.md`) yourself.
+- `--collection` checks against the collection's other sets (no repeated item kinds or captions).
+- It also checks what the image model will read (SETS.md 9.22–9.24): day light on cards without characters, golden hour on at most 2 cards, a backdrop unlike the hero's colour, no fine-texture or chrome words. Each error says what to write instead.
+- The person's wishes reach the images only through the cards: `plan.wishes` alone reaches no image. Give every slot `wishes`: one English sentence of what the wishes ask of that card, said as what is seen («warm low morning sun, long soft shadows»), `""` when they do not concern it. Let them shape the card's own fields too (the staging `time` for «morning» — on scenes only, since cards without characters stay in daylight). The program appends `wishes` to the order's `promptExtra`; `set check` warns about a slot without it or one phrased as a prohibition.
+- Variants: one file per variant with `variant: { n, group }` and the same window layout, all checked in one call.
+- Then go through the items the program cannot check («Not checkable by the program» in `core/set/README.md`) yourself.
 
-Your own collection: write, check and save it set by set in collection order. `set check --collection` sees only plans already saved in the collection, so save each plan (`set save PLAN.json --collection ID`, which checks it again and makes no cards) before checking the next, and each set is checked against the ones before it. The whole-collection check (16 sets, the grand set last, the scene curve) is `node FACTORY/ccf.mjs collection check --collection ID` over the saved plans (`--partial` while the collection is not complete); the rest of the collection part of `SETS.md` §9 you go through yourself.
+**Read the plan before it is saved.** `set save` and `set make PLAN.json` always add a new set, and no command replaces a saved plan, so fix everything in the file first. `card prompt` refuses a plan's orders with a preset or without an `id`. To read the assembled prompts, `set save` the plan (free), then for slot N run `jq '.plan.slots[N-1].order' FACTORY/collections/<c>/sets/<set>/set.json > ORDER.json` and `ccf.mjs card prompt ORDER.json`. If a saved plan still needs a change before its cards are made, put the corrected plan in through the Store API: `updateSet(collection, set, { plan })` from `FACTORY/core/store/index.js` (`core/README.md`). `set make --set` checks the stored plan again before any card.
+
+Your own collection: write, check and save it set by set in collection order. `set check --collection` sees only plans already saved in the collection, so save each plan (`set save PLAN.json --collection ID`, which checks it again and makes no cards) before checking the next. Each set is then checked against the ones before it. The whole-collection check (16 sets, the grand set last, the scene curve) is `node FACTORY/ccf.mjs collection check --collection ID` over the saved plans (`--partial` while the collection is not complete); the rest of the collection part of `SETS.md` §9 you go through yourself.
 
 **The text model writes the plan (the editor's path; small paid call).** Use when the person asks for it:
 
@@ -35,7 +41,7 @@ node FACTORY/ccf.mjs set plan --theme TEXT [--wishes TEXT] [--variants N] --coll
 node FACTORY/ccf.mjs collection plan --theme TEXT (--collection ID | --title TEXT) [--wishes TEXT] [--variants N]
 ```
 
-Read the saved plans (`plan` in each `collections/<c>/sets/<set>/set.json`) the same way before any card is paid for.
+The text model is the settings' service's (`provider.<preset>.textModel`); these commands have no `--provider`. Errors go back to the model; warnings do not, so read them. Read the saved plans (`plan` in each `collections/<c>/sets/<set>/set.json`) the same way before any card is paid for: the model can still write a wish that contradicts the card's fields or copy a hint word for word.
 
 ## 3. Make the cards
 
@@ -46,7 +52,7 @@ node FACTORY/ccf.mjs set make --collection ID --set SET_ID [--slots 1,2] [--redo
 node FACTORY/ccf.mjs collection make --collection ID [--sets N,N]
 ```
 
-Options: `--provider`, `--model` (another image model of the service for this run, ccf-make-cards step 1), `--parallel`, `--attempts`, `--max-spend`. Caps (`FACTORY/settings/defaults.json`, `_about`): `set.maxSpendUsd` per set, `card.maxSpendUsd` per card inside it, `set.plan.maxSpendUsd` per planning run; `collection make --max-spend` caps the whole run. Tell the person the cap before a paid run and stay inside what they agreed.
+Options: `--provider`, `--model`, `--parallel`, `--attempts`, `--max-spend`. Caps (`FACTORY/settings/defaults.json`, `_about`): `set.maxSpendUsd` per set, `card.maxSpendUsd` per card inside it, `set.plan.maxSpendUsd` per planning run; `collection make --max-spend` caps the whole run. Tell the person the cap before a paid run and stay inside what they agreed.
 
 Progress: one stderr line per card event. Stop: one Ctrl+C — no new card starts, cards in progress finish, the rest are reported `cancelled`. Running `set make --set SET_ID` again continues: made slots are kept, failed ones are made again.
 
@@ -58,6 +64,6 @@ Progress: one stderr line per card event. Stop: one Ctrl+C — no new card start
 
 ## 5. Show
 
-Editor: `node FACTORY/ccf.mjs editor --open COLLECTION/SET` (starts it in the background or uses the running one, opens the browser there, prints the address). Export: `node FACTORY/ccf.mjs export --collection ID [--set ID,ID] [--zip] [--open] --json` (no `--set` = every set); layout in `core/store/README.md`, «Export».
+Editor: `node FACTORY/ccf.mjs editor --open COLLECTION/SET` (starts it in the background or uses the running one, opens the browser there, prints the address). It draws the set in the window of its kind (large, small or grand) with the plan's frames and stars. Export: `node FACTORY/ccf.mjs export --collection ID [--set ID,ID] [--zip] [--open] --json` (no `--set` = every set); layout in `core/store/README.md`, «Export».
 
 Done when every slot holds a reviewed card, the set's sheet was looked at, and the person has the editor view or the export path, the total spent and every open problem.

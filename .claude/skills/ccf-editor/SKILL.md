@@ -11,11 +11,11 @@ The editor is for the person: check the work at a glance, rearrange cards, adjus
 
 | Path | What |
 |---|---|
-| `editor/server.mjs` | the local server: `node editor/server.mjs [--port N] [--open COLLECTION[/SET]] [--no-browser]` runs it in the foreground (the launchers `run.command`, `run.sh`, `run.bat` do this); `node ccf.mjs editor [--open …] [--no-browser] [--port N] \| --stop` runs it in the background for an agent (output in `.ccf/editor.log`). Listens on 127.0.0.1 only; every API call carries this run's token. Its header lists what it serves; `startEditor()` and `runningEditor()` for code |
+| `editor/server.mjs` | the local server: `node editor/server.mjs [--port N] [--open COLLECTION[/SET]] [--no-browser]` runs it in the foreground (the launchers `run.command`, `run.sh`, `run.bat` run the setup, then this; given options such as `--help` or `--check` they run only the setup); `node ccf.mjs editor [--open …] [--no-browser] [--port N] \| --stop` runs it in the background for an agent (output in `.ccf/editor.log`). Listens on 127.0.0.1 only; every API call carries this run's token. Its header lists what it serves; `startEditor()` and `runningEditor()` for code |
 | `editor/server/ops.js` | one entry per core operation, mapping the request's JSON to the core call; `job: true` = long, run by `jobs.js`. The live list: `GET /api/ops` of a running editor |
 | `editor/server/jobs.js` | long operations: progress to every page, waiting, cancelling through an `AbortSignal` |
 | `editor/server/key.js` | the keys, one per key variable (each service's `keyEnvVar`): permanent from the environment / `.env`, temporary only in this process's memory; switching the service never carries a key over; the page sees only their status (permanent, temporary, none), never any part of a key |
-| `editor/remote.js` | an agent's way in: `findEditor()` reads `.ccf/editor.json` (exists while the editor runs, ignored by Git), `callEditor(editor, op, args, {onLog, signal})` runs an operation with the editor's key and waits for a job; `hereOrInEditor()` is how the paid `ccf.mjs` commands run here or, with no key here, in the editor — a paid op's arguments must cover its command's options |
+| `editor/remote.js` | an agent's way in: `findEditor()` reads `.ccf/editor.json` (exists while the editor runs, ignored by Git), `callEditor(editor, op, args, {onLog, signal})` runs an operation with the editor's key and waits for a job; `hereOrInEditor()` is how the paid `ccf.mjs` commands run here or, with no key here for the run's service, in the editor with its key for that service — a paid op's arguments must cover its command's options (`--provider` and `--model` included) |
 | `editor/web/` | the page: `app.js` (top bar, router collections → collection → set, the card as a panel, live updates), `api.js`, `state.js`, `ui.js`, `window.js` (a set over the style's window template in the window of its kind — set.json `window.kind`: the main window or a `families` entry such as small or grand —, geometry, frames and stars from `styles/<style>/windows/windows.json`), `screens/`, `panels/`, `editor.css` |
 | `editor/design-system/` | the accepted look: `DESIGN.md` is the single source of every value, `tokens.js` turns it into CSS variables, `components.css` holds the controls; `README.md` for a person; its open decisions at the end of `DESIGN.md` |
 
@@ -32,9 +32,8 @@ The editor is for the person: check the work at a glance, rearrange cards, adjus
 ## Check
 
 - `node tools/check.mjs` must pass.
-- A real scenario: start `node editor/server.mjs --no-browser --port 0` (when an editor already runs, it only prints that one's address and starts nothing), open the printed address in a browser (Playwright MCP: `agents/README.md`, «Optional MCP examples»), click through the changed screens in both themes, and watch a change made from the terminal (`ccf.mjs`) appear on the open page. Stop the server you started.
+- A real scenario: start `node editor/server.mjs --no-browser --port 0` — never open the person's browser or use their editor's port. When an editor already runs, this only prints that one's address and starts nothing, so it is not your changed code: run yours with `CCF_EDITOR_FILE` set to a temporary path (a variable meant for tests; `CCF_COLLECTIONS_DIR` for a copy of the data). Open the printed address in Playwright (MCP: `agents/README.md`, «Optional MCP examples»), click through the changed screens in both themes, and watch a change made from the terminal (`ccf.mjs`) appear on the open page. Stop the server you started.
+- Tests: `tests/editor-server.test.mjs` (access, files, settings writer and an old `settings/local.json` read in the new shape, `ccf.mjs editor` options, `callEditor` against a fake editor).
 - Update `MAP.md` and `CHANGELOG.md` when a part is added or moved.
-
-- Tests: `tests/editor-server.test.mjs` (access, files, settings writer, `ccf.mjs editor` options, `callEditor` against a fake editor).
 
 TODO: hosting the editor for several people (VISION) is not built.
