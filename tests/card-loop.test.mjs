@@ -90,7 +90,8 @@ const ORDER = {
   staging: { category: 1, backdrop: 'field', pattern: 'rays', placement: 'floating_field', support: 'none', camera: 'eye_level', characters: 0, time: 'n/a', sky_top: false, material: 'glossy plastic' },
 };
 const MODEL = 'google/gemini-nano-banana-2.1';
-const SETTINGS = { card: { attempts: 3, maxSpendUsd: 0.2 }, processing: {} };
+// the processing search is tested on its own below; the loop tests apply the start settings as they are (faster)
+const SETTINGS = { card: { attempts: 3, maxSpendUsd: 0.2, tuneProcessing: false }, processing: {} };
 const fakePrompt = async () => ({ prompt: 'PROMPT', references: [{ path: path.join(ROOT, 'styles/scapes/references/card-003.png') }] });
 /** A fake provider: answers with the given image and price, records the requests. */
 function fakeProvider(bytes, cost, extra = {}) {
@@ -200,7 +201,33 @@ test('цикл: ошибка провайдера и неизвестная це
   const f = await makeCard({ order: ORDER, collection: 'c', set: 'free', settings: SETTINGS, provider: free, buildPrompt: fakePrompt, root, limits: { attempts: 2 } });
   assert.equal(f.stop, 'attempts');
   assert.deepEqual(f.attempts.map(a => a.cost), [0, 0]);
-  assert.match(f.warnings[0], /нет начальных настроек обработки/);
+  assert.deepEqual(f.warnings, [], 'у codex-cli свои начальные настройки обработки (нейтральные)');
+});
+
+test('цикл: опорный портрет персонажа — свой кадр, без обрезки до карточки, без пиксельных проверок, список для глаз', { skip: noSharp }, async () => {
+  const { makeCard, recheckCard } = /** @type {any} */ (loop);
+  const assembly = JSON.parse(fs.readFileSync(path.join(ROOT, 'styles/scapes/prompt-assembly.json'), 'utf8'));
+  const rules = assembly.kinds['character-sheet'];
+  const order = { kind: 'character-sheet', id: 'sheet-pig', style: 'scapes', character: 'pig' };
+  const tall = await sharp({ create: { width: 600, height: 900, channels: 3, background: { r: 128, g: 128, b: 128 } } }).png().toBuffer();
+  const p = fakeProvider(tall, 0.04);
+  const r = await makeCard({ order, collection: 'c', set: 's', settings: SETTINGS, provider: p, root: tmp() });
+  assert.equal(r.stop, 'passed', 'проверять нечего — повтор не нужен');
+  assert.equal(p.calls.length, 1);
+  assert.equal(p.calls[0].aspectRatio, rules.output.aspectRatio);
+  assert.deepEqual(p.calls[0].references.map(x => path.basename(x.path)), assembly.cast.pig.anchor_frames.map(n => `card-${String(n).padStart(3, '0')}.png`), 'эталоны — опорные кадры');
+  const meta = await sharp(r.image).metadata();
+  assert.deepEqual([meta.width, meta.height], [600, 900], 'кадр модели не обрезан');
+  assert.deepEqual(r.chosenCheck, { maskStatus: 'not checked', blocking: 0, warns: 0, fails: [] });
+  assert.deepEqual(r.chosenVisual, rules.output.visual);
+  assert.deepEqual(JSON.parse(fs.readFileSync(r.attempts[0].files.check, 'utf8')).results, []);
+  const re = await recheckCard({ dir: r.dir });
+  assert.deepEqual(re.chosenCheck, r.chosenCheck);
+
+  // an ordinary card asks for the provider settings' frame
+  const card = fakeProvider(await grey(), 0.04);
+  await makeCard({ order: ORDER, collection: 'c', set: 's', settings: SETTINGS, provider: card, buildPrompt: fakePrompt, root: tmp(), limits: { attempts: 1 } });
+  assert.ok(!('aspectRatio' in card.calls[0]));
 });
 
 test('цикл: провайдер из настроек — неизвестный отклоняется, codex-cli бесплатный и без ключа', { skip: noSharp }, () => {
@@ -210,4 +237,57 @@ test('цикл: провайдер из настроек — неизвестн�
   const codex = providerFrom({ ...real.provider, use: 'codex-cli' });
   assert.equal(codex.free, true);
   assert.equal(codex.model, 'codex-cli');
+});
+
+// ---------- per-card processing search ----------
+
+test('подбор обработки: из начальных настроек — в цель с наименьшим сдвигом, не выталкивая то, что уже в цели', { skip: noSharp }, async () => {
+  const { tuneProcessing, outside } = await import('../core/card/tune.js');
+  assert.equal(outside(5, { min: 0, max: 10 }), 0);
+  assert.equal(outside(12, { min: 0, max: 10 }), 0.2);
+  assert.equal(outside(4, { min: 8 }), 0.5);
+  // fake measures of a 1 × 1 card: C = chroma, L = luma; X stays in its aim only while saturation ≤ 1.2
+  const px = Uint8Array.of(150, 100, 50);
+  const measure = (rgb, prefix) => {
+    const chroma = rgb[0] - rgb[2], luma = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2];
+    const all = [
+      { id: 'COLOUR.C', value: chroma, aim: { min: 130, max: 160 } },
+      { id: 'COLOUR.L', value: luma, aim: { min: 115, max: 130 } }, // luma 109.25 at the start
+      { id: 'COLOUR.X', value: chroma, aim: { max: 125 } },
+      { id: 'RENDERING.S', value: 1, aim: { max: 2 } },
+    ];
+    return all.filter(m => !prefix || m.id.startsWith(prefix));
+  };
+  const neutral = { brightness: 0, saturation: 1, sharpen: { amount: 0, radius: 1 } };
+  const bounds = { saturation: { min: 0.8, max: 1.6, step: 0.1, serves: 'COLOUR.' }, brightness: { min: -10, max: 10, step: 2, serves: 'COLOUR.' }, sharpen: { min: 0, max: 0.4, step: 0.1, serves: 'RENDERING.' } };
+  const r = tuneProcessing({ pixels: px, width: 1, height: 1, start: neutral, neutral, bounds, measure, basis: 'test' });
+  // chroma 100 → needs saturation ≥ 1.3 for C, but X (in its aim at the start) must stay ≤ 125: saturation ≤ 1.2 wins
+  assert.ok(r.settings.saturation <= 1.2 + 1e-9, `saturation ${r.settings.saturation}`);
+  assert.equal(r.settings.saturation, 1.2, 'as close to C as X allows');
+  const L = r.tuning.measures.find(m => m.id === 'COLOUR.L');
+  assert.ok(L.start < 115 && L.chosen >= 115 && L.chosen <= 130, 'luma brought into its aim by brightness');
+  assert.equal(r.settings.brightness, 6, 'the smallest brightness step that reaches the aim');
+  assert.equal(r.settings.sharpen.amount, 0, 'nothing to sharpen for: no change');
+  assert.ok(r.tuning.miss.chosen < r.tuning.miss.start);
+  assert.deepEqual(r.tuning.start, neutral);
+});
+
+test('подбор обработки в цикле: настройки и меры до и после записаны в card.json, card.png — с выбранными настройками', { skip: noSharp }, async () => {
+  const { makeCard } = /** @type {any} */ (loop);
+  const { adjust } = await import('../core/image/adjust.js');
+  // a reference card darkened and greyed as a "model answer": the search has something to bring back
+  const bytes = await sharp(path.join(ROOT, 'styles/scapes/references/card-003.png')).modulate({ brightness: 0.7, saturation: 0.6 }).png().toBuffer();
+  const p = fakeProvider(bytes, 0.04);
+  const r = await makeCard({ order: ORDER, collection: 'c', set: 's', settings: { ...SETTINGS, card: { ...SETTINGS.card, tuneProcessing: true } }, provider: p, buildPrompt: fakePrompt, root: tmp(), limits: { attempts: 1 } });
+  const a = JSON.parse(fs.readFileSync(path.join(r.dir, 'card.json'), 'utf8')).attempts[0];
+  const own = JSON.parse(fs.readFileSync(path.join(ROOT, 'styles/scapes/processing.json'), 'utf8'));
+  assert.deepEqual(a.tuning.start, own.start[MODEL]);
+  assert.equal(a.tuning.basis, 'whole card');
+  assert.ok(a.tuning.measures.some(m => m.id === 'COLOUR.1') && !a.tuning.measures.some(m => m.id.startsWith('COLOUR.8')), 'без подтверждённого контура — только меры всей карточки');
+  assert.ok(a.tuning.miss.chosen <= a.tuning.miss.start);
+  assert.ok(a.processing.saturation >= own.bounds.saturation.min && a.processing.saturation <= own.bounds.saturation.max);
+  assert.ok(a.processing.sharpen.amount <= own.sharpen_amount_max);
+  const prepared = await sharp(path.join(r.dir, 'attempts/1/prepared.png')).raw().toBuffer({ resolveWithObject: true });
+  const card = await sharp(path.join(r.dir, 'attempts/1/card.png')).raw().toBuffer();
+  assert.deepEqual(Buffer.from(adjust(prepared.data, prepared.info.width, prepared.info.height, a.processing)), card);
 });

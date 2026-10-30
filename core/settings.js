@@ -41,8 +41,9 @@ export const SETTINGS_DIR = path.join(ROOT, 'settings');
 /**
  * @typedef {object} Settings
  * @property {ProviderSettings} provider
- * @property {{attempts: number, maxSpendUsd: number}} card
+ * @property {{attempts: number, maxSpendUsd: number, tuneProcessing: boolean}} card
  * @property {Record<string, import('./image/adjust.js').AdjustSettings>} processing  per model id; overrides the style's start
+ * @property {import('./card/hero.js').HeroSettings} hero  vision models that find the hero's box when nobody gives it
  */
 
 /** @param {unknown} v @returns {v is Record<string, any>} */

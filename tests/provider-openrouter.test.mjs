@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { generateImage, getCredits, listImageModels, loadApiKey, ProviderError } from '../core/providers/openrouter.js';
+import { askVision, generateImage, getCredits, listImageModels, loadApiKey, ProviderError } from '../core/providers/openrouter.js';
 
 const KEY = 'sk-test-secret-123';
 const base = { endpoint: 'https://example.test/api/v1', apiKey: KEY };
@@ -104,4 +104,20 @@ test('loadApiKey: из окружения, из .env, без ключа — ош
   assert.equal(loadApiKey({ envVar: 'K', env: {}, envFile: file }), 'from-file');
   assert.equal(loadApiKey({ envVar: 'K', env: { K: 'env-wins' }, envFile: file }), 'env-wins');
   assert.throws(() => loadApiKey({ envVar: 'K', env: {}, envFile: '/nonexistent' }), /Не найден ключ K/);
+});
+
+test('askVision: сначала текст, затем картинка data URL; без рассуждений; текст ответа и цена', async () => {
+  const { calls, fetchImpl } = mock(reply(200, { choices: [{ message: { content: '{"box_2d": [1, 2, 3, 4]}' } }], usage: { cost: 0.0003 } }));
+  const r = await askVision({ ...base, model: 'v/m', prompt: 'find it', image: { bytes: Buffer.from('img'), mime: 'image/png' }, maxTokens: 100, net: { fetchImpl } });
+  assert.equal(calls[0].url, 'https://example.test/api/v1/chat/completions');
+  const body = JSON.parse(calls[0].init.body);
+  assert.equal(body.model, 'v/m');
+  assert.equal(body.temperature, 0);
+  assert.equal(body.max_tokens, 100);
+  assert.deepEqual(body.reasoning, { enabled: false });
+  assert.deepEqual(body.messages[0].content.map(c => c.type), ['text', 'image_url']);
+  assert.equal(body.messages[0].content[1].image_url.url, 'data:image/png;base64,' + Buffer.from('img').toString('base64'));
+  assert.deepEqual(r, { text: '{"box_2d": [1, 2, 3, 4]}', model: 'v/m', cost: 0.0003 });
+  const { fetchImpl: empty } = mock(reply(200, { choices: [] }));
+  await assert.rejects(askVision({ ...base, model: 'v/m', prompt: 'p', image: { bytes: Buffer.from('i'), mime: 'image/png' }, net: { fetchImpl: empty } }), /без текста/);
 });

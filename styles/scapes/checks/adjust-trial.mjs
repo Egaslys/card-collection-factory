@@ -61,7 +61,7 @@ const trials = opts.trials ? opts.trials.split(';').map(t => {
     KEYS[k](s)(Number(v));
   }
   return [name, s];
-}) : [['none', neutral()], ...Object.entries(SETTINGS.start).flatMap(([model, s]) => [[model, s], [`${model}+sharpen-max`, { ...s, sharpen: { ...s.sharpen, amount: SETTINGS.sharpen_amount_max } }]])];
+}) : [['none', neutral()], ...Object.entries(SETTINGS.start).map(([model, s]) => [model, typeof s === 'string' ? SETTINGS[s] : s]).flatMap(([model, s]) => [[model, s], [`${model}+sharpen-max`, { ...s, sharpen: { ...s.sharpen, amount: SETTINGS.sharpen_amount_max } }]])];
 const out = resolve(opts.out); mkdirSync(out, { recursive: true });
 const describe = s => `brightness ${s.brightness}, saturation ${s.saturation}, sharpen ${s.sharpen.amount} r ${s.sharpen.radius}`;
 console.log('\ntrials:'); for (const [name, s] of trials) console.log(`  ${name}: ${describe(s)}`);

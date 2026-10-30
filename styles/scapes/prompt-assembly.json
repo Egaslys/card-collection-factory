@@ -60,6 +60,7 @@
       "output": {
         "crop": false,
         "checks": false,
+        "aspectRatio": "2:3",
         "visual": [
           { "doc": "CHARACTERS.md", "check": 2, "what": "the character is recognised by its main features (moustache and round glasses, coral snout, spiral fleece balls, rounded red comb, orange muzzle)" },
           { "doc": "CHARACTERS.md", "check": 3, "what": "colours against the samples of the character's sheet" },

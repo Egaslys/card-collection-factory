@@ -8,6 +8,11 @@
 // an unconfirmed outline therefore never triggers a paid regeneration: it is reported as "needs eyes"; the agent
 // opens attempts/<n>/card.mask.png, confirms or rejects it (or draws hero_box) with `card check`, and the checks
 // run again. Only the other FAILs ("blocking") make the loop regenerate.
+//
+// Post-processing is tuned per attempt (tune.js): from the style's start settings for the model, the search moves
+// saturation, brightness and sharpening until the whole-card measures are inside the bible's aims, with the smallest
+// change. The backdrop's colour joins the measures only once a person or the agent has confirmed the hero outline
+// (`card check --mask confirmed`): then the attempt is tuned again. Settings and measures are kept in card.json.
 import fs from 'node:fs';
 import path from 'node:path';
 import { adjust } from '../image/adjust.js';
@@ -15,20 +20,25 @@ import { encodePng, prepareCard } from '../image/prepare.js';
 import * as codexCli from '../providers/codex-cli.js';
 import * as openrouter from '../providers/openrouter.js';
 import { ROOT } from '../settings.js';
+import { orderOutput } from '../style/card-order.js';
 import { buildPrompt as styleBuildPrompt } from '../style/prompt.js';
+import { loadStyle, styleDirOf } from '../style/style.js';
 import { ATTEMPT_FILES, FINAL_IMAGE, attemptDir, cardDir, readCardFile, writeCardFile } from './card-file.js';
 import { checkAttempt, styleChecker, styleDir } from './check.js';
+import { tuneProcessing } from './tune.js';
 
 /** @typedef {import('./card-file.js').Attempt} Attempt */
 /** @typedef {import('./card-file.js').CardFile} CardFile */
 /** @typedef {import('../style/card-order.js').CardOrder} CardOrder */
 /** @typedef {import('../image/adjust.js').AdjustSettings} AdjustSettings */
+/** @typedef {import('../style/style.js').OrderOutput} OrderOutput */
 
 /**
  * The image provider of a run. model: the id recorded in the attempts and used to pick post-processing;
  * free: the provider takes no payment per image (its cost is recorded as 0); generate: one image for the prompt,
  * answering like core/providers/openrouter.js generateImage.
- * @typedef {{model: string, free?: boolean, generate: (req: {prompt: string, references: {path: string}[]}) => Promise<{bytes: Uint8Array, mime?: string, cost: number|null}>}} Provider
+ * aspectRatio: the order kind's own frame, else the provider settings'.
+ * @typedef {{model: string, free?: boolean, generate: (req: {prompt: string, references: {path: string}[], aspectRatio?: string}) => Promise<{bytes: Uint8Array, mime?: string, cost: number|null}>}} Provider
  */
 
 /**
@@ -93,17 +103,42 @@ export function pickBest(attempts) {
   return checked[0]?.n ?? null;
 }
 
+/** @param {string} style @returns {any} the style's processing.json */
+const styleProcessing = style => JSON.parse(fs.readFileSync(path.join(styleDir(style), 'processing.json'), 'utf8'));
+
 /**
- * Post-processing settings for a model: the factory settings' override for the model, else the style's start for
- * it, else none (neutral) with a warning.
+ * Starting post-processing settings for a model: the factory settings' override for the model, else the style's
+ * start for it (a name there refers to another entry, e.g. "neutral"), else none (neutral) with a warning.
  * @param {{style: string, model: string, settings: import('../settings.js').Settings}} o
  * @returns {{processing: AdjustSettings, warning?: string}}
  */
 export function processingFor({ style, model, settings }) {
-  const own = JSON.parse(fs.readFileSync(path.join(styleDir(style), 'processing.json'), 'utf8'));
-  const chosen = settings.processing[model] ?? own.start?.[model];
+  const own = styleProcessing(style);
+  const start = own.start?.[model];
+  const chosen = settings.processing[model] ?? (typeof start === 'string' ? own[start] : start);
   if (chosen) return { processing: chosen };
-  return { processing: own.neutral, warning: `Для модели ${model} нет начальных настроек обработки ни в настройках, ни в styles/${style}/processing.json: карточка не обработана (нейтральные настройки).` };
+  return { processing: own.neutral, warning: `Для модели ${model} нет начальных настроек обработки ни в настройках, ни в styles/${style}/processing.json: начато с нейтральных.` };
+}
+
+/**
+ * Tunes the processing of one attempt from its prepared pixels (tune.js) against the style's measures.
+ * @param {{order: CardOrder, card: {pixels: Uint8Array, width: number, height: number}, start: AdjustSettings, fg?: Uint8Array|null}} o
+ *   fg: the hero outline confirmed by eye (adds the backdrop's colour to the measures)
+ */
+async function tuneFor({ order, card, start, fg }) {
+  const checker = await styleChecker(order.style);
+  const own = styleProcessing(order.style);
+  const bounds = { ...own.bounds, sharpen: { ...own.bounds.sharpen, max: own.sharpen_amount_max } };
+  return tuneProcessing({
+    ...card, start, neutral: own.neutral, bounds,
+    basis: fg ? 'whole card + backdrop (confirmed outline)' : 'whole card',
+    measure: (rgb, prefix) => checker.processingMeasures(rgb, { staging: order.staging ?? {}, ids: own.tune_checks.filter((/** @type {string} */ id) => !prefix || id.startsWith(prefix)), fg }),
+  });
+}
+
+/** @param {string} file @returns {Promise<{pixels: Uint8Array, width: number, height: number}>} */
+async function readPixels(file) {
+  return prepareCard(file, undefined);
 }
 
 /**
@@ -117,7 +152,7 @@ export function providerFrom(settings) {
     const c = settings.codexCli;
     return {
       model: 'codex-cli' + (c.model ? `/${c.model}` : ''), free: true,
-      generate: ({ prompt, references }) => codexCli.generateImage({ settings: c, prompt, references, aspectRatio: c.aspectRatio }),
+      generate: ({ prompt, references, aspectRatio }) => codexCli.generateImage({ settings: c, prompt, references, aspectRatio: aspectRatio ?? c.aspectRatio }),
     };
   }
   if (settings.use !== 'openrouter') throw new Error(`Настройки: неизвестный провайдер provider.use = «${settings.use}» (есть openrouter и codex-cli).`);
@@ -126,26 +161,50 @@ export function providerFrom(settings) {
   const net = { timeoutMs: o.timeoutMs, retries: o.retries, backoffMs: o.backoffMs };
   return {
     model: o.model,
-    generate: ({ prompt, references }) => openrouter.generateImage({
-      endpoint: o.endpoint, apiKey, model: o.model, prompt, references, aspectRatio: o.aspectRatio, resolution: o.resolution, params: o.params, net,
+    generate: ({ prompt, references, aspectRatio }) => openrouter.generateImage({
+      endpoint: o.endpoint, apiKey, model: o.model, prompt, references, aspectRatio: aspectRatio ?? o.aspectRatio, resolution: o.resolution, params: o.params, net,
     }),
   };
 }
 
 /**
- * Model image → prepared.png → card.png (post-processed) → checks, in the attempt folder.
- * @param {{order: CardOrder, attempt: Attempt, dir: string, bytes: Uint8Array, mime?: string, processing: AdjustSettings}} o
+ * What the program does with the order's image (core/style/card-order.js orderOutput).
+ * @param {CardOrder} order
+ * @returns {OrderOutput}
  */
-async function processAttempt({ order, attempt, dir, bytes, mime, processing }) {
+function outputOf(order) {
+  return orderOutput(order, loadStyle(styleDirOf(order.style)));
+}
+
+/**
+ * Runs the style's checks on the attempt, or, for an order kind without pixel checks, writes check.json with only
+ * the checklist for eyes: nothing blocks, so the loop does not regenerate.
+ * @param {{order: CardOrder, dir: string, review?: import('./card-file.js').Review, output: OrderOutput}} o
+ * @returns {Promise<import('./card-file.js').CheckSummary>}
+ */
+async function checkOrSkip({ order, dir, review, output }) {
+  if (output.checks) return (await checkAttempt({ order, dir, review })).summary;
+  fs.writeFileSync(path.join(dir, ATTEMPT_FILES.check), JSON.stringify({ results: [], visual: output.visual }, null, 1));
+  return { maskStatus: 'not checked', blocking: 0, warns: 0, fails: [] };
+}
+
+/**
+ * Model image → prepared.png (cut to the card size, or the model's frame) → card.png (post-processed) → checks,
+ * in the attempt folder.
+ * @param {{order: CardOrder, attempt: Attempt, dir: string, bytes: Uint8Array, mime?: string, processing: AdjustSettings, output: OrderOutput, tune: boolean}} o
+ *   tune: search the processing settings for this card (else `processing` as it is)
+ */
+async function processAttempt({ order, attempt, dir, bytes, mime, processing, output, tune }) {
   const { CARD_SIZE } = await styleChecker(order.style);
   attempt.original = ATTEMPT_FILES.original + (EXT_BY_MIME[mime ?? ''] ?? '.bin');
   fs.writeFileSync(path.join(dir, attempt.original), bytes);
-  const card = await prepareCard(bytes, CARD_SIZE);
+  const card = await prepareCard(bytes, output.crop ? CARD_SIZE : undefined);
   fs.writeFileSync(path.join(dir, ATTEMPT_FILES.prepared), await encodePng(card.pixels, card.width, card.height));
-  attempt.processing = processing;
-  const pixels = adjust(card.pixels, card.width, card.height, processing);
+  if (tune && output.checks) ({ settings: attempt.processing, tuning: attempt.tuning } = await tuneFor({ order, card, start: processing }));
+  else attempt.processing = processing;
+  const pixels = adjust(card.pixels, card.width, card.height, /** @type {AdjustSettings} */ (attempt.processing));
   fs.writeFileSync(path.join(dir, ATTEMPT_FILES.card), await encodePng(pixels, card.width, card.height));
-  attempt.check = (await checkAttempt({ order, dir, review: attempt.review })).summary;
+  attempt.check = await checkOrSkip({ order, dir, review: attempt.review, output });
 }
 
 /**
@@ -199,6 +258,7 @@ export function cardReport(dir, card, ns) {
 export async function makeCard({ order, collection, set, settings, provider, buildPrompt = o => styleBuildPrompt(o), limits = {}, root }) {
   const dir = cardDir({ collection, set, id: order.id, root });
   const { prompt, references } = await buildPrompt(order);
+  const output = outputOf(order);
   /** @type {CardFile} */
   const card = readCardFile(dir) ?? { order, attempts: [], chosen: null };
   card.order = order;
@@ -223,7 +283,7 @@ export async function makeCard({ order, collection, set, settings, provider, bui
     fs.mkdirSync(adir, { recursive: true });
     let answer;
     try {
-      answer = await provider.generate({ prompt, references: references.map(r => ({ path: r.path })) });
+      answer = await provider.generate({ prompt, references: references.map(r => ({ path: r.path })), ...(output.aspectRatio ? { aspectRatio: output.aspectRatio } : {}) });
     } catch (/** @type {any} */ e) {
       attempt.error = { stage: 'generate', message: String(e?.message ?? e), ...(e?.status ? { status: e.status } : {}) };
       stop = 'provider-error';
@@ -233,7 +293,7 @@ export async function makeCard({ order, collection, set, settings, provider, bui
     attempt.cost = provider.free ? 0 : answer.cost;
     spent += attempt.cost ?? 0;
     try {
-      await processAttempt({ order, attempt, dir: adir, bytes: answer.bytes, mime: answer.mime, processing });
+      await processAttempt({ order, attempt, dir: adir, bytes: answer.bytes, mime: answer.mime, processing, output, tune: settings.card.tuneProcessing });
     } catch (/** @type {any} */ e) {
       attempt.error = { stage: 'process', message: String(e?.message ?? e) };
     }
@@ -248,8 +308,23 @@ export async function makeCard({ order, collection, set, settings, provider, bui
 }
 
 /**
+ * Tunes an attempt again with the outline a person confirmed on its card.png, and rewrites card.png.
+ * @param {CardOrder} order @param {Attempt} a @param {string} adir
+ */
+async function retune(order, a, adir) {
+  const { heroOutline } = await styleChecker(order.style);
+  const shown = await readPixels(path.join(adir, ATTEMPT_FILES.card));
+  const fg = heroOutline(shown.pixels);
+  if (!fg) return;
+  const card = await readPixels(path.join(adir, ATTEMPT_FILES.prepared));
+  ({ settings: a.processing, tuning: a.tuning } = await tuneFor({ order, card, start: /** @type {import('./tune.js').Tuning} */ (a.tuning).start, fg }));
+  fs.writeFileSync(path.join(adir, ATTEMPT_FILES.card), await encodePng(adjust(card.pixels, card.width, card.height, /** @type {AdjustSettings} */ (a.processing)), card.width, card.height));
+}
+
+/**
  * Runs the checks again on attempts of a card (after the order's staging was edited, or with what a person or an
- * agent confirmed by eye), then chooses the best attempt again.
+ * agent confirmed by eye), then chooses the best attempt again. An attempt whose hero outline has just been
+ * confirmed is first tuned again with the backdrop's colour among the measures.
  * @param {{dir: string, n?: number, review?: import('./card-file.js').Review}} o
  *   n = only this attempt (required with review); otherwise every attempt that has a card image
  * @returns {Promise<CardReport>}
@@ -260,9 +335,12 @@ export async function recheckCard({ dir, n, review }) {
   if (review && n == null) throw new Error('Подтверждение контура или рамка героя относятся к одной попытке: укажите её номер.');
   const targets = card.attempts.filter(a => (n == null || a.n === n) && fs.existsSync(path.join(attemptDir(dir, a.n), ATTEMPT_FILES.card)));
   if (n != null && !targets.length) throw new Error(`У карточки нет попытки ${n} с картинкой.`);
+  const output = outputOf(card.order);
   for (const a of targets) {
     if (review) a.review = { ...a.review, ...review };
-    a.check = (await checkAttempt({ order: card.order, dir: attemptDir(dir, a.n), review: a.review })).summary;
+    const adir = attemptDir(dir, a.n);
+    if (output.checks && a.tuning && a.review?.mask === 'confirmed' && a.tuning.basis === 'whole card') await retune(card.order, a, adir);
+    a.check = await checkOrSkip({ order: card.order, dir: adir, review: a.review, output });
   }
   choose(dir, card);
   writeCardFile(dir, card);

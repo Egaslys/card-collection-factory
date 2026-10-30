@@ -33,7 +33,7 @@ export const ATTEMPT_FILES = { original: 'model', prepared: 'prepared.png', card
 
 /**
  * @typedef {object} CheckSummary
- * @property {string} maskStatus  proposal | confirmed | rejected | not found
+ * @property {string} maskStatus  proposal | confirmed | rejected | not found | not checked (an order kind without pixel checks)
  * @property {number} blocking  FAILs that do not rest on an unconfirmed outline: they make the loop regenerate
  * @property {number} warns
  * @property {CheckFail[]} fails
@@ -54,7 +54,8 @@ export const ATTEMPT_FILES = { original: 'model', prepared: 'prepared.png', card
  * @property {string[]} references  style reference images sent with the prompt
  * @property {number|null} cost  USD as reported by the provider; null = unknown
  * @property {string} [original]  file name of the model image in the attempt folder
- * @property {import('../image/adjust.js').AdjustSettings} [processing]  post-processing applied
+ * @property {import('../image/adjust.js').AdjustSettings} [processing]  post-processing applied (the editor's slider positions)
+ * @property {import('./tune.js').Tuning} [tuning]  how `processing` was found: start, measures before and after, basis
  * @property {Review} [review]
  * @property {CheckSummary} [check]
  * @property {{stage: 'generate'|'process', message: string, status?: number}} [error]

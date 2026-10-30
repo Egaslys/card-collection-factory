@@ -1,5 +1,6 @@
 // OpenRouter-compatible image provider. Sources: OpenRouter API docs
-// (openrouter.ai/docs: POST /images, GET /models?output_modalities=image, GET /credits).
+// (openrouter.ai/docs: POST /images, POST /chat/completions with image input, GET /models?output_modalities=image,
+// GET /credits).
 // Every value comes from the caller: the factory keeps them in settings/defaults.json (provider.openrouter).
 import fs from 'node:fs';
 import path from 'node:path';
@@ -113,6 +114,29 @@ export async function generateImage({ endpoint, apiKey, model, prompt, reference
   if (!img?.b64_json) throw new ProviderError('Провайдер ответил без картинки.', { status: 200, providerMessage: redact(JSON.stringify(json.error || {}).slice(0, 300), apiKey) });
   const cost = json.usage?.cost;
   return { bytes: Buffer.from(img.b64_json, 'base64'), mime: img.media_type, model, cost: typeof cost === 'number' ? cost : null, usage: json.usage, raw: { created: json.created } };
+}
+
+/**
+ * Asks a vision model about one image (POST {endpoint}/chat/completions: the text first, then the image, as the
+ * OpenRouter image-understanding guide recommends). Reasoning is turned off and temperature is 0: the answer is a
+ * short structured one.
+ * @param {object} o
+ * @param {string} o.endpoint @param {string} o.apiKey @param {string} o.model @param {string} o.prompt
+ * @param {{bytes?: Uint8Array, path?: string, mime?: string}} o.image
+ * @param {number} [o.maxTokens]
+ * @param {NetOptions} [o.net]
+ * @returns {Promise<{text: string, model: string, cost: number|null}>}
+ */
+export async function askVision({ endpoint, apiKey, model, prompt, image, maxTokens = 400, net = {} }) {
+  const body = {
+    model, temperature: 0, max_tokens: maxTokens, reasoning: { enabled: false },
+    messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: await toDataUrl(image) } }] }],
+  };
+  const json = await request({ endpoint, apiKey, method: 'POST', route: '/chat/completions', body, ...net });
+  const text = json.choices?.[0]?.message?.content;
+  if (typeof text !== 'string') throw new ProviderError('Провайдер ответил без текста.', { status: 200, providerMessage: redact(JSON.stringify(json.error || {}).slice(0, 300), apiKey) });
+  const cost = json.usage?.cost;
+  return { text, model, cost: typeof cost === 'number' ? cost : null };
 }
 
 /**

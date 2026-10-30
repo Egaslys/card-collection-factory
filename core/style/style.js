@@ -67,6 +67,7 @@ export const ASSEMBLY_FILE = 'prompt-assembly.json';
  * @typedef {object} OrderOutput
  * @property {boolean} crop  cut and scale to the card size (false: keep the model's frame)
  * @property {boolean} checks  run the style's pixel checks
+ * @property {string} [aspectRatio]  the frame to ask the provider for, e.g. "2:3" (default: the provider settings')
  * @property {VisualCheck[]} visual  what to check by eye when the pixel checks do not run
  */
 /**

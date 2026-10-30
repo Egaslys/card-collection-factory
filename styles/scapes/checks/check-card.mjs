@@ -6,8 +6,8 @@
 // measured value, the threshold and the bible document and check number. Thresholds come only from
 // thresholds.json next to this script. Checks that need eyes are listed per card as «visual».
 // Measures: measures.mjs (the method that produced the bible's numbers). Reads images with sharp (npm install).
-// Imported as a module it runs nothing: `checkCard`, `restsOnUnconfirmedMask` and `CARD_SIZE` are its contract
-// with the card loop (core/card/check.js); the command line below runs only when this file is the entry point.
+// Imported as a module it runs nothing: `checkCard`, `restsOnUnconfirmedMask`, `CARD_SIZE`, `processingMeasures` and
+// `heroOutline` are its contract with the card loop (core/card/); the command line runs only when this file is the entry point.
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -58,6 +58,44 @@ const T = CFG.checks, METHOD = Object.fromEntries(Object.entries(CFG.method).map
 /** The card size of the style (BASE_RULES.1): the size a model image is prepared to. */
 export const CARD_SIZE = { width: T['BASE_RULES.1'].size[0], height: T['BASE_RULES.1'].size[1] };
 
+// ---------- values that post-processing moves ----------
+// Check id → its value from the measures: wc = M.wholeCard, ov = M.overshoot, tr = M.traces of the whole card,
+// bg = the backdrop's main colour (M.heroBackdrop; only with a hero outline). checkCard reads these values from here,
+// and the card loop's processing search (core/card/tune.js through processingMeasures) measures the same ones.
+const VALUE_OF = {
+  'COLOUR.1': m => m.wc.C_p50, 'COLOUR.2': m => m.wc.grey_share, 'COLOUR.3a': m => m.wc.black_share, 'COLOUR.3b': m => m.wc.darkest2.C,
+  'COLOUR.4': m => m.wc.white_share, 'COLOUR.5a': m => m.wc.L_p50, 'COLOUR.5b': m => m.wc.L_p1, 'COLOUR.5c': m => m.wc.L_p99,
+  'COLOUR.6': m => m.wc.n_hues, 'COLOUR.8a': m => m.bg.C, 'COLOUR.8b': m => m.bg.s, 'COLOUR.8c': m => m.bg.L,
+  'COLOUR.15a': m => m.wc.L_p50, 'COLOUR.15b': m => m.wc.C_p50,
+  'RENDERING.16a': m => m.tr.flat_grain, 'RENDERING.17a': m => m.ov.overshoot_med, 'RENDERING.17b': m => m.ov.width_med,
+};
+const isNight = staging => staging.time === 'night' || staging.time === 'dusk';
+const isAbstract = staging => staging.backdrop === 'field' || staging.backdrop === 'wall';
+
+/**
+ * The checks `ids` (of VALUE_OF) that apply to this staging, measured on RGB pixels of the card size, each with the
+ * range post-processing aims at: the bible's adjustment target where it gives one, else the norm, else the limit.
+ * COLOUR.15 only at night or dusk; COLOUR.8 only on an abstract backdrop and with `fg`, a hero outline confirmed by eye.
+ * @returns {{id: string, value: number, aim: {min?: number, max?: number}}[]}
+ */
+export function processingMeasures(rgb, { staging, ids, fg }) {
+  const P = M.planes(rgb), cache = {};
+  const once = (k, f) => () => (k in cache ? cache[k] : (cache[k] = f()));
+  // measured only when a requested check needs them (the search asks for the colour checks alone many times)
+  const m = Object.defineProperties({}, {
+    wc: { get: once('wc', () => M.wholeCard(P)) }, ov: { get: once('ov', () => M.overshoot(P)) }, tr: { get: once('tr', () => M.traces(P)) },
+    bg: { get: once('bg', () => (fg && isAbstract(staging) ? M.heroBackdrop(P, fg).bg?.dominant : null)) },
+  });
+  const applies = id => VALUE_OF[id] && (!id.startsWith('COLOUR.15') || isNight(staging)) && (!id.startsWith('COLOUR.8') || m.bg);
+  return ids.filter(applies).map(id => ({ id, value: VALUE_OF[id](m), aim: T[id].target ?? T[id].norm ?? T[id].limit }));
+}
+
+/** The proposed hero outline of RGB pixels of the card size (the one card.mask.png shows), or null when none is found. */
+export function heroOutline(rgb) {
+  const mask = M.heroMask(M.planes(rgb));
+  return mask.ok ? mask.fg : null;
+}
+
 // ---------- result helpers ----------
 const fmt = v => v == null ? 'n/a' : typeof v === 'number' ? String(+v.toFixed(3)) : Array.isArray(v) ? `[${v.join(', ')}]` : String(v);
 const rangeText = r => r ? (r.min != null && r.max != null ? `${r.min}–${r.max}` : r.min != null ? `≥ ${r.min}` : `≤ ${r.max}`) : null;
@@ -90,8 +128,11 @@ export const restsOnUnconfirmedMask = (r, hero) => r.status === 'FAIL' && hero?.
 
 // ---------- one card ----------
 // card: one spec entry (see --help); baseDir: the folder card.file is relative to; overlaysDir: where to write
-// <id>.mask.png (optional). Returns { id, file, staging, hero, measures, results, visual }.
-export async function checkCard(card, { baseDir, overlaysDir } = {}) {
+// <id>.mask.png (optional); outline: the hero outline found outside the checker ({fg, confidence} of
+// core/card/hero.js findHero): it replaces the proposer's mask and the spec's hero_box (it was cut inside that box);
+// confidence "high" gives the mask status "auto" (FAILs resting on it are blocking), "low" gives "proposal".
+// Returns { id, file, staging, hero, measures, results, visual }.
+export async function checkCard(card, { baseDir, overlaysDir, outline } = {}) {
   const file = resolve(baseDir || '.', card.file);
   if (!existsSync(file)) throw new Error(`${card.id}: no such file ${file}`);
   const s = { category: card.category, backdrop: card.backdrop, pattern: card.pattern || 'n/a', placement: card.placement, support: card.support || 'none', camera: card.camera || 'eye_level', characters: +card.characters || 0, time: card.time || 'n/a', sky_top: !!card.sky_top };
@@ -117,25 +158,27 @@ export async function checkCard(card, { baseDir, overlaysDir } = {}) {
   }
 
   // hero
-  const mask = M.heroMask(P);
+  const given = outline?.fg ? M.givenMask(outline.fg) : null;
+  const mask = given || M.heroMask(P);
   if (overlaysDir && mask.box) await M.writeOverlay(P, mask.fg, mask.box, join(resolve(overlaysDir), `${String(card.id).replace(/[^\w.-]+/g, '_')}.mask.png`));
-  const maskStatus = !mask.ok ? 'not found' : card.mask === 'rejected' ? 'rejected' : card.mask === 'confirmed' ? 'confirmed' : 'proposal';
+  const maskStatus = !mask.ok ? 'not found' : card.mask === 'rejected' ? 'rejected' : card.mask === 'confirmed' ? 'confirmed' : given && outline.confidence === 'high' ? 'auto' : 'proposal';
   if (maskStatus === 'rejected') { mask.ok = false; mask.reason = 'the mask was rejected by a person (spec "mask": "rejected")'; }
-  const box = card.hero_box || (mask.ok ? mask.box : null);
-  const hero = { mask_status: maskStatus, mask_ok: mask.ok,mask_reason: mask.reason, mask_box: mask.box, mask_diagnostics: mask.diagnostics, box, box_source: card.hero_box ? 'spec' : mask.ok ? 'mask' : null };
+  const specBox = given ? null : card.hero_box;
+  const box = specBox || (mask.ok ? mask.box : null);
+  const hero = { mask_status: maskStatus, mask_ok: mask.ok,mask_reason: mask.reason, mask_box: mask.box, mask_diagnostics: mask.diagnostics, box, box_source: specBox ? 'spec' : mask.ok ? 'mask' : null, ...(given ? { mask_source: outline.source ?? 'given', mask_confidence: outline.confidence ?? null } : {}) };
   const noHero = `hero not found by the mask proposer (${mask.reason}); give hero_box in the spec or check by eye`;
 
   // ---------- COLOUR, whole card ----------
   const wc = M.wholeCard(P); meas.whole = wc;
-  res.push(range('COLOUR.1', wc.C_p50));
-  res.push(range('COLOUR.2', wc.grey_share));
-  res.push(range('COLOUR.3a', wc.black_share));
-  res.push(range('COLOUR.3b', wc.darkest2.C));
-  res.push(range('COLOUR.4', wc.white_share));
-  res.push(range('COLOUR.5a', wc.L_p50));
-  res.push(range('COLOUR.5b', wc.L_p1));
-  res.push(range('COLOUR.5c', wc.L_p99));
-  res.push(range('COLOUR.6', wc.n_hues, { note: wc.n_hues === 1 ? T['COLOUR.6'].note : undefined }));
+  res.push(range('COLOUR.1', VALUE_OF['COLOUR.1']({ wc })));
+  res.push(range('COLOUR.2', VALUE_OF['COLOUR.2']({ wc })));
+  res.push(range('COLOUR.3a', VALUE_OF['COLOUR.3a']({ wc })));
+  res.push(range('COLOUR.3b', VALUE_OF['COLOUR.3b']({ wc })));
+  res.push(range('COLOUR.4', VALUE_OF['COLOUR.4']({ wc })));
+  res.push(range('COLOUR.5a', VALUE_OF['COLOUR.5a']({ wc })));
+  res.push(range('COLOUR.5b', VALUE_OF['COLOUR.5b']({ wc })));
+  res.push(range('COLOUR.5c', VALUE_OF['COLOUR.5c']({ wc })));
+  res.push(range('COLOUR.6', VALUE_OF['COLOUR.6']({ wc }), { note: wc.n_hues === 1 ? T['COLOUR.6'].note : undefined }));
 
   // ---------- hero vs backdrop ----------
   let hb = null;
@@ -147,7 +190,7 @@ export async function checkCard(card, { baseDir, overlaysDir } = {}) {
       const hueOk = hb.hero_chromatic && hb.bg_chromatic && hb.hue_diff >= t7.hue_diff_min;
       const ok = achrom || hueOk || Math.abs(hb.dL) >= t7.dL_min;
       res.push(make('COLOUR.7', ok ? 'PASS' : 'FAIL', `hero ${h.hex} vs backdrop ${b.hex}: hue diff ${hb.hue_diff}°, dL ${hb.dL}, hero C* ${h.C}`, `hue diff ≥ ${t7.hue_diff_min}° or |dL| ≥ ${t7.dL_min}; hero C* < ${t7.achromatic_hero_C_max} passes`, ok ? null : t7.note));
-      res.push(range('COLOUR.8a', b.C)); res.push(range('COLOUR.8b', b.s)); res.push(range('COLOUR.8c', b.L));
+      res.push(range('COLOUR.8a', VALUE_OF['COLOUR.8a']({ bg: b }))); res.push(range('COLOUR.8b', VALUE_OF['COLOUR.8b']({ bg: b }))); res.push(range('COLOUR.8c', VALUE_OF['COLOUR.8c']({ bg: b })));
       res.push(range('COLOUR.8d', hb.bg.L_p90 - hb.bg.L_p10));
     } else for (const id of ['COLOUR.7', 'COLOUR.8a', 'COLOUR.8b', 'COLOUR.8c', 'COLOUR.8d']) res.push(nm(id, 'hero or backdrop region too small'));
     if (hb.bg_near && hb.bg_corners) {
@@ -177,7 +220,7 @@ export async function checkCard(card, { baseDir, overlaysDir } = {}) {
     const ok = inRange(ts.hue, t14.hue) && inRange(ts.C, t14.C);
     res.push(make('COLOUR.14', ok ? 'PASS' : 'FAIL', `top band ${ts.hex}: hue ${ts.hue}°, C* ${ts.C}`, `hue ${rangeText(t14.hue)}°, C* ${rangeText(t14.C)}`));
   } else res.push(na('COLOUR.14', 'top of the frame is not day sky (sky_top not set)'));
-  if (night) { res.push(range('COLOUR.15a', wc.L_p50)); res.push(range('COLOUR.15b', wc.C_p50)); }
+  if (night) { res.push(range('COLOUR.15a', VALUE_OF['COLOUR.15a']({ wc }))); res.push(range('COLOUR.15b', VALUE_OF['COLOUR.15b']({ wc }))); }
   else for (const id of ['COLOUR.15a', 'COLOUR.15b']) res.push(na(id, 'not night or dusk'));
 
   // ---------- BACKGROUNDS ----------
@@ -241,7 +284,7 @@ export async function checkCard(card, { baseDir, overlaysDir } = {}) {
 
   // ---------- COMPOSITION ----------
   if (box) {
-    const comp = M.composition(card.hero_box ? null : mask.fg, box, { openR: METHOD.main_mass_open_px, safe: T['COMPOSITION.11'] }); meas.composition = comp;
+    const comp = M.composition(specBox ? null : mask.fg, box, { openR: METHOD.main_mass_open_px, safe: T['COMPOSITION.11'] }); meas.composition = comp;
     const objAbstract = abstract && !chars;
     res.push(range('COMPOSITION.2', Math.abs(comp.centre_dx_px), { note: `offset ${comp.centre_dx_px} px; ${T['COMPOSITION.2'].note}` }));
     const g3 = chars ? 'characters' : s.backdrop, t3 = T['COMPOSITION.3'].groups[g3];
@@ -280,11 +323,11 @@ export async function checkCard(card, { baseDir, overlaysDir } = {}) {
     res.push(range('RENDERING.11', hb.hero_near_white));
   } else for (const id of ['RENDERING.4', 'RENDERING.6', 'RENDERING.11']) res.push(nm(id, noHero));
   const tr = M.traces(P); meas.traces = tr;
-  res.push(range('RENDERING.16a', tr.flat_grain));
+  res.push(range('RENDERING.16a', VALUE_OF['RENDERING.16a']({ tr })));
   { const g = T['RENDERING.16b'].grid_max, both = tr.jpeg_grid_h > g && tr.jpeg_grid_v > g; res.push(make('RENDERING.16b', both ? 'FAIL' : 'PASS', `h ${tr.jpeg_grid_h}, v ${tr.jpeg_grid_v}`, `not both > ${g}`)); }
   const ov = M.overshoot(P); meas.overshoot = ov;
-  { const t = T['RENDERING.17a']; const r = range('RENDERING.17a', ov.overshoot_med); if (r.status === 'PASS' && ov.overshoot_med >= t.halo_warn) { r.status = 'WARN'; r.note = `≥ ${t.halo_warn}: visible halos, stronger than most reference cards`; } res.push(r); }
-  res.push(range('RENDERING.17b', ov.width_med, { note: `${ov.steps} steps` }));
+  { const t = T['RENDERING.17a']; const r = range('RENDERING.17a', VALUE_OF['RENDERING.17a']({ ov })); if (r.status === 'PASS' && ov.overshoot_med >= t.halo_warn) { r.status = 'WARN'; r.note = `≥ ${t.halo_warn}: visible halos, stronger than most reference cards`; } res.push(r); }
+  res.push(range('RENDERING.17b', VALUE_OF['RENDERING.17b']({ ov }), { note: `${ov.steps} steps` }));
 
   for (const r of res) if (restsOnUnconfirmedMask(r, hero))
     r.note = `${r.note ? r.note + '; ' : ''}rests on an unconfirmed mask: look at the overlay (--overlays)`;

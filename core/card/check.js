@@ -1,7 +1,9 @@
 // Runs a style's automatic checks on one attempt and sums them up for the loop.
 // A style plugs in through styles/<style>/checks/check-card.mjs, which exports
 //   checkCard(spec entry, {baseDir, overlaysDir}) → {hero, results, visual, …},
-//   restsOnUnconfirmedMask(result, hero) → boolean, and CARD_SIZE {width, height}.
+//   restsOnUnconfirmedMask(result, hero) → boolean, CARD_SIZE {width, height},
+//   processingMeasures(rgb, {staging, ids, fg}) → [{id, value, aim}] and heroOutline(rgb) → mask or null
+//   (for the per-card processing search, make.js / tune.js).
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -19,7 +21,9 @@ export function styleDir(style) {
 /**
  * The style's checker module.
  * @param {string} style
- * @returns {Promise<{checkCard: (card: object, o: {baseDir?: string, overlaysDir?: string}) => Promise<any>, restsOnUnconfirmedMask: (r: any, hero: any) => boolean, CARD_SIZE: {width: number, height: number}}>}
+ * @returns {Promise<{checkCard: (card: object, o: {baseDir?: string, overlaysDir?: string}) => Promise<any>, restsOnUnconfirmedMask: (r: any, hero: any) => boolean, CARD_SIZE: {width: number, height: number},
+ *   processingMeasures: (rgb: Uint8Array | Uint8ClampedArray, o: {staging: object, ids: string[], fg?: Uint8Array|null}) => import('./tune.js').Measure[],
+ *   heroOutline: (rgb: Uint8Array) => Uint8Array|null}>}
  */
 export async function styleChecker(style) {
   return import(pathToFileURL(path.join(styleDir(style), 'checks', 'check-card.mjs')).href);

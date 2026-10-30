@@ -42,7 +42,7 @@ An anchor portrait of one character, full length on a plain backdrop, the sample
 | `costume` | optional English sentence after the character's description (the Man is always dressed: give him one) |
 | `promptExtra`, `promptOverride`, `references` | as for a card |
 
-Rules: `kinds["character-sheet"]` of `prompt-assembly.json` — its own `sections` (the bible's `char.sheet` frame, the full description, colour and rendering), `references: "anchor_frames"` (the character's «опорные кадры» from CHARACTERS.md, `cast.<name>.anchor_frames`) and `output`: `orderOutput(order, style)` in `card-order.js` tells the card loop whether to crop to the card size and whether to run the style's pixel checks (for a sheet: neither; `visual` lists the checks for eyes).
+Rules: `kinds["character-sheet"]` of `prompt-assembly.json` — its own `sections` (the bible's `char.sheet` frame, the full description, colour and rendering), `references: "anchor_frames"` (the character's «опорные кадры» from CHARACTERS.md, `cast.<name>.anchor_frames`) and `output`: `orderOutput(order, style)` in `card-order.js` tells the card loop whether to crop to the card size and whether to run the style's pixel checks (for a sheet: neither; `visual` lists the checks for eyes), and `aspectRatio` the frame to ask the provider for instead of the settings' (a sheet: `2:3`; Nano Banana 2.1 answered 848×1264, Codex 1024×1536). Without checks nothing blocks, so `card make` stops after one attempt: run it again for another. The post-processing is the style's start for the model, untuned.
 
 ## Fragment markers in the bible
 

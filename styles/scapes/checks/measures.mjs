@@ -191,6 +191,13 @@ export function heroMask(P) {
   return { ok: !reason && !!box, fg, box, diagnostics: d, reason, touched: touched(fg) };
 }
 
+// A hero outline found outside the checks (core/card/hero.js: GrabCut inside a box), in the shape heroMask returns.
+export function givenMask(fg) {
+  if (!fg || fg.length !== N) throw new Error(`hero outline: expected ${N} pixels (${W} x ${H}), got ${fg?.length}`);
+  const m = Uint8Array.from(fg, v => (v ? 1 : 0)), box = boxOf(m);
+  return { ok: !!box, fg: m, box, diagnostics: { given: true }, reason: box ? null : 'the given outline is empty', touched: box ? touched(m) : [] };
+}
+
 // ---------- colour summaries (COLOUR.md measures) ----------
 function meanColour(rgb, idx) {
   if (!idx.length) return null;
