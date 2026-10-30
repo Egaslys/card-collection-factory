@@ -57,7 +57,7 @@ export function verdict(c, status) {
   if (status === 'failed') return { kind: 'fail', word: 'Ошибка', text: 'Карточка не получилась: ни одна попытка не дошла до проверки.' };
   if (status === 'new') return { kind: null, word: '', text: 'Карточка ещё не сделана.' };
   if (!c) return { kind: null, word: '', text: 'Проверок у этой карточки нет.' };
-  if (c.blocking > 0) return { kind: 'fail', word: 'FAIL', text: `${count(c.blocking, 'ошибка', 'ошибки', 'ошибок')} по правилам стиля.` };
+  if (c.blocking > 0) return { kind: 'fail', word: 'FAIL', text: `${count(c.blocking, 'ошибка', 'ошибки', 'ошибок')} по проверкам.` };
   if (c.needsEyes > 0) return { kind: 'warn', word: 'WARN', text: `${count(c.needsEyes, 'проверка зависит', 'проверки зависят', 'проверок зависят')} от контура предмета — посмотрите глазами.` };
   if (c.warns > 0) return { kind: 'warn', word: 'WARN', text: `${count(c.warns, 'замечание', 'замечания', 'замечаний')} — посмотрите глазами.` };
   return { kind: 'pass', word: 'PASS', text: 'Проверки стиля пройдены.' };

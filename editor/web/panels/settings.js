@@ -15,7 +15,6 @@ const FIELDS = {
   ],
   more: [
     { path: 'provider.openrouter.fallbackModel', label: 'Запасная модель картинок', hint: 'Пробуется, если основная не справилась. Пусто — без запасной.', nullable: true },
-    { path: 'vision.model', label: 'Смотрящая модель', hint: 'Смотрит на готовые карточки, когда нет агента.' },
     { path: 'set.plan.model', label: 'Текстовая модель', hint: 'Пишет план набора и коллекции.' },
     { path: 'provider.openrouter.endpoint', label: 'Адрес подключения', hint: 'OpenRouter или совместимый сервис.', inputmode: 'url' },
     { path: 'provider.openrouter.keyEnvVar', label: 'Переменная ключа', hint: 'Имя строки в .env, где лежит постоянный ключ.' },
@@ -80,6 +79,12 @@ export async function openSettings() {
           <span class="field__hint" data-provider-hint>${PROVIDER_HINT[provider] ?? ''}</span></div>
         ${FIELDS.main.map(f => fieldHtml(f, s)).join('')}
       </section>
+      <section class="form__sec" aria-label="Взгляд на карточки"><span class="label">Взгляд на карточки</span>
+        <div class="field"><span class="field__label">Смотрящая модель проверяет каждую попытку</span>
+          <div class="seg" role="group" data-look><button type="button" data-v="true" aria-pressed="${s.look.use}">Включена</button><button type="button" data-v="false" aria-pressed="${!s.look.use}">Выключена</button></div>
+          <span class="field__hint">Сверяет картинку с заказом и замечает лишнее; нужен ключ OpenRouter. Выключайте, если карточки смотрит сам агент.</span></div>
+        ${fieldHtml({ path: 'vision.model', label: 'Модель, которая смотрит', hint: 'Смотрит на готовые карточки: находит контур героя и сверяет картинку с заказом.' }, s)}
+      </section>
       <section class="form__sec" aria-label="Вид"><span class="label">Вид</span>
         <div class="field"><span class="field__label">Тема</span><div class="seg" role="group" data-theme-set>${['light', 'dark'].map(t => `<button type="button" data-v="${t}" aria-pressed="${(document.documentElement.dataset.theme ?? 'light') === t}">${t === 'light' ? `${I.sun}Светлая` : `${I.moon}Тёмная`}</button>`).join('')}</div>
           <span class="field__hint">Запоминается в этом браузере.</span></div></section>
@@ -123,6 +128,11 @@ export async function openSettings() {
       setTheme(/** @type {string} */ (th.dataset.v));
       return;
     }
+    const lk = /** @type {HTMLElement|null} */ (t.closest('[data-look] > button'));
+    if (lk) {
+      for (const b of /** @type {HTMLElement} */ (lk.parentElement).children) b.setAttribute('aria-pressed', String(b === lk));
+      return;
+    }
     const pv = /** @type {HTMLElement|null} */ (t.closest('[data-provider] > button'));
     if (pv) {
       for (const b of /** @type {HTMLElement} */ (pv.parentElement).children) b.setAttribute('aria-pressed', String(b === pv));
@@ -133,7 +143,8 @@ export async function openSettings() {
       /** @type {Record<string, any>} */
       const patch = {};
       put(patch, 'provider.use', /** @type {HTMLElement} */ (sheet.querySelector('[data-provider] [aria-pressed="true"]')).dataset.v);
-      for (const f of [...FIELDS.main, ...FIELDS.more]) {
+      put(patch, 'look.use', /** @type {HTMLElement} */ (sheet.querySelector('[data-look] [aria-pressed="true"]')).dataset.v === 'true');
+      for (const f of [...FIELDS.main, ...FIELDS.more, { path: 'vision.model' }]) {
         const input = /** @type {HTMLInputElement} */ (sheet.querySelector(`[name="${f.path}"]`));
         const raw = input.value.trim();
         /** @type {any} */ (f).type === 'number' ? put(patch, f.path, Number(raw)) : put(patch, f.path, raw === '' && /** @type {any} */ (f).nullable ? null : raw);

@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { cli, usageError } from './tools/cli-args.mjs';
 import { loadSettings } from './core/settings.js';
-import { SLOT_COUNT } from './core/store/layout.js';
+import { CARDS_DIR, COLLECTIONS_DIR, SLOT_COUNT } from './core/store/layout.js';
 import { setCommands } from './core/set/cli.js';
 import { storeCommands } from './core/store/cli.js';
 import { getCredits, listImageModels, loadApiKey } from './core/providers/openrouter.js';
@@ -160,6 +160,22 @@ it is not (then give --hero-box, the hero's box in card pixels).`,
     options: { json: JSON_OPTION },
     run: credits,
   },
+  editor: {
+    usage: [`${NAME} editor [--open COLLECTION[/SET]] [--no-browser] [--port N]`, `${NAME} editor --stop`],
+    about: `Starts the factory's editor in the background (127.0.0.1) and opens it in the browser, or opens the one already
+running; prints its address and returns. --open shows a collection or one of its sets. While the editor runs and
+holds a key, the paid commands here use it when there is no key in the environment or .env (the key stays in the
+editor). --stop stops the running editor.`,
+    options: {
+      open: { type: 'string', value: 'COLLECTION[/SET]', help: 'open this collection or set' },
+      'no-browser': { type: 'boolean', help: 'do not open the browser (the address is printed)' },
+      port: { type: 'string', value: 'N', help: 'port of a new editor (default: settings editor.port)' },
+      stop: { type: 'boolean', help: 'stop the running editor' },
+    },
+    check: (/** @type {any} */ v) => v.stop && (v.open || v.port || v['no-browser']) ? '--stop goes alone'
+      : v.port !== undefined && !(Number.isInteger(+v.port) && +v.port >= 0 && +v.port < 65536) ? '--port must be a port number' : null,
+    run: editor,
+  },
   ...setCommands,
   ...storeCommands,
 };
@@ -176,8 +192,27 @@ async function runOf(v, settings) {
   return {
     settings,
     provider: providerFrom({ ...settings.provider, use: v.provider ?? settings.provider.use }),
-    limits: { attempts: v.attempts && +v.attempts, maxSpendUsd: v['max-spend'] !== undefined ? +v['max-spend'] : undefined },
+    limits: limitsOf(v),
   };
+}
+/** The limits of the command line, as core/card takes them. @param {any} v */
+const limitsOf = v => ({ attempts: v.attempts && +v.attempts, maxSpendUsd: v['max-spend'] !== undefined ? +v['max-spend'] : undefined });
+/**
+ * A paid card operation: here, or in a running editor with its key when there is no key here (editor/remote.js).
+ * @template T
+ * @param {any} v @param {import('./core/settings.js').Settings} settings
+ * @param {string} op @param {() => Record<string, unknown>} args @param {() => Promise<T>} here
+ */
+async function paid(v, settings, op, args, here) {
+  const { hereOrInEditor } = await import('./editor/remote.js');
+  const needsKey = (v.provider ?? settings.provider.use) === 'openrouter';
+  return hereOrInEditor({ needsKey, envVar: settings.provider.openrouter.keyEnvVar, op, args, here });
+}
+/** A card folder as the editor names it. @param {string} dir */
+function cardOf(dir) {
+  const [collectionId, cards, cardId, ...rest] = path.relative(COLLECTIONS_DIR, path.resolve(dir)).split(path.sep);
+  if (cards !== CARDS_DIR || !cardId || rest.length) throw new Error(`Редактор работает с карточками коллекций, а эта папка не в ${path.join(COLLECTIONS_DIR, '<коллекция>', CARDS_DIR, '<карточка>')}: ${dir}`);
+  return { collectionId, cardId };
 }
 /** @param {any} v @param {import('./core/card/make.js').CardReport} report @param {boolean} [paid] */
 function finish(v, report, paid = true) {
@@ -190,19 +225,28 @@ function finish(v, report, paid = true) {
 async function cardMake(v, [orderFile]) {
   const order = readOrder(orderFile);
   const { makeCard } = await import('./core/card/make.js');
-  return finish(v, await makeCard({ order, collection: v.collection, card: v.card, place: placeOf(v), ...await runOf(v, loadSettings()) }));
+  const settings = loadSettings();
+  return finish(v, await paid(v, settings, 'makeCard',
+    () => ({ order, collectionId: v.collection, cardId: v.card, place: placeOf(v), provider: v.provider, limits: limitsOf(v) }),
+    async () => makeCard({ order, collection: v.collection, card: v.card, place: placeOf(v), ...await runOf(v, settings) })));
 }
 
 /** @param {any} v @param {string[]} p */
 async function cardRegenerate(v, [dir]) {
   const { regenerateCard } = await import('./core/card/make.js');
-  return finish(v, await regenerateCard({ dir: path.resolve(dir), wish: v.wish, ...await runOf(v, loadSettings()) }));
+  const settings = loadSettings();
+  return finish(v, await paid(v, settings, 'regenerateCard',
+    () => ({ ...cardOf(dir), wish: v.wish, provider: v.provider, limits: limitsOf(v) }),
+    async () => regenerateCard({ dir: path.resolve(dir), wish: v.wish, ...await runOf(v, settings) })));
 }
 
 /** @param {any} v @param {string[]} p */
 async function cardEdit(v, [dir]) {
   const { editCard } = await import('./core/card/make.js');
-  return finish(v, await editCard({ dir: path.resolve(dir), wish: v.wish, n: v.attempt && +v.attempt, ...await runOf(v, loadSettings()) }));
+  const settings = loadSettings();
+  return finish(v, await paid(v, settings, 'editCard',
+    () => ({ ...cardOf(dir), wish: v.wish, n: v.attempt && +v.attempt, provider: v.provider, limits: limitsOf(v) }),
+    async () => editCard({ dir: path.resolve(dir), wish: v.wish, n: v.attempt && +v.attempt, ...await runOf(v, settings) })));
 }
 
 /** @param {any} v @param {string[]} p */
@@ -267,6 +311,45 @@ async function credits(v) {
   return 0;
 }
 
+/** @param {any} v */
+async function editor(v) {
+  const { DISCOVERY_FILE, openBrowser, pageUrl, runningEditor } = await import('./editor/server.mjs');
+  const running = await runningEditor();
+  if (v.stop) {
+    if (!running) { console.log('Редактор не запущен.'); return 0; }
+    process.kill(running.pid, 'SIGTERM');
+    console.log(`Редактор остановлен (${running.url}).`);
+    return 0;
+  }
+  if (running) {
+    const target = pageUrl(running.url, v.open);
+    if (!v['no-browser'] && loadSettings().editor.openBrowser) openBrowser(target);
+    console.log(`Редактор уже запущен: ${target}`);
+    return 0;
+  }
+  // the editor runs on after this command returns; what it prints goes to its log next to the discovery file
+  const log = path.join(path.dirname(DISCOVERY_FILE), 'editor.log');
+  fs.mkdirSync(path.dirname(log), { recursive: true });
+  const out = fs.openSync(log, 'w');
+  const { spawn } = await import('node:child_process');
+  const args = ['editor/server.mjs', ...(v.port !== undefined ? ['--port', v.port] : []), ...(v.open ? ['--open', v.open] : []), ...(v['no-browser'] ? ['--no-browser'] : [])];
+  const child = spawn(process.execPath, args, { cwd: import.meta.dirname, detached: true, stdio: ['ignore', out, out] });
+  child.unref();
+  fs.closeSync(out);
+  for (let i = 0; i < EDITOR_START_TRIES; i++) {
+    await new Promise(r => setTimeout(r, EDITOR_START_STEP_MS));
+    const ed = await runningEditor();
+    if (ed && ed.pid === child.pid) {
+      console.log(`Редактор запущен: ${pageUrl(ed.url, v.open)}\nОн работает в фоне; остановить — node ${NAME} editor --stop. Журнал: ${log}`);
+      return 0;
+    }
+    if (child.exitCode !== null) break;
+  }
+  throw new Error(`Редактор не запустился — см. журнал ${log}`);
+}
+const EDITOR_START_TRIES = 50;
+const EDITOR_START_STEP_MS = 200;
+
 /** models and credits ask the OpenRouter-compatible endpoint, whichever provider generates (Codex has neither). */
 const openrouterSettings = () => loadSettings().provider.openrouter;
 
@@ -286,6 +369,9 @@ const fmt = v => (typeof v === 'number' ? String(+v.toFixed(3)) : Array.isArray(
 /** @param {number|null} c */
 const usd = c => (c == null ? 'цена неизвестна' : `$${c.toFixed(4)}`);
 
+/** The vision model's verdict for a person. */
+const LOOK_TEXT = { ok: 'карточка соответствует заказу', fix: 'есть замечания', unknown: 'ответа нет' };
+
 /** @param {import('./core/card/make.js').CardReport} r */
 function printReport(r) {
   console.log(`Карточка ${r.id}: ${r.dir}`);
@@ -295,16 +381,19 @@ function printReport(r) {
     if (a.fallbackFrom) console.log(`  основная модель ${a.fallbackFrom.model} не справилась (${a.fallbackFrom.error.message}) — попытку сделала запасная`);
     if (a.error) console.log(`  ОШИБКА (${a.error.stage === 'generate' ? 'генерация' : 'обработка'}): ${a.error.message}`);
     if (a.check) {
-      const eyes = a.check.fails.length - a.check.blocking;
-      console.log(`  проверки: блокирующих FAIL ${a.check.blocking}, FAIL на неподтверждённом контуре ${eyes}, WARN ${a.check.warns}; контур героя: ${a.check.maskStatus}`);
+      const eyes = a.check.needsEyes ?? a.check.fails.length - a.check.blocking;
+      console.log(`  проверки: блокирующих ${a.check.blocking}, FAIL на неподтверждённом контуре ${eyes}, WARN ${a.check.warns}; контур героя: ${a.check.maskStatus}`);
       for (const f of a.check.fails) console.log(`  FAIL ${f.id} ${f.title}: ${fmt(f.value)}${f.threshold ? `  | ${f.threshold}` : ''}${f.note ? `  — ${f.note}` : ''}${f.needsMask ? '  [нужен взгляд на контур]' : ''}`);
+      const look = a.check.look;
+      if (look) console.log(`  смотрящая модель: ${LOOK_TEXT[look.verdict]}`);
+      for (const i of look?.issues ?? []) console.log(`  ${i.blocking ? 'НЕ ТАК' : 'взгляд'} ${i.id ?? i.kind}: ${i.what}`);
     }
     for (const [k, p] of Object.entries(a.files)) console.log(`  ${k}: ${p}`);
   }
   if (r.stop) console.log(`\nОстановка: ${STOP_TEXT[r.stop]}. Потрачено в этом запуске ${usd(r.spent ?? 0)} (потолок $${r.limits?.maxSpendUsd}, попыток ${r.attempts.length} из ${r.limits?.attempts}).`);
   if (r.chosen == null) { console.log('Выбрать нечего: ни одна попытка не дошла до проверок.'); return; }
   const c = r.chosenCheck;
-  console.log(`Выбрана попытка ${r.chosen}${c ? ` (блокирующих FAIL ${c.blocking}, на неподтверждённом контуре ${c.fails.length - c.blocking}, WARN ${c.warns})` : ''}: ${r.image}`);
+  console.log(`Выбрана попытка ${r.chosen}${c ? ` (блокирующих ${c.blocking}, FAIL на неподтверждённом контуре ${c.needsEyes ?? c.fails.length - c.blocking}, WARN ${c.warns})` : ''}: ${r.image}`);
   if (r.chosenVisual.length) {
     console.log(`Проверить глазами (попытка ${r.chosen}):`);
     for (const x of r.chosenVisual) console.log(`  - [${x.doc} #${x.check}] ${x.what}`);

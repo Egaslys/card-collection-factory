@@ -37,6 +37,9 @@ const makeError = v => !whole(v.parallel) ? '--parallel must be a whole number a
 /** The settings with the `set` key (settings/defaults.json). */
 const settingsOf = () => /** @type {import('../settings.js').Settings & {set: import('./planner.js').SetSettings}} */ (loadSettings());
 
+/** The limits of the command line, as core/set takes them. @param {any} v */
+const limitsOf = v => ({ parallel: v.parallel && +v.parallel, maxSpendUsd: v['max-spend'] !== undefined ? +v['max-spend'] : undefined, attempts: v.attempts && +v.attempts });
+
 /** @param {any} v */
 async function providerOf(v) {
   const settings = settingsOf();
@@ -44,6 +47,19 @@ async function providerOf(v) {
   return { settings, provider: providerFrom({ ...settings.provider, use: v.provider ?? settings.provider.use }) };
 }
 
+/**
+ * A paid run here, or in a running editor with its key when there is no key here (editor/remote.js).
+ * @template T
+ * @param {{needsKey: boolean, op: string, args: () => Record<string, unknown>, here: () => Promise<T>, signal?: AbortSignal}} o
+ */
+async function paid(o) {
+  // a URL, not a literal path: the editor stays outside core's type check (tsconfig.json include)
+  /** @type {{hereOrInEditor: (o: any) => Promise<T>}} */
+  const { hereOrInEditor } = await import(new URL('../../editor/remote.js', import.meta.url).href);
+  return hereOrInEditor({ ...o, envVar: settingsOf().provider.openrouter.keyEnvVar });
+}
+/** @param {any} v the image provider of the run needs the OpenRouter key */
+const imagesNeedKey = v => (v.provider ?? settingsOf().provider.use) === 'openrouter';
 
 /** @param {string} msg */
 const progress = msg => console.error(`… ${msg}`);
@@ -69,10 +85,13 @@ const planLine = p => `«${p.title}»${p.variant ? `, вариант ${p.variant
 /** @param {any} v */
 async function setPlan(v) {
   const { planSetInto } = await import('./make.js');
-  const r = await planSetInto({
-    collection: v.collection, save: !!v.save, theme: v.theme, wishes: v.wishes, variants: v.variants && +v.variants,
-    window: v.window, scenes: v.scenes !== undefined ? +v.scenes : undefined, template: v.template,
-    settings: settingsOf(), maxSpendUsd: v['max-spend'] !== undefined ? +v['max-spend'] : undefined, progress,
+  const o = {
+    save: !!v.save, theme: v.theme, wishes: v.wishes, variants: v.variants && +v.variants,
+    window: v.window, scenes: v.scenes !== undefined ? +v.scenes : undefined, template: v.template, maxSpendUsd: v['max-spend'] !== undefined ? +v['max-spend'] : undefined,
+  };
+  const r = await paid({
+    needsKey: true, op: 'planSet', args: () => ({ ...o, collectionId: v.collection }),
+    here: () => planSetInto({ ...o, collection: v.collection, settings: settingsOf(), progress }),
   });
   for (const p of r.plans) {
     if (!v.out || !p.plan) continue;
@@ -155,12 +174,15 @@ const setOk = r => r.slots.every(s => s.result === 'kept' || (s.result === 'made
 
 /** @param {any} v @param {string[]} files */
 async function setMake(v, files) {
-  const { settings, provider } = await providerOf(v);
   const { makeSet } = await import('./make.js');
-  const r = await makeSet({
-    collection: v.collection, ...(files[0] ? { plan: JSON.parse(fs.readFileSync(path.resolve(files[0]), 'utf8')) } : { set: v.set }),
-    settings, provider, only: list(v.slots), redo: !!v.redo, progress, signal: interruptible(),
-    limits: { parallel: v.parallel && +v.parallel, maxSpendUsd: v['max-spend'] !== undefined ? +v['max-spend'] : undefined, attempts: v.attempts && +v.attempts },
+  const plan = files[0] ? JSON.parse(fs.readFileSync(path.resolve(files[0]), 'utf8')) : undefined;
+  const signal = interruptible();
+  const r = await paid({
+    needsKey: imagesNeedKey(v), signal, op: 'makeSet',
+    args: () => ({ collectionId: v.collection, ...(plan ? { plan } : { setId: v.set }), provider: v.provider, only: list(v.slots), redo: !!v.redo, limits: limitsOf(v) }),
+    here: async () => makeSet({
+      collection: v.collection, ...(plan ? { plan } : { set: v.set }), ...await providerOf(v), only: list(v.slots), redo: !!v.redo, progress, signal, limits: limitsOf(v),
+    }),
   });
   if (v.json) console.log(JSON.stringify(r, null, 2));
   else printSet(r);
@@ -179,9 +201,10 @@ async function setSheetCmd(v) {
 /** @param {any} v */
 async function collectionPlan(v) {
   const { planCollectionInto } = await import('./make.js');
-  const r = await planCollectionInto({
-    collection: v.collection, title: v.title, theme: v.theme, wishes: v.wishes, variants: v.variants && +v.variants, only: list(v.only),
-    settings: settingsOf(), maxSpendUsd: v['max-spend'] !== undefined ? +v['max-spend'] : undefined, progress,
+  const o = { title: v.title, theme: v.theme, wishes: v.wishes, variants: v.variants && +v.variants, only: list(v.only), maxSpendUsd: v['max-spend'] !== undefined ? +v['max-spend'] : undefined };
+  const r = await paid({
+    needsKey: true, op: 'planCollection', args: () => ({ ...o, collectionId: v.collection }),
+    here: () => planCollectionInto({ ...o, collection: v.collection, settings: settingsOf(), progress }),
   });
   if (v.json) console.log(JSON.stringify(r, null, 2));
   else {
@@ -195,11 +218,12 @@ async function collectionPlan(v) {
 
 /** @param {any} v */
 async function collectionMake(v) {
-  const { settings, provider } = await providerOf(v);
   const { makeCollection } = await import('./make.js');
-  const r = await makeCollection({
-    collection: v.collection, numbers: list(v.sets), settings, provider, progress, signal: interruptible(),
-    limits: { parallel: v.parallel && +v.parallel, maxSpendUsd: v['max-spend'] !== undefined ? +v['max-spend'] : undefined, attempts: v.attempts && +v.attempts },
+  const signal = interruptible();
+  const r = await paid({
+    needsKey: imagesNeedKey(v), signal, op: 'makeCollection',
+    args: () => ({ collectionId: v.collection, numbers: list(v.sets), provider: v.provider, limits: limitsOf(v) }),
+    here: async () => makeCollection({ collection: v.collection, numbers: list(v.sets), ...await providerOf(v), progress, signal, limits: limitsOf(v) }),
   });
   if (v.json) console.log(JSON.stringify(r, null, 2));
   else {

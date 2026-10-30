@@ -6,9 +6,11 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 import { ROOT } from './root.mjs';
 import { pageUrl, startEditor, withUrls } from '../editor/server.mjs';
+import { callEditor, hereOrInEditor } from '../editor/remote.js';
 import { COLLECTIONS_DIR } from '../core/store/layout.js';
 import { readLocalSettings, saveLocalSettings } from '../core/settings.js';
 
@@ -70,4 +72,62 @@ test('настройки: запись в local.json — только отлич
   assert.deepEqual(readLocalSettings({ dir }), {}, 'возврат к умолчанию убирает ключ');
   assert.throws(() => saveLocalSettings({ nope: 1 }, { dir }), /неизвестный ключ/);
   assert.deepEqual(readLocalSettings({ dir }), {}, 'отвергнутая запись файл не меняет');
+});
+
+test('ccf.mjs editor: справка, неизвестный ключ и --stop с другими ключами отклоняются до работы', () => {
+  const ccf = (/** @type {string[]} */ ...args) => spawnSync(process.execPath, [path.join(ROOT, 'ccf.mjs'), ...args], { cwd: ROOT, encoding: 'utf8' });
+  assert.equal(ccf('editor', '--help').status, 0);
+  assert.match(ccf('--help').stdout, /editor \[--open/);
+  assert.equal(ccf('editor', '--no-such-option').status, 2);
+  assert.equal(ccf('editor', '--stop', '--open', 'c').status, 2);
+  assert.equal(ccf('editor', '--port', 'x').status, 2);
+});
+
+test('агент через редактор: операция-задача дожидается конца, журнал идёт строками, остановка отменяет задачу', async t => {
+  const calls = [];
+  let polls = 0;
+  let cancelled = false;
+  const job = (/** @type {string} */ status, /** @type {string[]} */ lines, extra = {}) => ({ id: 'j1', title: 'проба', status, log: lines.map((text, i) => ({ at: `t${i}`, text })), ...extra });
+  const server = http.createServer((req, res) => {
+    calls.push(`${req.method} ${req.url} ${req.headers['x-ccf-token']}`);
+    const send = (/** @type {number} */ code, /** @type {any} */ body) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
+    if (req.url === '/api/op/quick') return send(200, { result: { ok: 1 } });
+    if (req.url === '/api/op/bad') return send(400, { error: 'Не хватает поля «x».' });
+    if (req.url === '/api/op/long') return send(200, { job: job('running', ['начало']) });
+    if (req.url === '/api/jobs/j1/cancel') { cancelled = true; return send(200, {}); }
+    if (req.url?.startsWith('/api/jobs/j1/wait')) {
+      polls++;
+      if (cancelled) return send(200, job('cancelled', ['начало', 'шаг', 'Остановка']));
+      return send(200, polls < 2 ? job('running', ['начало', 'шаг']) : job('done', ['начало', 'шаг', 'готово'], { result: { spent: 0 } }));
+    }
+    send(404, { error: 'нет' });
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', () => r(null)));
+  t.after(() => server.close());
+  const ed = { url: `http://127.0.0.1:${/** @type {any} */ (server.address()).port}`, token: 'tok' };
+
+  assert.deepEqual(await callEditor(ed, 'quick'), { ok: 1 });
+  await assert.rejects(callEditor(ed, 'bad'), /Не хватает поля «x»/);
+  const lines = [];
+  assert.deepEqual(await callEditor(ed, 'long', {}, { onLog: l => lines.push(l) }), { spent: 0 });
+  assert.deepEqual(lines, ['начало', 'шаг', 'готово'], 'каждая строка журнала — один раз');
+  assert.ok(calls.every(c => c.endsWith(' tok')), 'каждый запрос с токеном запуска');
+
+  polls = 0;
+  const ac = new AbortController();
+  const run = callEditor(ed, 'long', {}, { signal: ac.signal });
+  ac.abort();
+  await assert.rejects(run, /не завершилась \(cancelled\)/);
+  assert.ok(cancelled, 'задача в редакторе отменена');
+});
+
+test('агент через редактор: с ключом здесь или без нужды в ключе операция идёт здесь', async () => {
+  const fail = () => { throw new Error('не должно идти в редактор'); };
+  assert.equal(await hereOrInEditor({ needsKey: false, envVar: 'CCF_TEST_NO_KEY', op: 'x', args: fail, here: async () => 'здесь' }), 'здесь');
+  process.env.CCF_TEST_HERE_KEY = 'k';
+  try {
+    assert.equal(await hereOrInEditor({ needsKey: true, envVar: 'CCF_TEST_HERE_KEY', op: 'x', args: fail, here: async () => 'здесь' }), 'здесь');
+  } finally {
+    delete process.env.CCF_TEST_HERE_KEY;
+  }
 });

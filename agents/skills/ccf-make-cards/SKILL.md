@@ -14,7 +14,7 @@ description: Make cards with the card factory — from a request like "20 cards 
   - `openrouter` — the product default (`provider.use` in `FACTORY/settings/defaults.json`; what each setting means is in its `_about`). Needs the key in the environment or `FACTORY/.env` (variable: `provider.openrouter.keyEnvVar`). `node FACTORY/ccf.mjs credits` shows whether it works. Never print, copy or write the key.
   - `codex-cli` — Codex under the person's ChatGPT subscription, no payment per image, GPT Image only; the factory's own trial runs use it (`--provider codex-cli`). Needs `codex` installed and logged in.
   - Your own built-in image tool — step 4b.
-  - No key, but the person's editor is running: the operations it offers run with its key (`GET /api/ops` lists them; how to call: ccf-editor, `editor/remote.js`).
+  - No key, but the person's editor is running with one: the paid commands (`card make`, `card regenerate`, `card edit`, `set plan`, `set make`, `collection plan`, `collection make`) send themselves to the editor and run there with its key; the output is the same. Without a key and without an editor they stop and say so.
 - A paid run spends the person's money. Before it, tell them how many cards and the cap (`card.maxSpendUsd` per card run, or `--max-spend`), and stay inside what they agreed.
 
 ## 2. Collection
@@ -75,7 +75,7 @@ Review every card before showing it: ccf-review-cards.
 
 ## 7. Show
 
-- Editor, when `FACTORY/editor/server.mjs` exists: `node FACTORY/editor/server.mjs --open COLLECTION[/SET]` opens it in the browser (or opens the running one).
+- Editor: `node FACTORY/ccf.mjs editor --open COLLECTION[/SET]` starts it in the background (or uses the running one), opens the browser there and prints the address. `--stop` stops it; leave an editor the person uses running.
 - Files: `image` of each report is the card's `card.png`. A folder for the person: `node FACTORY/ccf.mjs export --collection ID --card ID,ID [--zip] [--open] --json` → `path` under `collections/<collection>/export/` (layout: `core/store/README.md`, «Export»).
 
 Done when every requested card has a reviewed `card.png`, and the person has the editor view or the export path, the total spent, and every problem left open.

@@ -58,6 +58,6 @@ Progress: one stderr line per card event. Stop: one Ctrl+C — no new card start
 
 ## 5. Show
 
-Editor, when `FACTORY/editor/server.mjs` exists: `node FACTORY/editor/server.mjs --open COLLECTION/SET`. Export: `node FACTORY/ccf.mjs export --collection ID [--set ID,ID] [--zip] [--open] --json` (no `--set` = every set); layout in `core/store/README.md`, «Export».
+Editor: `node FACTORY/ccf.mjs editor --open COLLECTION/SET` (starts it in the background or uses the running one, opens the browser there, prints the address). Export: `node FACTORY/ccf.mjs export --collection ID [--set ID,ID] [--zip] [--open] --json` (no `--set` = every set); layout in `core/store/README.md`, «Export».
 
 Done when every slot holds a reviewed card, the set's sheet was looked at, and the person has the editor view or the export path, the total spent and every open problem.

@@ -52,14 +52,17 @@ export async function openCard(collectionId, cardId) {
   const running = [...jobs.values()].find(j => j.status === 'running' && j.scope?.cardId === cardId);
 
   const issues = (data.check?.results ?? []).filter((/** @type {any} */ r) => r.status !== 'PASS' && r.status !== 'N/A');
-  const details = issues.length || data.check?.visual?.length ? `<details class="more"><summary class="btn btn--text btn--s"><span>Подробности проверок</span></summary>
+  const look = chosen?.look ?? chosen?.check?.look;
+  const lookHtml = look?.issues?.length ? `<p class="label">Что увидела смотрящая модель</p><ul class="checks">${look.issues.map((/** @type {any} */ i) => `<li><span class="badge badge--${i.blocking ? 'fail' : 'warn'}">${i.blocking ? 'FAIL' : 'WARN'}</span><span>${i.id ? `<b>${esc(i.id)}</b> ` : ''}${esc(i.what)}</span></li>`).join('')}</ul>` : '';
+  const details = issues.length || data.check?.visual?.length || lookHtml ? `<details class="more"><summary class="btn btn--text btn--s"><span>Подробности проверок</span></summary>
       ${issues.length ? `<ul class="checks">${issues.map((/** @type {any} */ r) => `<li><span class="badge badge--${r.status === 'FAIL' ? 'fail' : 'warn'}">${esc(r.status)}</span><span><b>${esc(r.id)}</b> ${esc(r.title)}<br><span class="data ink-3">${esc(typeof r.value === 'object' ? JSON.stringify(r.value) : r.value)}${r.threshold ? ` · ${esc(r.threshold)}` : ''}</span>${r.note ? `<br><span class="ink-3">${esc(r.note)}</span>` : ''}</span></li>`).join('')}</ul>` : ''}
+      ${lookHtml}
       ${data.check?.visual?.length ? `<p class="label">Проверить глазами</p><ul class="checks checks--eyes">${data.check.visual.map((/** @type {any} */ x) => `<li><span class="ink-3 data">${esc(x.id)}</span><span>${esc(x.what)}</span></li>`).join('')}</ul>` : ''}
     </details>` : '';
 
   const where = set ? `Набор «${set.title}», место ${s.slot + 1}` : 'В хранилище, вне наборов';
   const attemptsHtml = data.attempts.map((/** @type {any} */ a) => {
-    const av = verdict(a.check ? { ...a.check, needsEyes: a.check.fails.length - a.check.blocking } : null, a.error ? 'failed' : 'made');
+    const av = verdict(a.check ? { ...a.check, needsEyes: a.check.needsEyes ?? a.check.fails.length - a.check.blocking } : null, a.error ? 'failed' : 'made');
     return `<li class="att${a.n === data.chosen ? ' is-chosen' : ''}">
       <span class="att__img thumb__img">${a.files.cardUrl ? `<img src="${esc(a.files.cardUrl)}" alt="Попытка ${a.n}" loading="lazy">` : `<span class="thumb__empty">${I.alert}</span>`}</span>
       <span class="att__text"><span><b>${a.n}</b>${a.n === data.chosen ? ' · карточка' : ''}${a.wish ? ` · «${esc(a.wish)}»` : ''}</span><span class="data ink-3">${esc(a.model)} · ${a.cost == null ? 'цена неизвестна' : usd(a.cost)}</span>${a.error ? `<span class="att__err">${esc(a.error.message)}</span>` : badge(av)}</span></li>`;

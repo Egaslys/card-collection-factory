@@ -149,6 +149,20 @@ export const OPS = {
 
   // ---------- one card (core/card) ----------
   getCard: { run: getCard },
+  makeCard: {
+    job: true, cancellable: true,
+    title: a => `Карточка «${a.order?.title ?? a.order?.id ?? ''}»`,
+    scope: a => ({ collectionId: a.collectionId, ...(a.cardId ? { cardId: a.cardId } : {}) }),
+    spentOf: r => r?.spent ?? null,
+    run: async (a, { progress, signal }) => {
+      const s = settings();
+      const { makeCard } = await import('../../core/card/make.js');
+      return makeCard({
+        order: need('order', a.order), collection: need('collectionId', a.collectionId), card: a.cardId, place: a.place,
+        settings: s, provider: await providerOf(s, a.provider), limits: a.limits, signal, onProgress: cardProgress(progress),
+      });
+    },
+  },
   regenerateCard: {
     job: true, cancellable: true,
     title: a => `Перегенерация карточки`,
@@ -157,7 +171,7 @@ export const OPS = {
     run: async (a, { progress, signal }) => {
       const s = settings();
       const { regenerateCard } = await import('../../core/card/make.js');
-      return regenerateCard({ dir: cardDirOf(a), wish: a.wish, settings: s, provider: await providerOf(s, a.provider), signal, onProgress: cardProgress(progress) });
+      return regenerateCard({ dir: cardDirOf(a), wish: a.wish, settings: s, provider: await providerOf(s, a.provider), limits: a.limits, signal, onProgress: cardProgress(progress) });
     },
   },
   editCard: {
@@ -168,7 +182,7 @@ export const OPS = {
     run: async (a, { progress, signal }) => {
       const s = settings();
       const { editCard } = await import('../../core/card/make.js');
-      return editCard({ dir: cardDirOf(a), wish: a.wish, n: a.n, settings: s, provider: await providerOf(s, a.provider), signal, onProgress: cardProgress(progress) });
+      return editCard({ dir: cardDirOf(a), wish: a.wish, n: a.n, settings: s, provider: await providerOf(s, a.provider), limits: a.limits, signal, onProgress: cardProgress(progress) });
     },
   },
   adjustCard: {
@@ -208,7 +222,10 @@ export const OPS = {
     spentOf: r => r?.spent ?? null,
     run: async (a, { progress }) => {
       const { planSetInto } = await import('../../core/set/make.js');
-      return planSetInto({ collection: need('collectionId', a.collectionId), theme: need('theme', a.theme), wishes: a.wishes, variants: a.variants, window: a.window, template: a.template, settings: settings(), apiKey: keyOrThrow(), progress });
+      return planSetInto({
+        collection: a.collectionId, ...(a.save !== undefined ? { save: !!a.save } : {}), theme: need('theme', a.theme), wishes: a.wishes, variants: a.variants,
+        window: a.window, scenes: a.scenes, template: a.template, maxSpendUsd: a.maxSpendUsd, settings: settings(), apiKey: keyOrThrow(), progress,
+      });
     },
   },
   makeSet: {
@@ -220,8 +237,8 @@ export const OPS = {
       const s = settings();
       const { makeSet } = await import('../../core/set/make.js');
       return makeSet({
-        collection: need('collectionId', a.collectionId), set: need('setId', a.setId), settings: s, provider: await providerOf(s, a.provider),
-        redo: !!a.redo, only: a.only, signal, progress, limits: { ...(a.maxSpendUsd !== undefined ? { maxSpendUsd: a.maxSpendUsd } : {}) },
+        collection: need('collectionId', a.collectionId), ...(a.plan ? { plan: a.plan } : { set: need('setId', a.setId) }), settings: s, provider: await providerOf(s, a.provider),
+        redo: !!a.redo, only: a.only, signal, progress, limits: { ...a.limits, ...(a.maxSpendUsd !== undefined ? { maxSpendUsd: a.maxSpendUsd } : {}) },
       });
     },
   },
@@ -232,7 +249,10 @@ export const OPS = {
     spentOf: r => r?.spent ?? null,
     run: async (a, { progress }) => {
       const { planCollectionInto } = await import('../../core/set/make.js');
-      return planCollectionInto({ collection: need('collectionId', a.collectionId), theme: need('theme', a.theme), wishes: a.wishes, variants: a.variants, settings: settings(), apiKey: keyOrThrow(), progress });
+      return planCollectionInto({
+        collection: a.collectionId, title: a.title, theme: need('theme', a.theme), wishes: a.wishes, variants: a.variants, only: a.only,
+        maxSpendUsd: a.maxSpendUsd, settings: settings(), apiKey: keyOrThrow(), progress,
+      });
     },
   },
   makeCollection: {
@@ -245,7 +265,7 @@ export const OPS = {
       const { makeCollection } = await import('../../core/set/make.js');
       return makeCollection({
         collection: need('collectionId', a.collectionId), numbers: a.numbers, settings: s, provider: await providerOf(s, a.provider), signal, progress,
-        limits: { ...(a.maxSpendUsd !== undefined ? { maxSpendUsd: a.maxSpendUsd } : {}) },
+        limits: { ...a.limits, ...(a.maxSpendUsd !== undefined ? { maxSpendUsd: a.maxSpendUsd } : {}) },
       });
     },
   },

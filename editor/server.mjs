@@ -23,7 +23,8 @@ import { createJobs } from './server/jobs.js';
 import { initKey, keyStatus } from './server/key.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-export const DISCOVERY_FILE = path.join(ROOT, '.ccf', 'editor.json');
+/** CCF_EDITOR_FILE replaces the discovery file and exists for tests only (a command line run against a fake editor). */
+export const DISCOVERY_FILE = process.env.CCF_EDITOR_FILE ? path.resolve(process.env.CCF_EDITOR_FILE) : path.join(ROOT, '.ccf', 'editor.json');
 const HOST = '127.0.0.1';
 /** The largest request body: an image a person imports into a card comes as base64. */
 const BODY_LIMIT = 40 * 1024 * 1024;
@@ -131,7 +132,7 @@ export function withUrls(v) {
 }
 
 /** @param {string} url */
-function openBrowser(url) {
+export function openBrowser(url) {
   const [cmd, args] = process.platform === 'darwin' ? ['open', [url]] : process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : ['xdg-open', [url]];
   try { spawn(cmd, args, { detached: true, stdio: 'ignore' }).on('error', () => {}).unref(); } catch { /* no browser: the URL is printed */ }
 }
