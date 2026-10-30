@@ -307,7 +307,8 @@
 7. **Крупность** — рамка сцены занимает 60–90 % площади кадра (норма; медиана 76 %), граница — 40 % (в эталоне от 41 до 91 %); голова одиночного персонажа — 24–42 % высоты кадра, если он не во весь рост и не лежит.
 8. **Ракурс** — анфас, три четверти или со спины, не профиль; камера на уровне груди или глаз, сверху-сбоку — если действие на земле или воде.
 9. **Действие** — персонаж что-то делает с предметом, лучше — с предметом своего набора. Реквизит в руках и заметные вещи фона — не виды предметов других наборов коллекции (проверка по реестру — [SETS.md](SETS.md#9-проверка)).
-10. **Шутка** — одна мягкая смешная деталь (или спокойная бытовая сцена); никто не унижен; если есть «жертва», она отделывается испугом или неловкостью.
+10. **Шутка** — одна мягкая смешная деталь (или спокойная бытовая сцена); никто не унижен; если есть «жертва», она отделывается испугом или неловкостью. Шутка читается с первого взгляда: предмет шутки целиком в кадре, реакция видна по лицу и взгляду (на глаз).
+11. **Обрезка фигуры** — совпадает с заказанной: если в запросе срез по пояс, бёдра или колени, персонаж не показан во весь рост.
 
 ## Для промпта (англ.)
 
@@ -335,7 +336,7 @@
 
 Каркас золотой сцены (в фигурных скобках — что подставить):
 
-> A simple everyday {theme} scene with {who} ({one or two of the cast}), set in a {place} with depth (foreground, characters, middle ground, far background), {time of day}. {Who} {does what} with {set item}. One gentle comic twist: {twist}. Medium shot at the characters' chest or eye level, characters centred and filling about three quarters of the frame, cut at the {hips / waist / knees} by the bottom edge; heads fully inside the frame, well below the top edge. No other characters; background extras only as a small soft crowd if the place needs one.
+> A simple everyday {theme} scene with {who} ({one or two of the cast}), set in a {place} with depth (foreground, characters, middle ground, far background), {time of day}. {Who} {does what} with {set item}. One gentle comic twist: {twist}. Show the twist through faces and gaze: {who reacts} looks straight at {the twist object} with a clear, readable expression, and the twist object is fully inside the frame, near the characters' head height. Medium shot at the characters' chest or eye level, characters centred and filling about three quarters of the frame, cut at the {hips / waist / knees} by the bottom edge, legs below that not shown; heads fully inside the frame, well below the top edge. No other characters; background extras only as a small soft crowd if the place needs one.
 
 ## Не решено и не измерено
 

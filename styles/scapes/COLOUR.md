@@ -195,6 +195,23 @@
 - **Ночи и сумерек как обесцвеченной картинки.** Ночью ниже светлота, но не насыщенность (2.4).
 - **Одного цвета фона на весь набор** (2.6).
 
+## 5. Насыщенность и яркость после генерации
+
+Шаг обработки после генерации есть всегда (решение автора; что в него входит и кто его настраивает — [RENDERING.md](RENDERING.md#обработка-после-рисования-и-происхождение-файлов)). Здесь — цвет: насыщенность и яркость.
+
+**Цель.** Медианная C\* карточки — около медианы эталона, 46; главный цвет абстрактного фона — в норме проверки 8 (C\* 42–95, насыщенность HSV от 0,6); доли серого и чистого белого — в нормах проверок 2 и 4; медианная светлота — в норме проверки 5. Сами нормы — в «Проверке» ниже.
+
+**Начальные настройки по моделям** — измерено на пробных карточках (по пять на модель, без правки и с правкой копий фильтром насыщенности `eq=saturation=…` программы ffmpeg); перепроверять на новых генерациях:
+
+| Модель | Медианная C\* без правки: медиана по карточкам (наименьшая) | ×1,15 | ×1,3 | Начальная настройка |
+|---|---|---|---|---|
+| Nano Banana 2.1 | 34,7 (31,5) | 38 (36,6) | 41,9 (39,3) | ×1,3 |
+| GPT Image 2.5 Flare | 40,5 (37,2) | 42,3 (41,9) | 46,7 (42,8) | ×1,15–1,3 |
+
+- При этих множителях доли серого и чистого белого не растут (белого не больше 0,4 % кадра).
+- Пастельный фон насыщенностью не исправить: у Nano Banana 2.1 розовый фон с насыщенностью HSV 0,34 даже при ×1,45 поднялся только до 0,40 (норма от 0,6). Такой фон исправляют запросом — фраза о фоне в «Для промпта (англ.)» требует глубокий, полностью насыщенный цвет.
+- Яркость общей правки не требует: медианная светлота проб — 52–76 у Nano Banana 2.1 и 63–79 у Flare; за норму вышла одна карточка Flare (79), её правят поштучно.
+
 ## Проверка
 
 Проверки для агента, который оценивает сгенерированную карточку 430 × 480 (или набор). Пиксели переводятся в CIE Lab (D65, sRGB), оттенок — HSV; термины — в разделе «Как читать числа». Границы взяты из эталона: «норма» — диапазон, в котором лежат 80 % эталонных карточек; «предел» — крайнее значение эталона. Выход за норму — повод посмотреть внимательнее, выход за предел — ошибка, если человек не просил иного.
@@ -229,11 +246,11 @@
 
 ## Для промпта (англ.)
 
-Фразы, которые можно передать модели как есть. Генерацией они ещё не проверены; понимает ли модель hex-коды, не известно, поэтому цвета названы словами, а hex дан в скобках как ориентир.
+Фразы, которые можно передать модели как есть. Первая проба генерации (пять карточек на модель) показала пастельные фоны у Nano Banana 2.1, поэтому во фразу о фоне добавлен запрет на бледный цвет; исправленные фразы генерацией ещё не проверены. Понимает ли модель hex-коды, не известно, поэтому цвета названы словами, а hex дан в скобках как ориентир.
 
 - Общая палитра: `Clean, vivid, saturated colours; neutral tones only where the material itself is white, metal or stone; no muddy, greyed or desaturated tones. Bright, mid-to-high key image: no large areas of pure white or pure black.`
 - Тени и свет: `Shadows are coloured, never grey or black: reds deepen towards crimson, oranges towards red, yellows towards orange, greens towards emerald, sky blues towards deep blue, blues towards indigo. Lit areas shift lighter and warmer: oranges glow towards yellow, blues towards pale cyan. Highlights are a light warm tint of the object's own colour, not white. Painted or plastic white and clouds are warm cream in the light and cool lavender-blue in shadow; white marble and stone shade to a cool, almost colourless grey. The darkest tones are deep navy, wine red or dark brown, not black.`
-- Герой и абстрактный фон: `The background is a single saturated hue chosen to contrast with the hero, roughly opposite on the colour wheel: for example a blue object on golden yellow, an orange or red object on sky blue, a yellow object on violet, a red object on bright green, a green object on pink. If the hero and background share a hue, make the background clearly lighter or darker than the hero.`
+- Герой и абстрактный фон: `The background is a single deep, fully saturated hue — never pastel, never pale or washed out — chosen to contrast with the hero, roughly opposite on the colour wheel: for example a blue object on golden yellow, an orange or red object on sky blue, a yellow object on violet, a red object on bright green, a green object on pink. If the hero and background share a hue, make the background clearly lighter or darker than the hero.`
 - Градиент фона: `The background is a smooth radial gradient of that one hue: lightest directly behind the hero, deeper and richer towards the corners, shifting slightly the way a shadow would (golden yellow deepening to orange, sky blue deepening to royal blue). It never turns grey. Any pattern is tone-on-tone in the same hue, low contrast.`
 - Дневное небо: `A clear, saturated azure sky (around #2CAEED), deeper at the top and lighter towards the horizon, with soft white clouds shaded in lavender-blue.`
 - Ночь и сумерки: `Night stays colourful: a deep ultramarine sky (around #083089 to #2656A8) and dark blue shadows, lit by warm yellow window and lamp light; darker than day, but never grey. Dusk is blue-violet (around #5751B7).`

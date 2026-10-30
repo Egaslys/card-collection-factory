@@ -69,7 +69,7 @@
 
 - **Свечение — где его центр.** Светлота фона собирается в мягкий купол. У 64 карточек его центр внутри кадра (у [№45](references/card-045.png) и [№92](references/card-092.png) — чуть ниже нижнего края): в среднем точно в середине (по горизонтали медиана 50,8 %, по вертикали 50 %), а относительно центра героя — сдвиг по горизонтали медиана +0,3 % (у половины −0,9…+2,8 %), по вертикали −0,8 % (у половины −8,5…+4,7 %). У 17 карточек купола нет — почти все они стены и полы, где светлее нижняя половина или сам пол, а не точка за героем ([№3](references/card-003.png), [№6](references/card-006.png), [№20](references/card-020.png), [№25](references/card-025.png), [№28](references/card-028.png), [№32](references/card-032.png), [№35](references/card-035.png), [№40](references/card-040.png), [№46](references/card-046.png), [№55](references/card-055.png), [№64](references/card-064.png), [№67](references/card-067.png), [№95](references/card-095.png), [№103](references/card-103.png), [№114](references/card-114.png), [№121](references/card-121.png), [№145](references/card-145.png)). Насколько центр купола светлее углов («перепад купола»), насколько углы темнее середин сторон и как светел фон у самого героя («свет у героя», по нему и проверяют) — числа в [COLOUR.md](COLOUR.md#15-абстрактный-фон-один-оттенок-светлее-за-героем-гуще-к-углам).
 - **Углы темнее** — мягкое затемнение без видимой границы. Фон бывает и тёмным ([№104](references/card-104.png), [№116](references/card-116.png), [№23](references/card-023.png)), и почти белым ([№72](references/card-072.png)); светлота углов — в [COLOUR.md](COLOUR.md#15-абстрактный-фон-один-оттенок-светлее-за-героем-гуще-к-углам).
-- **Кромки резкие.** Граница между полосами, лучами и кольцами проходит за 1–2 пикселя: например, у [№75](references/card-075.png) по верхнему краю светлота падает с 82 до 74 L\* за один пиксель. Внутри полосы светлота меняется плавно — это общее свечение.
+- **Кромки резкие.** Граница между полосами, лучами и кольцами обычно проходит за 1–2 пикселя: например, у [№75](references/card-075.png) по верхнему краю светлота падает с 82 до 74 L\* за один пиксель. Измерено по 53 карточкам с графическим узором (лучи, кольца, полосы, ромбы, значки, спираль, шахматка), где нашлись кромки с ровными полосами по обе стороны: ширина кромки (переход от 10 до 90 % ступени, медиана по кромкам карточки) — 1–2 px у 44 карточек, 2,5–5 px у девяти: [№12](references/card-012.png), [№35](references/card-035.png), [№44](references/card-044.png), [№47](references/card-047.png), [№50](references/card-050.png), [№66](references/card-066.png), [№73](references/card-073.png), [№107](references/card-107.png), [№137](references/card-137.png) (до 5 px у [№44](references/card-044.png) и [№107](references/card-107.png)). Внутри полосы светлота меняется плавно — это общее свечение.
 - **Ступень малая.** Лучи — 2–9 L\* (медиана около 6), прямые полосы — 3–15 (около 5), кольца — 2–10 (около 6), значки — 7–9, шахматка и кирпич — 5–6, ромбы — 2–4. Главный цвет героя отличается от фона в среднем на 26 L\*, то есть ступень узора в 3–5 раз меньше. Самая сильная ступень в эталоне — 14,5 у [№1](references/card-001.png).
 - **Узор доходит до краёв и до героя.** Лучи не тают возле героя и не обрываются у края кадра; в дальних углах ступень слабеет на 20–60 % вместе со светом (измерено на 11 карточках с лучами).
 
@@ -308,7 +308,7 @@
 - **Висящий предмет на ровном градиенте без узора** — 0 из 30 (решение автора: держаться эталона).
 - **Горизонтальные полосы** — 0 из 13 карточек с прямыми полосами (решение автора: держаться эталона).
 - **Пёстрый узор:** ступень больше 15 L\*, несколько оттенков, второй узор поверх первого — 0 случаев.
-- **Размытые, «аэрографные» кромки узора** — в эталоне кромки резкие, 1–2 px.
+- **Размытые, «аэрографные» кромки узора** — в эталоне кромки резкие: обычно 1–2 px, не шире 5 px.
 - **Центр лучей или колец в стороне от висящего героя** — у висящего героя центр лучей на его вертикали (±8 % ширины), центр колец — в пределах ±10 % от его центра. Уходы бывают только два: вниз вместе со срезанным столбом ([№3](references/card-003.png)) и, у стоящего на полу героя, вверх над линией пола и немного вбок ([№123](references/card-123.png), [№32](references/card-032.png)).
 - **Висящий предмет в обстановке с землёй и горизонтом** (в комнате, в пейзаже) — 0 случаев.
 - **Персонаж на абстрактном поле** — 0 из 30.
@@ -325,8 +325,8 @@
 1. **Без рамки.** Задник доходит до всех четырёх краёв; нет рамки, полей, плашек.
 2. **Постановка и категория.** Определить постановку по таблице «Какую постановку выбрать» и категорию по таблице «Категория как следствие постановки»; категория должна совпасть с заказанной. Для категорий 2 и 3 — проверить, видна ли фактура опоры.
 3. **Висящий предмет.** Фон — узор (лучи, кольца, полосы, значки, спираль, шахматка), не ровный градиент; под предметом на поле нет пятна тени; предмет не висит в обстановке с землёй и горизонтом.
-4. **Узор.** Один оттенок; ступень между соседними полосами по линии пикселей — не больше 15 L\* (обычно 4–9); светлота на кромке меняется за 1–2 px; второго узора поверх нет.
-5. **Свечение.** Центр свечения — за героем (у карточек без купола — светлее пол или нижняя половина). Светлоту фона у героя против углов проверяет [COLOUR.md](COLOUR.md#проверка), проверка 9.
+4. **Узор.** Один оттенок; ступень между соседними полосами по линии пикселей — не больше 15 L\* (обычно 4–9); ширина кромки (медиана по кромкам карточки) — норма до 2 px, граница 5 px (в эталоне 1–2 px у 44 карточек из 53, до 5 px у [№44](references/card-044.png) и [№107](references/card-107.png); раздел «Абстрактный фон: общее для всех узоров»); второго узора поверх нет.
+5. **Свечение.** Центр свечения — за героем (у карточек без купола — светлее пол или нижняя половина). Проверяется на глаз, без числовой границы: по пикселям правило держится плохо — у шести эталонных карточек автоматически найденный центр свечения лежит вне рамки героя ([№14](references/card-014.png), [№36](references/card-036.png), [№44](references/card-044.png), [№45](references/card-045.png), [№92](references/card-092.png), [№145](references/card-145.png)), а у семи из 17 карточек без купола нижняя половина не светлее верхней ([№20](references/card-020.png), [№25](references/card-025.png), [№28](references/card-028.png), [№32](references/card-032.png), [№46](references/card-046.png), [№103](references/card-103.png), [№114](references/card-114.png)), хотя всё это эталон. Светлоту фона у героя против углов измеряет [COLOUR.md](COLOUR.md#проверка), проверка 9.
 6. **Лучи.** 9–15 светлых лучей на полный круг (около 29 тонких — допустимый вариант); светлый луч 12–19°, тёмный промежуток 12–30° (обычно 12–17°, почти поровну со светлым); центр лучей — на вертикали героя в пределах ±8 % ширины. По высоте: у висящего героя — от 4 % выше его середины до 12 % ниже; у стоящего на полу — от 8 % выше до 20 % ниже; у срезанного снизу — центр уходит вниз вместе с ним, вплоть до точки под кадром.
 7. **Кольца.** У висящего героя центр — в пределах ±10 % от центра героя по каждой оси, обычно ±3 %; у стоящего на полу центр может встать выше героя, над линией пола (до 20 % высоты), и сдвинуться вбок до 15 % ширины. От центра до дальнего угла — 3,5–9 колец; шаг 41–88 px.
 8. **Полосы.** Ни одной горизонтальной; вертикальные или наклонные вверх вправо (около 40° или около 74°); на стене — только вертикальные; ширина одной полосы 20–75 px (обычно 50–75 px, 6–8 полос поперёк кадра; узкие — около 35 px у [№6](references/card-006.png) и около 24 px у [№44](references/card-044.png)).
@@ -344,7 +344,8 @@
 
 ```
 The backdrop is a flat graphic pattern in two close tones of one single hue, with crisp, clean edges
-between the bands and only a small step in lightness between them, much smaller than the contrast
+between the bands and only a small step in lightness between them (two neighbouring shades of the same
+colour, barely different), much smaller than the contrast
 between the hero and the backdrop. A soft radial glow sits directly behind the hero, so the backdrop is
 lightest there and gently darker toward the corners. The pattern runs off all four edges of the frame.
 No horizon, no scenery, no frame or border.
@@ -369,9 +370,9 @@ close tones of one hue, lighter toward the centre.
 Прямые полосы:
 
 ```
-Backdrop: broad straight stripes, {vertical | diagonal, rising to the right at about 40 degrees}, each
-stripe about one seventh of the frame width, six to eight stripes across the frame, alternating two close
-tones of one hue, crisp edges. Never horizontal stripes.
+Backdrop: a few broad straight stripes, {vertical | diagonal, rising to the right at about 40 degrees}:
+only six to eight stripes across the whole frame, each stripe about one seventh of the frame width — wide
+bands, never thin pinstripes — alternating two close tones of one hue, crisp edges. Never horizontal stripes.
 ```
 
 Повторяющиеся значки:
@@ -401,8 +402,10 @@ the frame, with no ground, no floor and no shadow on the backdrop below it.
 ```
 Placement: the hero stands on a seamless, untextured floor plane a little lighter than the backdrop;
 the floor spans the full width of the frame down to the bottom edge and meets the backdrop along a
-straight horizontal line at about three quarters of the frame height (eye-level view); the hero's base
-sits well in front of that line, about one sixth of the frame height below it, with a soft contact shadow.
+straight horizontal line low in the frame, at about three quarters of the frame height (eye-level view):
+the floor is only the bottom quarter of the picture and the backdrop wall fills everything above it. The
+hero's base sits in front of that line, about one sixth of the frame height below it, close to the bottom
+edge, with a soft contact shadow.
 ```
 
 Кусок настоящей поверхности:

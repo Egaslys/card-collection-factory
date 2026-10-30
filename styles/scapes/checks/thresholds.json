@@ -1,0 +1,928 @@
+{
+  "_about": "Thresholds of check-card.mjs. Every number of a check is copied from the «Проверка» section of the Scapes bible (styles/scapes/<doc>, check <check>) and lives only here; check-card.mjs reads it by id. norm = the bible's «норма» (outside it: WARN, look by eye); limit = the bible's «предел»/«граница»/hard rule (outside it: FAIL). proposed = the bible marks the threshold «порог предложен»: a breach is a WARN, never a FAIL (CHECKLIST.md). avoid = reference cards the bible names as «избегать» for this rule; exceptions = reference cards the bible names as allowed exceptions to the rule (a FAIL on either is expected). target / target_about = the aim of the post-generation adjustment step that the bible states next to the check; not a check, read by adjust-trial.mjs. Values under `method` are NOT from the bible: they are parameters of the measurement (how a pixel rule is turned into a number); each says where it comes from.",
+  "checks": {
+    "BASE_RULES.1": {
+      "doc": "BASE_RULES.md",
+      "check": 1,
+      "title": "file 430 x 480, no transparent pixels, no frame",
+      "size": [
+        430,
+        480
+      ],
+      "transparent_max": 0,
+      "also": "BACKGROUNDS.md check 1"
+    },
+    "COLOUR.1": {
+      "doc": "COLOUR.md",
+      "check": 1,
+      "title": "median C* of the card",
+      "norm": {
+        "min": 33,
+        "max": 78
+      },
+      "limit": {
+        "min": 21
+      },
+      "note": "below 30 only when white or wood fills most of the frame, or night/evening — confirm by eye",
+      "target_about": 46,
+      "target_source": "COLOUR.md «5. Насыщенность и яркость после генерации»: the aim of the adjustment step (the reference median), not a check"
+    },
+    "COLOUR.2": {
+      "doc": "COLOUR.md",
+      "check": 2,
+      "title": "share of grey pixels (C* < 8)",
+      "norm": {
+        "max": 0.11
+      },
+      "limit": {
+        "max": 0.25
+      },
+      "note": "above 11 %: check by eye that the grey is a material (white, metal, asphalt, stone, wool)"
+    },
+    "COLOUR.3a": {
+      "doc": "COLOUR.md",
+      "check": 3,
+      "title": "share of near-black pixels (all channels < 24)",
+      "limit": {
+        "max": 0.03
+      },
+      "note": "and only on black things — by eye"
+    },
+    "COLOUR.3b": {
+      "doc": "COLOUR.md",
+      "check": 3,
+      "title": "C* of the darkest 2 % of the card",
+      "norm": {
+        "min": 8
+      },
+      "note": "may be lower only when black or grey things are in the frame — by eye. Measured as C* of the mean colour of the darkest 2 %, as the bible's analysis did"
+    },
+    "COLOUR.4": {
+      "doc": "COLOUR.md",
+      "check": 4,
+      "title": "share of pure white (all channels > 245)",
+      "norm": {
+        "max": 0.01
+      },
+      "limit": {
+        "max": 0.09
+      },
+      "also": "RENDERING.md check 10 points here"
+    },
+    "COLOUR.5a": {
+      "doc": "COLOUR.md",
+      "check": 5,
+      "title": "median L* of the card",
+      "norm": {
+        "min": 46,
+        "max": 76
+      },
+      "limit": {
+        "min": 25,
+        "max": 92
+      }
+    },
+    "COLOUR.5b": {
+      "doc": "COLOUR.md",
+      "check": 5,
+      "title": "L* of the darkest 1 %",
+      "norm": {
+        "min": 10,
+        "max": 36
+      }
+    },
+    "COLOUR.5c": {
+      "doc": "COLOUR.md",
+      "check": 5,
+      "title": "L* of the lightest 1 %",
+      "norm": {
+        "min": 87,
+        "max": 98
+      }
+    },
+    "COLOUR.6": {
+      "doc": "COLOUR.md",
+      "check": 6,
+      "title": "number of 30° hue bins holding >= 5 % of the frame (C* >= 15)",
+      "norm": {
+        "min": 3,
+        "max": 5
+      },
+      "limit": {
+        "min": 1,
+        "max": 7
+      },
+      "note": "2 or 6–7 admissible but rare; 1 only with a one-colour backdrop and a dark, almost colourless hero — by eye"
+    },
+    "COLOUR.7": {
+      "doc": "COLOUR.md",
+      "check": 7,
+      "title": "hero separated from the abstract backdrop",
+      "hue_diff_min": 60,
+      "dL_min": 13,
+      "achromatic_hero_C_max": 8,
+      "note": "if the measure took the backdrop seen through the hero or dark inserts as the hero's main colour, check by eye (#77, #115)"
+    },
+    "COLOUR.8a": {
+      "doc": "COLOUR.md",
+      "check": 8,
+      "title": "backdrop main colour C*",
+      "norm": {
+        "min": 42,
+        "max": 95
+      },
+      "limit": {
+        "min": 18
+      }
+    },
+    "COLOUR.8b": {
+      "doc": "COLOUR.md",
+      "check": 8,
+      "title": "backdrop main colour HSV saturation",
+      "norm": {
+        "min": 0.6
+      }
+    },
+    "COLOUR.8c": {
+      "doc": "COLOUR.md",
+      "check": 8,
+      "title": "backdrop main colour L*",
+      "norm": {
+        "min": 42,
+        "max": 84
+      }
+    },
+    "COLOUR.8d": {
+      "doc": "COLOUR.md",
+      "check": 8,
+      "title": "lightness spread inside the backdrop (L* p90 - p10)",
+      "norm": {
+        "min": 9,
+        "max": 35
+      }
+    },
+    "COLOUR.9a": {
+      "doc": "COLOUR.md",
+      "check": 9,
+      "title": "backdrop 3–30 px from the hero minus the four 60 x 60 corners, L*",
+      "limit": {
+        "min": -2
+      },
+      "note": "exceptions: a support under the hero (wood, sand: #95) and a dark backdrop behind a glowing hero — then a breach is a WARN to check by eye"
+    },
+    "COLOUR.9b": {
+      "doc": "COLOUR.md",
+      "check": 9,
+      "title": "chroma drop to the corners (near C* - corner C*)",
+      "norm": {
+        "max": 12
+      }
+    },
+    "COLOUR.9c": {
+      "doc": "COLOUR.md",
+      "check": 9,
+      "title": "hue shift to the corners, degrees",
+      "limit": {
+        "max": 25
+      }
+    },
+    "COLOUR.10": {
+      "doc": "COLOUR.md",
+      "check": 10,
+      "title": "darkest 5 % of the backdrop keep the chroma of its middle (ratio)",
+      "norm": {
+        "min": 0.77
+      },
+      "limit": {
+        "min": 0.45
+      }
+    },
+    "COLOUR.11": {
+      "doc": "COLOUR.md",
+      "check": 11,
+      "title": "coloured shadow: darkest 15 % of each hue family keep the chroma of its mid tones (lowest ratio)",
+      "norm": {
+        "min": 0.58
+      },
+      "limit": {
+        "min": 0.35
+      },
+      "family_min_share": 0.1
+    },
+    "COLOUR.12": {
+      "doc": "COLOUR.md",
+      "check": 12,
+      "title": "share of hue shifts in the wrong direction (shadow towards yellow, light away from yellow)",
+      "limit": {
+        "max": 0.5
+      },
+      "skip_within_deg_of": [
+        60,
+        240
+      ],
+      "skip_deg": 15
+    },
+    "COLOUR.14": {
+      "doc": "COLOUR.md",
+      "check": 14,
+      "title": "day sky at the top: top 12 % band",
+      "hue": {
+        "min": 185,
+        "max": 220
+      },
+      "C": {
+        "min": 20,
+        "max": 75
+      }
+    },
+    "COLOUR.15a": {
+      "doc": "COLOUR.md",
+      "check": 15,
+      "title": "night/dusk: median L* below the day median",
+      "limit": {
+        "max": 65
+      }
+    },
+    "COLOUR.15b": {
+      "doc": "COLOUR.md",
+      "check": 15,
+      "title": "night/dusk: median C* close to day (reference night/dusk range)",
+      "norm": {
+        "min": 26,
+        "max": 50
+      }
+    },
+    "BACKGROUNDS.4a": {
+      "doc": "BACKGROUNDS.md",
+      "check": 4,
+      "title": "pattern step between neighbouring bands, L* (median of measured band edges, as the bible's analysis reported it)",
+      "norm": {
+        "min": 4,
+        "max": 9
+      },
+      "limit": {
+        "max": 15
+      }
+    },
+    "BACKGROUNDS.4b": {
+      "doc": "BACKGROUNDS.md",
+      "check": 4,
+      "title": "pattern band edge width, px (median, 10–90 %)",
+      "norm": {
+        "max": 2
+      },
+      "limit": {
+        "max": 5
+      },
+      "note": "norm: 1–2 px on 44 of 53 measured graphic-pattern reference cards; 2.5–5 px on #12, #35, #44, #47, #50, #66, #73, #107, #137"
+    },
+    "BACKGROUNDS.6a": {
+      "doc": "BACKGROUNDS.md",
+      "check": 6,
+      "title": "rays per full turn",
+      "norm": {
+        "min": 9,
+        "max": 15
+      },
+      "variant": {
+        "min": 26,
+        "max": 32
+      },
+      "variant_note": "about 29 thin rays is an admissible variant (#73)"
+    },
+    "BACKGROUNDS.6b": {
+      "doc": "BACKGROUNDS.md",
+      "check": 6,
+      "title": "light ray / dark gap width, degrees (medians)",
+      "light": {
+        "min": 12,
+        "max": 19
+      },
+      "dark": {
+        "min": 12,
+        "max": 30
+      }
+    },
+    "BACKGROUNDS.6c": {
+      "doc": "BACKGROUNDS.md",
+      "check": 6,
+      "title": "ray centre on the hero's vertical, % of frame width",
+      "limit": {
+        "max": 8
+      }
+    },
+    "BACKGROUNDS.6d": {
+      "doc": "BACKGROUNDS.md",
+      "check": 6,
+      "title": "ray centre height vs hero middle, % of frame height (+ = below)",
+      "floating": {
+        "min": -4,
+        "max": 12
+      },
+      "standing": {
+        "min": -8,
+        "max": 20
+      }
+    },
+    "BACKGROUNDS.7a": {
+      "doc": "BACKGROUNDS.md",
+      "check": 7,
+      "title": "ring centre vs hero centre, % of frame (+ = right/below)",
+      "floating": {
+        "dx": 10,
+        "dy_min": -10,
+        "dy_max": 10
+      },
+      "standing": {
+        "dx": 15,
+        "dy_min": -20,
+        "dy_max": 10
+      }
+    },
+    "BACKGROUNDS.7b": {
+      "doc": "BACKGROUNDS.md",
+      "check": 7,
+      "title": "rings from the centre to the far corner",
+      "limit": {
+        "min": 3.5,
+        "max": 9
+      }
+    },
+    "BACKGROUNDS.7c": {
+      "doc": "BACKGROUNDS.md",
+      "check": 7,
+      "title": "ring period, px",
+      "limit": {
+        "min": 41,
+        "max": 88
+      }
+    },
+    "BACKGROUNDS.8a": {
+      "doc": "BACKGROUNDS.md",
+      "check": 8,
+      "title": "no horizontal stripes (stripe angle from horizontal, degrees)",
+      "limit": {
+        "min": 20
+      },
+      "also": "BASE_RULES.md check 8"
+    },
+    "BACKGROUNDS.8b": {
+      "doc": "BACKGROUNDS.md",
+      "check": 8,
+      "title": "stripe direction: vertical, or rising to the right at about 40° or about 74°; on a wall only vertical",
+      "angles": [
+        40,
+        74,
+        90
+      ]
+    },
+    "BACKGROUNDS.8c": {
+      "doc": "BACKGROUNDS.md",
+      "check": 8,
+      "title": "width of one stripe, px",
+      "norm": {
+        "min": 50,
+        "max": 75
+      },
+      "limit": {
+        "min": 20,
+        "max": 75
+      }
+    },
+    "BACKGROUNDS.9": {
+      "doc": "BACKGROUNDS.md",
+      "check": 9,
+      "title": "floor line height and hero base below it, % of frame height",
+      "eye_level": {
+        "line_min": 63,
+        "line_max": 85,
+        "below_min": 4,
+        "below_max": 25
+      },
+      "high": {
+        "line_min": 46,
+        "line_max": 78,
+        "below_min": 14,
+        "below_max": 40
+      }
+    },
+    "COMPOSITION.2": {
+      "doc": "COMPOSITION.md",
+      "check": 2,
+      "title": "hero box centre, horizontal offset from the frame middle, px",
+      "norm": {
+        "max": 11
+      },
+      "limit": {
+        "max": 22
+      },
+      "note": "more only if the scene explains it (a sign or companion at the side) — by eye",
+      "exceptions": [
+        34,
+        41,
+        90,
+        101,
+        125,
+        138,
+        144
+      ],
+      "exceptions_source": "COMPOSITION.md «Постоянные» 1: the seven reference cards whose offset the scene explains"
+    },
+    "COMPOSITION.3": {
+      "doc": "COMPOSITION.md",
+      "check": 3,
+      "title": "hero box centre below the frame middle (240 px), px (+ = lower); norm and limit by staging group",
+      "groups": {
+        "field": { "norm": { "min": -10, "max": 30 }, "limit": { "min": -45, "max": 75 } },
+        "wall": { "norm": { "min": -5, "max": 30 }, "limit": { "min": -20, "max": 35 } },
+        "none": { "norm": { "min": -35, "max": 25 }, "limit": { "min": -45, "max": 75 } },
+        "environment": { "norm": { "min": -15, "max": 30 }, "limit": { "min": -56, "max": 60 } },
+        "characters": { "norm": { "min": 0, "max": 80 }, "limit": { "min": -17, "max": 95 } }
+      },
+      "groups_rule": "characters > 0 → characters; otherwise the backdrop (field, wall, none, environment)"
+    },
+    "COMPOSITION.4a": {
+      "doc": "COMPOSITION.md",
+      "check": 4,
+      "title": "hero box area, share of the frame",
+      "abstract": {
+        "min": 0.45,
+        "max": 0.7
+      },
+      "environment": {
+        "min": 0.45,
+        "max": 0.85
+      },
+      "characters": {
+        "min": 0.6,
+        "max": 0.9
+      },
+      "limit": {
+        "min": 0.299
+      },
+      "note": "limit «около 30 %»: the smallest reference hero is 29.9 % (#44)"
+    },
+    "COMPOSITION.4b": {
+      "doc": "COMPOSITION.md",
+      "check": 4,
+      "title": "hero box width on an abstract backdrop, share of the frame",
+      "norm": {
+        "min": 0.6,
+        "max": 0.9
+      },
+      "limit": {
+        "min": 0.43,
+        "max": 0.96
+      }
+    },
+    "COMPOSITION.5a": {
+      "doc": "COMPOSITION.md",
+      "check": 5,
+      "title": "top margin to the main mass (thin tips excluded), px",
+      "limit": {
+        "min": 38
+      },
+      "exceptions": [
+        32,
+        38,
+        45,
+        132
+      ],
+      "exceptions_source": "COMPOSITION.md check 5: thin tips allowed above the margin (#45 straw, #132 umbrella, #38 top of the neon sign) and the cut thin tail of #32"
+    },
+    "COMPOSITION.5b": {
+      "doc": "COMPOSITION.md",
+      "check": 5,
+      "title": "smallest side margin, px",
+      "norm": {
+        "min": 17
+      },
+      "limit": {
+        "min": 8
+      }
+    },
+    "COMPOSITION.5c": {
+      "doc": "COMPOSITION.md",
+      "check": 5,
+      "title": "object on an abstract backdrop or at a wall is whole: share of a frame edge covered by the hero mask",
+      "exceptions": [
+        32,
+        55
+      ],
+      "exceptions_source": "COMPOSITION.md check 5: a thin long tail of a structure cut by the edge (#32) and a door built into the wall, cut by the bottom edge with it (#55)"
+    },
+    "COMPOSITION.11": {
+      "doc": "COMPOSITION.md",
+      "check": 11,
+      "title": "safe zone: no main mass in the top 40 px and in the rounded 80 x 80 top corners",
+      "rect": [
+        25,
+        45,
+        405,
+        465
+      ],
+      "corner": 80,
+      "top_band": 40,
+      "note": "the bible checks the main mass only against the top 40 px and the rounded top corners (beyond the 80 px arc: FAIL; inside the 80 x 80 square: look by eye); the rect x 25–405, y 45–465 is for faces, eyes and text, by eye — at the sides and bottom the main mass follows checks 5 and 6",
+      "exceptions": [
+        132
+      ],
+      "exceptions_source": "COMPOSITION.md check 5: the umbrella tip of #132 is a named thin tip allowed above the margin"
+    },
+    "RENDERING.2": {
+      "doc": "RENDERING.md",
+      "check": 2,
+      "title": "(guide only, never a failure) highlight centroid above, shade centroid below the hero centre",
+      "info_only": true
+    },
+    "RENDERING.3": {
+      "doc": "RENDERING.md",
+      "check": 3,
+      "title": "night/dusk: luma of the darkest 0.5 % > 25 and of the lightest 0.5 % > 200",
+      "dark_min": 25,
+      "light_min": 200,
+      "proposed": true
+    },
+    "RENDERING.4": {
+      "doc": "RENDERING.md",
+      "check": 4,
+      "title": "no outline: dark-band share at the silhouette in the cleanest of 8 directions",
+      "limit": {
+        "max": 0.45
+      },
+      "proposed": true,
+      "avoid": [
+        23,
+        83
+      ],
+      "avoid_source": "RENDERING.md 1.1: drawn contour lines only on #23; #83 drawn as a flat icon; both are what to avoid (author's decision)"
+    },
+    "RENDERING.6": {
+      "doc": "RENDERING.md",
+      "check": 6,
+      "title": "hero-to-backdrop transition width, px (median, 10–90 %)",
+      "limit": {
+        "max": 6
+      }
+    },
+    "RENDERING.11": {
+      "doc": "RENDERING.md",
+      "check": 11,
+      "title": "near-white (luma >= 235, low saturation) share of the hero",
+      "norm": {
+        "max": 0.1
+      },
+      "note": "more only if the hero has big white parts (dial, paper, white body) — by eye"
+    },
+    "RENDERING.16a": {
+      "doc": "RENDERING.md",
+      "check": 16,
+      "title": "grain in flat areas (mean |Laplacian| of luma); reference range from «Обработка после рисования»",
+      "limit": {
+        "max": 4.43
+      },
+      "target": {
+        "max": 2.5
+      },
+      "target_source": "RENDERING.md «Резкость при обработке: цель и начальные настройки»: the aim of the adjustment step, not a check"
+    },
+    "RENDERING.16b": {
+      "doc": "RENDERING.md",
+      "check": 16,
+      "title": "no JPEG 8 x 8 grid (strongest of 8 phases / mean of the others; above 1.2 only on one axis of six reference cards)",
+      "grid_max": 1.2
+    },
+    "RENDERING.17a": {
+      "doc": "RENDERING.md",
+      "check": 17,
+      "title": "median overshoot at sharp luma steps",
+      "limit": {
+        "max": 0.36
+      },
+      "halo_warn": 0.18,
+      "target": {
+        "min": 0.08,
+        "max": 0.16
+      },
+      "target_grand_style": {
+        "max": 0.05
+      },
+      "target_source": "RENDERING.md «Резкость при обработке: цель и начальные настройки»: the aim of the adjustment step (a scene matching the soft grand set gets no sharpening), not a check"
+    },
+    "RENDERING.17b": {
+      "doc": "RENDERING.md",
+      "check": 17,
+      "title": "median width of sharp luma steps over the whole card, px",
+      "limit": {
+        "min": 2,
+        "max": 5
+      },
+      "target": {
+        "min": 2,
+        "max": 3
+      },
+      "target_source": "RENDERING.md «Резкость при обработке: цель и начальные настройки»: the aim of the adjustment step, not a check"
+    }
+  },
+  "visual": [
+    {
+      "id": "BASE_RULES.2-7",
+      "doc": "BASE_RULES.md",
+      "check": "2–7",
+      "what": "staging reads as the ordered category (1 floats with no support on a pattern or near-flat sky/water; 2 plain untextured floor or wall; 3 visible real material under the hero, abstract backdrop or one flat wall; 4 ground/horizon with 3+ planes, a surface filling the frame, an interior, or a structure cut by the bottom edge against plain sky; 5 one or two of the five characters in a category-4 setting)"
+    },
+    {
+      "id": "BASE_RULES.1",
+      "doc": "BASE_RULES.md",
+      "check": 1,
+      "what": "no plate, stars or caption drawn in the picture"
+    },
+    {
+      "id": "BASE_RULES.9",
+      "doc": "BASE_RULES.md",
+      "check": 9,
+      "what": "no fine surface texture on the hero (also RENDERING 12)"
+    },
+    {
+      "id": "BACKGROUNDS.2",
+      "doc": "BACKGROUNDS.md",
+      "check": 2,
+      "what": "staging and category by the tables; for categories 2 and 3 whether the support's material texture is visible"
+    },
+    {
+      "id": "BACKGROUNDS.3",
+      "doc": "BACKGROUNDS.md",
+      "check": 3,
+      "what": "a floating hero: patterned backdrop (not a plain gradient), no shadow patch below it, not in a setting with ground and horizon",
+      "applies": "floating"
+    },
+    {
+      "id": "BACKGROUNDS.4",
+      "doc": "BACKGROUNDS.md",
+      "check": 4,
+      "what": "pattern in one hue, no second pattern over it",
+      "applies": "abstract"
+    },
+    {
+      "id": "BACKGROUNDS.5",
+      "doc": "BACKGROUNDS.md",
+      "check": 5,
+      "what": "glow centre behind the hero; without a dome the floor or the lower half is lighter (by eye only: the bible gives no number)",
+      "applies": "abstract"
+    },
+    {
+      "id": "BACKGROUNDS.9",
+      "doc": "BACKGROUNDS.md",
+      "check": 9,
+      "what": "floor runs the full width to the bottom edge; far edge straight for a plain plane or boards, ragged for grass, wavy for sand and waves",
+      "applies": "floor"
+    },
+    {
+      "id": "BACKGROUNDS.10",
+      "doc": "BACKGROUNDS.md",
+      "check": 10,
+      "what": "no backdrop: no sky, wall or horizon; a dividing diagonal is welcome",
+      "applies": "none"
+    },
+    {
+      "id": "BACKGROUNDS.11",
+      "doc": "BACKGROUNDS.md",
+      "check": 11,
+      "what": "setting: 3–4 planes (1–2 in open sky or water); far plane softer but no bokeh; horizon behind the hero at a height matching the camera; clouds and branches do not cross the middle of the hero's silhouette; sky lightens downwards",
+      "applies": "environment"
+    },
+    {
+      "id": "BACKGROUNDS.12",
+      "doc": "BACKGROUNDS.md",
+      "check": 12,
+      "what": "characters only in a setting",
+      "applies": "characters"
+    },
+    {
+      "id": "BACKGROUNDS.13",
+      "doc": "BACKGROUNDS.md",
+      "check": 13,
+      "what": "an object without characters is shown by day unless the object needs light (neon, headlights, sunset over a road)",
+      "applies": "object"
+    },
+    {
+      "id": "COLOUR.13",
+      "doc": "COLOUR.md",
+      "check": 13,
+      "what": "lit white is warm cream or neutral; white in shadow is cool or neutral, never yellow-grey or brown-grey"
+    },
+    {
+      "id": "COLOUR.15",
+      "doc": "COLOUR.md",
+      "check": 15,
+      "what": "night sky blue, ultramarine or blue-violet; window and lamp light warm yellow",
+      "applies": "night"
+    },
+    {
+      "id": "COMPOSITION.1",
+      "doc": "COMPOSITION.md",
+      "check": 1,
+      "what": "one hero object or one scene; at most two companions"
+    },
+    {
+      "id": "COMPOSITION.6",
+      "doc": "COMPOSITION.md",
+      "check": 6,
+      "what": "crop: in a setting or scene the bottom and sides may be cut; the top only for a structure or the background, never a head"
+    },
+    {
+      "id": "COMPOSITION.7",
+      "doc": "COMPOSITION.md",
+      "check": 7,
+      "what": "camera not straight down (steeper than 60°); from below only for a tall or heroic hero; no backdrop: from above at an angle"
+    },
+    {
+      "id": "COMPOSITION.8",
+      "doc": "COMPOSITION.md",
+      "check": 8,
+      "what": "tilt: a floating object 0–40° (15–30° preferred); a standing object upright unless leaning"
+    },
+    {
+      "id": "COMPOSITION.9",
+      "doc": "COMPOSITION.md",
+      "check": 9,
+      "what": "volume: a boxy object shows two sides or the top; front-on only with relief, round body, deep opening or visible thickness and shadow; never a flat sticker (#23, #83)"
+    },
+    {
+      "id": "COMPOSITION.10",
+      "doc": "COMPOSITION.md",
+      "check": 10,
+      "what": "number of separate things: 1–3 normal, 4–7 admissible, 8+ only if the hero is made of or filled with many parts"
+    },
+    {
+      "id": "COMPOSITION.11",
+      "doc": "COMPOSITION.md",
+      "check": 11,
+      "what": "faces, eyes, text and anything that must read inside x 25–405, y 45–465 and outside the 80 x 80 top corner squares; only backdrop and thin tips in the top 40 px and the rounded top corners (when the main mass was not measured this is the whole check)"
+    },
+    {
+      "id": "COMPOSITION.12",
+      "doc": "COMPOSITION.md",
+      "check": 12,
+      "what": "brand mark: only a house or a cow head, one per card, not on a character scene by default; on the front face, silhouette 25–80 px (8–25 % of the hero box width), made in the material and light of the thing"
+    },
+    {
+      "id": "RENDERING.1",
+      "doc": "RENDERING.md",
+      "check": 1,
+      "what": "key light from the upper left: brightest faces top and top-left, shade bottom and right; cast shadow to the right or lower right; a rim light from any side is fine"
+    },
+    {
+      "id": "RENDERING.5",
+      "doc": "RENDERING.md",
+      "check": 5,
+      "what": "a light rim usually along the top edges (with check 4)"
+    },
+    {
+      "id": "RENDERING.7",
+      "doc": "RENDERING.md",
+      "check": 7,
+      "what": "no sharp edges or straight drafting edges; thin parts thicker than real; squat proportions"
+    },
+    {
+      "id": "RENDERING.8",
+      "doc": "RENDERING.md",
+      "check": 8,
+      "what": "a visible support has a contact shadow; a floating hero has no shadow"
+    },
+    {
+      "id": "RENDERING.9",
+      "doc": "RENDERING.md",
+      "check": 9,
+      "what": "soft shadows, penumbra well over a couple of pixels; no hard cast shadow"
+    },
+    {
+      "id": "RENDERING.12-14",
+      "doc": "RENDERING.md",
+      "check": "12–14",
+      "what": "no fine texture (mesh, pile, terry, weave, frost, soot, pores, hairlines); wear rare and in bold simple shapes (a paint chip), no rust, dirt stains or scratch networks; small parts readable and rounded; hero smooth, no brush strokes; foliage as clumps of glossy leaves"
+    },
+    {
+      "id": "RENDERING.15",
+      "doc": "RENDERING.md",
+      "check": 15,
+      "what": "effects soft, semi-transparent, simplified; a glow does not change the hero's lighting"
+    },
+    {
+      "id": "RENDERING.16",
+      "doc": "RENDERING.md",
+      "check": 16,
+      "what": "no visible grain or noise at full size; no vignette"
+    },
+    {
+      "id": "CHARACTERS.1-11",
+      "doc": "CHARACTERS.md",
+      "check": "1–11",
+      "what": "1–2 of the five characters, each recognisable by the main feature and colour landmarks, clothing rules, real setting, head fully in frame (top not above 25 px), scene box 60–90 % of the frame, view not profile, the character does something with an item of its set, one gentle joke that reads at a glance (twist object fully in frame, reaction in face and gaze), figure cut as ordered",
+      "applies": "characters"
+    }
+  ],
+  "method": {
+    "frame_dE": {
+      "value": 12,
+      "source": "script: an edge line counts as a band where it differs from the picture 6–8 px inside by more than this dE"
+    },
+    "frame_share": {
+      "value": 0.9,
+      "source": "script: a side has a band when that share of its positions differs; four sides = frame (FAIL), one to three = plate or strip (WARN)"
+    },
+    "main_mass_open_px": {
+      "value": 5,
+      "source": "script: the hero mask opened by this radius drops parts thinner than 11 px — the «thin tips» COMPOSITION 5 and 11 allow above the margins"
+    },
+    "safe_zone_tolerance_px": {
+      "value": 0,
+      "source": "script: main-mass pixels allowed outside the safe zone"
+    },
+    "stripe_angle_tolerance_deg": {
+      "value": 10,
+      "source": "script: how far a measured stripe angle may be from 40°, 74° or 90°"
+    },
+    "rays_cut_from_below_skip_height": {
+      "value": true,
+      "source": "BACKGROUNDS 6: for a hero cut by the bottom edge the ray centre goes down with it — height not checked"
+    },
+    "exclusion_box_without_hero_pct": {
+      "value": [
+        15,
+        10,
+        85,
+        90
+      ],
+      "source": "script: when the hero was not found, the backdrop measures skip this central box (x0, y0, x1, y1 in % of the frame); hero-relative checks are then not measured"
+    },
+    "floor_supports": {
+      "value": [
+        "ephemeral",
+        "fragment",
+        "ground",
+        "furniture"
+      ],
+      "source": "BACKGROUNDS.md «Линия пола и камера»: the supports whose floor line the bible measured on abstract backdrops (plain floor, piece of real surface, floor at a wall or furniture)"
+    },
+    "tail_cover_max": {
+      "value": 0.15,
+      "source": "script: a hero touching an edge over at most this share of the edge length is a thin cut-off tail (COMPOSITION 5 allows it; the poles of #3 and #12 cover about 5 %)"
+    },
+    "compare_at_bible_precision": {
+      "value": true,
+      "source": "script: a measured value is rounded to the decimals of the bible threshold before comparing (the bible gives 15 rays for a measured 15.1 on #11, 46 % for a measured 45.8 % on #32)"
+    },
+    "known_measure_failures": {
+      "value": {
+        "BACKGROUNDS.6c": [
+          85,
+          142
+        ],
+        "BACKGROUNDS.6d": [
+          85,
+          142
+        ],
+        "BACKGROUNDS.6a": [
+          85,
+          142
+        ],
+        "BACKGROUNDS.6b": [
+          85,
+          142
+        ],
+        "BACKGROUNDS.4a": [
+          85
+        ],
+        "BACKGROUNDS.7a": [
+          146
+        ],
+        "BACKGROUNDS.7b": [
+          146
+        ],
+        "BACKGROUNDS.7c": [
+          146
+        ],
+        "BACKGROUNDS.8a": [
+          8,
+          20,
+          44,
+          121
+        ],
+        "BACKGROUNDS.8b": [
+          8,
+          20,
+          44,
+          121
+        ],
+        "BACKGROUNDS.8c": [
+          8,
+          20,
+          44,
+          121
+        ]
+      },
+      "source": "the bible's analysis: reference cards whose automatic ray / ring / stripe centre or period (and the step of #85) was checked by eye and found wrong when the bible was written; the bible gives eye estimates for them"
+    }
+  }
+}

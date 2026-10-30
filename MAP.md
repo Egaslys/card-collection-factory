@@ -14,7 +14,7 @@ Update this map in the same task when an area, an entry point, a system file or 
 
 ## Product
 
-- `styles/` — art styles the product generates in; one per folder. `styles/scapes/` — the first style: its style bible (`README.md` is the entry point and map of the bible documents); `references/` — all 160 reference cards with an index (`references/README.md`); `research/` inside is local, ignored by Git.
+- `styles/` — art styles the product generates in; one per folder. `styles/scapes/` — the first style: its style bible (`README.md` is the entry point and map of the bible documents); `references/` — all 160 reference cards with an index (`references/README.md`); `checks/` — the automated part of the bible's checks (`check-card.mjs` with `thresholds.json`, the control-run spec of the references, `adjust-trial.mjs` for post-generation adjustments; needs ffmpeg; entry point `checks/README.md`); `research/` inside is local, ignored by Git.
 
 ## Agent setup
 
@@ -30,7 +30,7 @@ Update this map in the same task when an area, an entry point, a system file or 
 - `tools/agent-doctor.mjs`, `tools/sync-agents.mjs` — diagnosis of the agent setup and generation of native skill copies.
 - `tools/trash.mjs` — the only sanctioned way to delete: to the OS trash, only inside the project and Claude Code's temporary folders.
 - `tools/cli-args.mjs` — the shared command line of the scripts (`--help`, refusing unknown options).
-- `tests/` — tests of the agent setup, hooks, status line and tools.
+- `tests/` — tests of the agent setup, hooks, status line and tools, and a short run of the Scapes checks.
 
 ## Changes
 
