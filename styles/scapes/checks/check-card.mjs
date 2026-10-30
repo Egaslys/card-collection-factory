@@ -6,6 +6,8 @@
 // measured value, the threshold and the bible document and check number. Thresholds come only from
 // thresholds.json next to this script. Checks that need eyes are listed per card as «visual».
 // Measures: measures.mjs (the method that produced the bible's numbers). Reads images with sharp (npm install).
+// Imported as a module it runs nothing: `checkCard`, `restsOnUnconfirmedMask` and `CARD_SIZE` are its contract
+// with the card loop (core/card/check.js); the command line below runs only when this file is the entry point.
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,7 +16,7 @@ import * as M from './measures.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REFERENCE_SPEC = join(HERE, 'reference-spec.json');
-const { values: opts } = await cli({
+const CLI_SPEC = {
   name: 'styles/scapes/checks/check-card.mjs',
   usage: ['styles/scapes/checks/check-card.mjs [--spec SPEC.json] [--only ID,ID] [--json OUT.json] [--summary] [--quiet] [--no-visual] [--overlays DIR]'],
   about: `Checks Scapes cards against the bible («Проверка» sections) wherever pixels can answer; prints PASS / WARN /
@@ -50,12 +52,11 @@ The spec is JSON {"cards": [ {...}, ... ]}; one entry per card:
     'no-visual': { type: 'boolean', help: 'do not print the visual checklist per card' },
     overlays: { type: 'string', value: 'DIR', help: 'write <id>.mask.png per card: the proposed hero mask over the card, to confirm or reject it' },
   },
-});
+};
 const CFG = JSON.parse(readFileSync(join(HERE, 'thresholds.json'), 'utf8'));
 const T = CFG.checks, METHOD = Object.fromEntries(Object.entries(CFG.method).map(([k, v]) => [k, v.value]));
-const specFile = resolve(opts.spec || REFERENCE_SPEC);
-const SPEC = JSON.parse(readFileSync(specFile, 'utf8'));
-const only = opts.only ? new Set(opts.only.split(',')) : null;
+/** The card size of the style (BASE_RULES.1): the size a model image is prepared to. */
+export const CARD_SIZE = { width: T['BASE_RULES.1'].size[0], height: T['BASE_RULES.1'].size[1] };
 
 // ---------- result helpers ----------
 const fmt = v => v == null ? 'n/a' : typeof v === 'number' ? String(+v.toFixed(3)) : Array.isArray(v) ? `[${v.join(', ')}]` : String(v);
@@ -81,9 +82,17 @@ function range(id, v, { norm, limit, note, soft } = {}) {
 const na = (id, why) => make(id, 'N/A', null, null, why);
 const nm = (id, why) => make(id, 'NOT_MEASURED', null, null, why);
 
+// a FAIL that rests on an unconfirmed mask may be the mask's fault (it can take a shadow, a stand or the floor)
+const maskBased = /^(COLOUR\.(7|8|9|10|11|12)|RENDERING\.(4|6|11)|BACKGROUNDS\.(6c|6d|7a|9)|COMPOSITION\.)/;
+/** True when result r of a card with hero info `hero` is a FAIL that rests on a mask nobody has confirmed. */
+export const restsOnUnconfirmedMask = (r, hero) => r.status === 'FAIL' && hero?.mask_status === 'proposal' && maskBased.test(r.id)
+  && !(r.id.startsWith('COMPOSITION') && hero.box_source === 'spec');
+
 // ---------- one card ----------
-async function checkCard(card) {
-  const file = resolve(dirname(specFile), card.file);
+// card: one spec entry (see --help); baseDir: the folder card.file is relative to; overlaysDir: where to write
+// <id>.mask.png (optional). Returns { id, file, staging, hero, measures, results, visual }.
+export async function checkCard(card, { baseDir, overlaysDir } = {}) {
+  const file = resolve(baseDir || '.', card.file);
   if (!existsSync(file)) throw new Error(`${card.id}: no such file ${file}`);
   const s = { category: card.category, backdrop: card.backdrop, pattern: card.pattern || 'n/a', placement: card.placement, support: card.support || 'none', camera: card.camera || 'eye_level', characters: +card.characters || 0, time: card.time || 'n/a', sky_top: !!card.sky_top };
   const abstract = s.backdrop === 'field' || s.backdrop === 'wall';
@@ -109,7 +118,7 @@ async function checkCard(card) {
 
   // hero
   const mask = M.heroMask(P);
-  if (opts.overlays && mask.box) await M.writeOverlay(P, mask.fg, mask.box, join(resolve(opts.overlays), `${String(card.id).replace(/[^\w.-]+/g, '_')}.mask.png`));
+  if (overlaysDir && mask.box) await M.writeOverlay(P, mask.fg, mask.box, join(resolve(overlaysDir), `${String(card.id).replace(/[^\w.-]+/g, '_')}.mask.png`));
   const maskStatus = !mask.ok ? 'not found' : card.mask === 'rejected' ? 'rejected' : card.mask === 'confirmed' ? 'confirmed' : 'proposal';
   if (maskStatus === 'rejected') { mask.ok = false; mask.reason = 'the mask was rejected by a person (spec "mask": "rejected")'; }
   const box = card.hero_box || (mask.ok ? mask.box : null);
@@ -277,9 +286,7 @@ async function checkCard(card) {
   { const t = T['RENDERING.17a']; const r = range('RENDERING.17a', ov.overshoot_med); if (r.status === 'PASS' && ov.overshoot_med >= t.halo_warn) { r.status = 'WARN'; r.note = `≥ ${t.halo_warn}: visible halos, stronger than most reference cards`; } res.push(r); }
   res.push(range('RENDERING.17b', ov.width_med, { note: `${ov.steps} steps` }));
 
-  // a FAIL that rests on an unconfirmed mask may be the mask's fault (it can take a shadow, a stand or the floor)
-  const maskBased = /^(COLOUR\.(7|8|9|10|11|12)|RENDERING\.(4|6|11)|BACKGROUNDS\.(6c|6d|7a|9)|COMPOSITION\.)/;
-  if (maskStatus === 'proposal') for (const r of res) if (r.status === 'FAIL' && maskBased.test(r.id) && !(r.id.startsWith('COMPOSITION') && hero.box_source === 'spec'))
+  for (const r of res) if (restsOnUnconfirmedMask(r, hero))
     r.note = `${r.note ? r.note + '; ' : ''}rests on an unconfirmed mask: look at the overlay (--overlays)`;
   // avoid lists
   for (const r of res) {
@@ -299,30 +306,36 @@ async function checkCard(card) {
 }
 
 // ---------- run ----------
-const out = [];
-const cards = SPEC.cards.filter(c => !only || only.has(String(c.id)));
-if (only && cards.length !== only.size) { console.error(`unknown id in --only: ${[...only].filter(i => !SPEC.cards.some(c => String(c.id) === i)).join(', ')}`); process.exit(2); }
-for (const card of cards) {
-  const r = await checkCard(card); out.push(r);
-  const s = r.staging;
-  console.log(`\n== ${r.id}  (cat ${s.category}, ${s.backdrop}/${s.pattern}, ${s.placement} on ${s.support}, camera ${s.camera}, characters ${s.characters}, time ${s.time})`);
-  console.log(r.hero ? `   hero: ${r.hero.box ? `${r.hero.box_source} box [${r.hero.box.join(', ')}], mask ${r.hero.mask_status}` : `not found — ${r.hero.mask_reason}`}` : '');
-  for (const x of r.results) {
-    if (opts.quiet && !['WARN', 'FAIL'].includes(x.status)) continue;
-    console.log(`  ${x.status.padEnd(12)} ${x.id.padEnd(16)} ${x.title}: ${fmt(x.value)}${x.threshold ? `  | ${x.threshold}` : ''}  [${x.doc} #${x.check}]${x.note ? `  — ${x.note}` : ''}${x.expected ? `  (expected: ${x.expected})` : ''}`);
+if (import.meta.main) {
+  const { values: opts } = await cli(CLI_SPEC);
+  const specFile = resolve(opts.spec || REFERENCE_SPEC);
+  const SPEC = JSON.parse(readFileSync(specFile, 'utf8'));
+  const only = opts.only ? new Set(opts.only.split(',')) : null;
+  const out = [];
+  const cards = SPEC.cards.filter(c => !only || only.has(String(c.id)));
+  if (only && cards.length !== only.size) { console.error(`unknown id in --only: ${[...only].filter(i => !SPEC.cards.some(c => String(c.id) === i)).join(', ')}`); process.exit(2); }
+  for (const card of cards) {
+    const r = await checkCard(card, { baseDir: dirname(specFile), overlaysDir: opts.overlays }); out.push(r);
+    const s = r.staging;
+    console.log(`\n== ${r.id}  (cat ${s.category}, ${s.backdrop}/${s.pattern}, ${s.placement} on ${s.support}, camera ${s.camera}, characters ${s.characters}, time ${s.time})`);
+    console.log(r.hero ? `   hero: ${r.hero.box ? `${r.hero.box_source} box [${r.hero.box.join(', ')}], mask ${r.hero.mask_status}` : `not found — ${r.hero.mask_reason}`}` : '');
+    for (const x of r.results) {
+      if (opts.quiet && !['WARN', 'FAIL'].includes(x.status)) continue;
+      console.log(`  ${x.status.padEnd(12)} ${x.id.padEnd(16)} ${x.title}: ${fmt(x.value)}${x.threshold ? `  | ${x.threshold}` : ''}  [${x.doc} #${x.check}]${x.note ? `  — ${x.note}` : ''}${x.expected ? `  (expected: ${x.expected})` : ''}`);
+    }
+    if (!opts['no-visual']) { console.log('  visual (for a person or an agent):'); for (const v of r.visual) console.log(`    - [${v.doc} #${v.check}] ${v.what}`); }
   }
-  if (!opts['no-visual']) { console.log('  visual (for a person or an agent):'); for (const v of r.visual) console.log(`    - [${v.doc} #${v.check}] ${v.what}`); }
-}
-if (opts.summary) {
-  const ids = [...new Set(out.flatMap(r => r.results.map(x => x.id)))];
-  console.log(`\n== summary over ${out.length} cards: PASS / WARN / FAIL / not measured / n/a; FAIL cards (* = expected: a card the bible says to avoid, a named exception, or a known measurement failure)`);
-  for (const id of ids) {
-    const rs = out.map(r => ({ card: r.id, x: r.results.find(x => x.id === id) })).filter(o => o.x);
-    const c = st => rs.filter(o => o.x.status === st).length;
-    const fails = rs.filter(o => o.x.status === 'FAIL').map(o => o.card + (o.x.expected ? '*' : ''));
-    console.log(`  ${id.padEnd(16)} ${c('PASS')} / ${c('WARN')} / ${c('FAIL')} / ${c('NOT_MEASURED')} / ${c('N/A')}${c('INFO') ? ` / info ${c('INFO')}` : ''}${fails.length ? `   FAIL: ${fails.join(' ')}` : ''}`);
+  if (opts.summary) {
+    const ids = [...new Set(out.flatMap(r => r.results.map(x => x.id)))];
+    console.log(`\n== summary over ${out.length} cards: PASS / WARN / FAIL / not measured / n/a; FAIL cards (* = expected: a card the bible says to avoid, a named exception, or a known measurement failure)`);
+    for (const id of ids) {
+      const rs = out.map(r => ({ card: r.id, x: r.results.find(x => x.id === id) })).filter(o => o.x);
+      const c = st => rs.filter(o => o.x.status === st).length;
+      const fails = rs.filter(o => o.x.status === 'FAIL').map(o => o.card + (o.x.expected ? '*' : ''));
+      console.log(`  ${id.padEnd(16)} ${c('PASS')} / ${c('WARN')} / ${c('FAIL')} / ${c('NOT_MEASURED')} / ${c('N/A')}${c('INFO') ? ` / info ${c('INFO')}` : ''}${fails.length ? `   FAIL: ${fails.join(' ')}` : ''}`);
+    }
   }
+  if (opts.json) writeFileSync(resolve(opts.json), JSON.stringify(out, null, 1));
+  const hard = out.reduce((n, r) => n + r.results.filter(x => x.status === 'FAIL' && !x.expected).length, 0);
+  process.exitCode = hard ? 1 : 0;
 }
-if (opts.json) writeFileSync(resolve(opts.json), JSON.stringify(out, null, 1));
-const hard = out.reduce((n, r) => n + r.results.filter(x => x.status === 'FAIL' && !x.expected).length, 0);
-process.exitCode = hard ? 1 : 0;

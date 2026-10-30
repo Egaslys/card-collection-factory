@@ -395,6 +395,7 @@
 
 Фрагменты для блока стиля в промпте генерации. Квадратные скобки — когда фрагмент подставлять.
 
+<!-- fragment: render.style -->
 ```
 Stylized 3D render look: simplified, rounded, slightly chunky toy-like forms with soft bevelled edges; thin parts (handles, ropes, rods, cables) are drawn thicker than in reality, small parts slightly enlarged.
 No outlines and no linework anywhere. Every edge is defined only by a change of tone and colour: lit top edges carry a thin soft light rim, undersides roll into a darker, richer shade of the same colour.
@@ -414,6 +415,7 @@ Clean image: no film grain, no noise, no vignette, no heavy sharpening halos.
 
 Материалы — по одному фрагменту на материал героя:
 
+<!-- fragment: render.materials -->
 ```
 [glossy plastic] Glossy plastic: clean saturated colour, smooth gradient from a light top to a rich darker underside, a broad soft highlight band and a small hotspot, bevelled edges with a light rim.
 [metal] Metal: cool grey-blue or painted, crisp light and dark reflection bands of a plain studio environment.

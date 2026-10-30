@@ -1,0 +1,187 @@
+{
+  "_about": "How the program assembles the image-model prompt of a Scapes card from the bible's fragments (core/style/prompt.js reads this file; the format is described in core/style/README.md). The fragment texts are NOT here: they live in the bible documents listed under `documents`, each marked by `<!-- fragment: <id> -->`; this file only says which fragment goes where, in the order of PROMPTS.md, and how its slots are filled. `fields` is the staging vocabulary of a card order: the first nine fields are the spec fields of checks/check-card.mjs (same names and values; tests/style-prompt.test.mjs compares them with its --help), the rest are prompt-only choices that pick a variant inside a fragment. `templates` and `references.note_*` are glue text written for the program, not bible fragments: the labels «Subject:», «Staging:», «Here:» and the reference-image notes come from the pilot generation (styles/scapes/research/pilot, local) and are not yet in the bible. `references.count` = 2 is the pilot's value; the bible has not decided how many references to pass (PROMPTS.md «Не решено»). `references.weights` and `references.exclude` are the program's choice of how to rank reference cards; exclude lists the cards the bible says not to repeat (RENDERING.md «Чего избегать»: flat drawing #23 #83, fine texture #14 #47 #71 #97 #137, main light from the right #14 #56).",
+  "documents": ["BASE_RULES.md", "BACKGROUNDS.md", "COMPOSITION.md", "COLOUR.md", "RENDERING.md", "CHARACTERS.md"],
+
+  "fields": {
+    "category":   { "values": [1, 2, 3, 4, 5], "required": true },
+    "backdrop":   { "values": ["field", "wall", "environment", "none"], "required": true },
+    "pattern":    { "values": ["rays", "rings", "spiral", "stripes_straight", "stripes_wavy", "rhombi", "checker", "motif_repeat", "brick", "plain_gradient", "other", "n/a"], "required": true },
+    "placement":  { "values": ["floating_field", "hung_from_above", "wall_mounted", "resting", "embedded", "lying_top_down", "floating_native", "other"], "required": true },
+    "support":    { "values": ["none", "ephemeral", "fragment", "ground", "furniture", "fills_frame", "wall_fixed", "other"], "required": true },
+    "camera":     { "values": ["eye_level", "high", "low"], "required": true },
+    "characters": { "values": [0, 1, 2], "required": true },
+    "time":       { "values": ["day", "golden", "dusk", "night", "n/a"], "required": true },
+    "sky_top":    { "values": [true, false], "required": true },
+
+    "stripes":    { "values": ["vertical", "diagonal"], "required_when": [{ "pattern": ["stripes_straight"] }] },
+    "surface":    { "values": ["sand", "grass", "wood", "deck", "tiles", "water"], "required_when": [{ "category": [3], "placement": ["resting"], "support": ["fragment"] }, { "backdrop": ["none"] }] },
+    "medium":     { "values": ["sky", "water"], "required_when": [{ "category": [1], "placement": ["floating_native"] }] },
+    "setting":    { "values": ["outdoor", "interior", "sky_structure"], "required_when": [{ "category": [4], "backdrop": ["environment"] }] },
+    "wall":       { "values": ["stripes", "planks", "brick", "curtain", "plain", "plaster"], "required_when": [{ "placement": ["wall_mounted"] }, { "category": [3], "backdrop": ["wall"], "placement": ["resting"], "support": ["ground"] }] },
+    "floor":      { "values": ["wood", "tiles", "stage"], "required_when": [{ "category": [3], "backdrop": ["wall"], "placement": ["resting"], "support": ["ground"] }] },
+    "shape":      { "values": ["boxy", "front_facing", "flat"], "default": "boxy" },
+    "material":   { "values_from": "render.materials", "list": true, "required_when": [{ "category": [1, 2, 3, 4] }] },
+    "effects":    { "values": [true, false], "default": false },
+    "stage_lights": { "values": [true, false], "default": false },
+    "brand":      { "values": ["house", "cow"] },
+    "brand_finish": { "values": ["embossed", "patch", "carved", "sticker", "stamp"], "required_when": [{ "brand": ["house", "cow"] }] }
+  },
+
+  "forbid": [
+    { "when": { "placement": ["floating_field"], "pattern": ["plain_gradient"] }, "message": "висящий предмет на ровном градиенте без узора — то, чего избегать (BASE_RULES.md «Чего избегать»)" },
+    { "when": { "characters": [1, 2], "backdrop": ["field"] }, "message": "персонаж на абстрактном поле — то, чего избегать (BASE_RULES.md «Чего избегать»)" },
+    { "when": { "category": [5], "characters": [0] }, "message": "категория 5 — сцена с персонажами: staging.characters должно быть 1 или 2" },
+    { "when": { "category": [1, 2, 3, 4], "characters": [1, 2] }, "message": "персонажи — только в категории 5 (BACKGROUNDS.md «Категория как следствие постановки»)" }
+  ],
+
+  "cast": {
+    "man":     { "fragment": "char.man",     "index_name": "мужчина" },
+    "pig":     { "fragment": "char.pig",     "index_name": "свинья" },
+    "sheep":   { "fragment": "char.sheep",   "index_name": "овца" },
+    "rooster": { "fragment": "char.rooster", "index_name": "петух" },
+    "cow":     { "fragment": "char.cow",     "index_name": "корова" }
+  },
+
+  "slots": {
+    "object": "object",
+    "structure": "object",
+    "place": "place",
+    "environment": "environment",
+    "motif from the set theme": "motif",
+    "subject": "subject",
+    "palette": "palette",
+    "theme": "scene.theme",
+    "who": "$cast",
+    "one or two of the cast": { "field": "characters", "map": { "1": "one of the cast", "2": "two of the cast" } },
+    "time of day": "scene.time",
+    "does what": "scene.action",
+    "set item": "scene.item",
+    "twist": "scene.joke",
+    "who reacts": "scene.reactor",
+    "the twist object": "scene.jokeObject"
+  },
+
+  "sections": [
+    { "name": "format", "join": " ", "parts": [
+      { "fragment": "base.frameless" },
+      { "fragment": "base.clean-surfaces" }
+    ] },
+
+    { "name": "subject", "parts": [
+      { "template": "Subject: {subject}", "when": { "category": [1, 2, 3, 4] } }
+    ] },
+
+    { "name": "staging", "required": true, "parts": [
+      { "fragment": "base.cat1-field", "prefix": "Staging: ", "when": { "placement": ["floating_field"] }, "drop_unfilled": true,
+        "pick": [
+          { "field": "pattern", "map": { "rays": "rays", "rings": "concentric rings", "motif_repeat": "repeated small icons", "spiral": "spiral", "checker": "checker" } },
+          { "field": "stripes", "when": { "pattern": ["stripes_straight"] }, "map": { "vertical": "vertical stripes", "diagonal": "diagonal stripes" } }
+        ] },
+      { "fragment": "base.cat1-native", "prefix": "Staging: ", "when": { "category": [1], "placement": ["floating_native"] },
+        "pick": [
+          { "field": "medium", "map": { "sky": "sky", "water": "underwater" } },
+          { "field": "medium", "map": { "sky": "clouds", "water": "bubbles" } }
+        ] },
+      { "fragment": "base.cat2", "prefix": "Staging: ", "when": { "category": [2], "placement": ["resting"], "support": ["ephemeral", "fragment"] } },
+      { "fragment": "base.cat3", "prefix": "Staging: ", "when": { "category": [3], "placement": ["resting"], "support": ["fragment"] },
+        "pick": [
+          { "field": "surface", "map": { "sand": "sand", "grass": "grass", "wood": "wooden planks", "deck": "deck", "tiles": "tiles", "water": "water" } }
+        ] },
+      { "fragment": "bg.wall", "when": { "category": [3], "backdrop": ["wall"], "placement": ["resting"], "support": ["ground"] },
+        "pick": [
+          { "field": "wall", "map": { "stripes": "vertical wallpaper stripes", "planks": "vertical wooden planks", "brick": "brick", "curtain": "curtain" } },
+          { "field": "floor", "map": { "wood": "wooden boards", "tiles": "tiles", "stage": "stage boards" } }
+        ] },
+      { "fragment": "bg.on-wall", "when": { "placement": ["wall_mounted"] },
+        "pick": [
+          { "field": "wall", "map": { "stripes": "wallpaper with vertical stripes", "plain": "a plain wall", "planks": "painted wooden planks", "brick": "brick", "plaster": "plaster with ivy" } }
+        ] },
+      { "fragment": "base.cat4", "prefix": "Staging: ", "when": { "category": [4], "backdrop": ["environment"], "setting": ["outdoor"] } },
+      { "fragment": "base.cat4-interior", "prefix": "Staging: ", "when": { "category": [4], "backdrop": ["environment"], "setting": ["interior"] } },
+      { "fragment": "base.cat4-sky-structure", "prefix": "Staging: ", "when": { "category": [4], "backdrop": ["environment"], "setting": ["sky_structure"] } },
+      { "fragment": "bg.no-backdrop", "when": { "backdrop": ["none"] },
+        "pick": [
+          { "field": "surface", "map": { "wood": "wooden boards running diagonally", "deck": "wooden boards running diagonally", "grass": "a lawn", "tiles": "pool tiles", "water": "pool tiles" } }
+        ] },
+      { "fragment": "char.scene-frame", "when": { "category": [5] },
+        "pick": [ { "path": "scene.crop" } ] }
+    ] },
+
+    { "name": "cast", "parts": [
+      { "cast": true, "when": { "category": [5] } }
+    ] },
+
+    { "name": "backdrop", "parts": [
+      { "fragment": "bg.abstract", "when": { "backdrop": ["field"], "not": { "pattern": ["plain_gradient", "n/a"] } } },
+      { "fragment": "bg.rays", "when": [{ "backdrop": ["field"], "pattern": ["rays"] }, { "backdrop": ["wall"], "category": [2], "placement": ["resting"], "pattern": ["rays"] }] },
+      { "fragment": "bg.rings", "when": [{ "backdrop": ["field"], "pattern": ["rings"] }, { "backdrop": ["wall"], "category": [2], "placement": ["resting"], "pattern": ["rings"] }] },
+      { "fragment": "bg.stripes", "when": [{ "backdrop": ["field"], "pattern": ["stripes_straight"] }, { "backdrop": ["wall"], "category": [2], "placement": ["resting"], "pattern": ["stripes_straight"] }],
+        "pick": [ { "field": "stripes", "map": { "vertical": "vertical", "diagonal": "diagonal" } } ] },
+      { "fragment": "bg.motifs", "when": [{ "backdrop": ["field"], "pattern": ["motif_repeat"] }, { "backdrop": ["wall"], "category": [2], "placement": ["resting"], "pattern": ["motif_repeat"] }] },
+      { "fragment": "bg.plain-gradient", "when": { "backdrop": ["field", "wall"], "pattern": ["plain_gradient"], "placement": ["resting"] } },
+      { "fragment": "bg.floating", "when": { "backdrop": ["field"], "placement": ["floating_field"] } },
+      { "fragment": "bg.smooth-floor", "when": { "category": [2], "backdrop": ["field", "wall"], "placement": ["resting"] } },
+      { "fragment": "bg.surface-patch", "when": { "category": [3], "backdrop": ["field", "wall"], "placement": ["resting"], "support": ["fragment"] },
+        "pick": [
+          { "field": "surface", "map": { "sand": "sand", "grass": "grass", "wood": "wooden boards", "deck": "ship deck", "tiles": "tiles", "water": "sea water" } },
+          { "field": "surface", "map": { "sand": "a soft dune crest", "grass": "a ragged line of grass tufts", "wood": "a straight edge", "deck": "a straight edge", "tiles": "a straight edge", "water": "a wave crest" } }
+        ] },
+      { "fragment": "bg.setting", "when": [{ "category": [4], "backdrop": ["environment"], "setting": ["outdoor"] }, { "category": [5], "not": { "setting": ["interior"] } }],
+        "pick": [ { "field": "camera", "map": { "eye_level": "eye level", "high": "high camera", "low": "eye level" } } ] },
+      { "fragment": "bg.open-medium", "when": { "category": [1], "placement": ["floating_native"] },
+        "pick": [
+          { "field": "medium", "map": { "sky": "sky", "water": "water" } },
+          { "field": "medium", "map": { "sky": "blue sky gradient", "water": "blue underwater gradient" } }
+        ] }
+    ] },
+
+    { "name": "composition", "parts": [
+      { "fragment": "comp.field", "when": { "category": [1, 2, 3], "backdrop": ["field", "wall"] } },
+      { "fragment": "comp.floating", "when": { "category": [1, 2, 3, 4], "placement": ["floating_field", "floating_native"] } },
+      { "fragment": "comp.standing", "when": { "backdrop": ["field", "wall"], "placement": ["resting"] } },
+      { "fragment": "comp.setting", "when": { "category": [4], "backdrop": ["environment"] } },
+      { "fragment": "comp.volume-boxy", "when": { "category": [1, 2, 3, 4], "shape": ["boxy"], "not": { "backdrop": ["none"], "placement": ["wall_mounted"] } } },
+      { "fragment": "comp.volume-flat", "when": [{ "category": [1, 2, 3, 4], "shape": ["front_facing", "flat"], "not": { "backdrop": ["none"] } }, { "category": [1, 2, 3, 4], "placement": ["wall_mounted"] }] },
+      { "fragment": "comp.low-camera", "when": { "category": [1, 2, 3, 4], "camera": ["low"] } },
+      { "fragment": "comp.brand-mark", "when": { "brand": ["house", "cow"] },
+        "pick": [
+          { "field": "brand", "map": { "house": "a simple house", "cow": "a front-facing cow head" } },
+          { "field": "brand_finish", "map": { "embossed": "embossed", "patch": "a stitched patch", "carved": "carved", "sticker": "a sticker", "stamp": "a postage stamp" } }
+        ] }
+    ] },
+
+    { "name": "colour", "parts": [
+      { "fragment": "colour.palette" },
+      { "fragment": "colour.shadows-light" },
+      { "fragment": "colour.hero-backdrop", "when": { "backdrop": ["field"] } },
+      { "template": "Here: {palette}", "attach": true, "optional": true, "when": { "backdrop": ["field"] } },
+      { "fragment": "colour.gradient", "when": { "backdrop": ["field"] } },
+      { "fragment": "colour.day-sky", "when": { "time": ["day"], "sky_top": [true] } },
+      { "fragment": "colour.night", "when": { "time": ["dusk", "night"] } }
+    ] },
+
+    { "name": "rendering", "parts": [
+      { "fragment": "render.style", "items": [
+        { "label": "low sun or stage spots", "when": [{ "time": ["golden"] }, { "stage_lights": [true] }] },
+        { "label": "resting", "when": { "category": [1, 2, 3, 4], "placement": ["resting", "embedded", "lying_top_down"] } },
+        { "label": "floating", "when": { "placement": ["floating_field", "floating_native"] } },
+        { "label": "thin flat object", "when": { "shape": ["flat"] } },
+        { "label": "scene", "when": { "backdrop": ["environment"] } },
+        { "label": "dusk or night", "when": { "time": ["dusk", "night"] } },
+        { "label": "effects", "when": { "effects": [true] } }
+      ] },
+      { "fragment": "render.materials", "items_from": "material" }
+    ] }
+  ],
+
+  "references": {
+    "count": 2,
+    "spec": "checks/reference-spec.json",
+    "index": "references/README.md",
+    "index_cast_column": "Персонажи",
+    "exclude": [14, 23, 47, 56, 71, 83, 97, 137],
+    "weights": { "category": 3, "backdrop": 3, "placement": 3, "pattern": 2, "support": 2, "camera": 1, "time": 1, "sky_top": 1, "characters": 2, "cast": 4 },
+    "note_style": "Reference images: {images} are style references from the same card series. Copy only their rendering style: materials, soft lighting, colour treatment, backdrop treatment and level of detail. Do not copy their objects, layout or backdrop content.",
+    "note_cast": "Reference images: {images} show {who} of this card series. Keep them exactly as drawn there (faces, proportions, colours) and copy the rendering style of those images. Do not copy their poses, costumes, props or backgrounds."
+  }
+}

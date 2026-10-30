@@ -1,0 +1,50 @@
+# core/style — card order and prompt assembly
+
+The program, not the agent, writes the image-model prompt of a card: it reads the style bible's prompt fragments and puts them together by the style's rules. The agent gives the card's staging and English words; it may append to the prompt (`promptExtra`) or replace it (`promptOverride` — the human's word beats any rule). Author's decision: `docs/plans/VISION.md`, «Источник изображений».
+
+## API
+
+- `validateOrder(order, { styleDir? })` → `Promise<string[]>` — readable errors (Russian), empty when the order can be assembled. `checkOrder(order, style)` is the same, synchronous, with `loadStyle(dir)` from `style.js`.
+- `buildPrompt(order, { styleDir? })` → `Promise<{ prompt, fragments, references, sections }>`; throws `OrderError` (`.errors`) for an invalid order. `fragments`: `[{ id, source: 'FILE.md:line' }]` in prompt order (items of a labelled block as `id[label]`, glue templates as `template`); `references`: `[{ path, ref }]` — absolute paths of the reference cards to attach, in the order the prompt numbers them; `sections`: the prompt by section.
+- `styleDir` defaults to `styles/<order.style>`.
+
+## CardOrder
+
+The JSDoc typedefs in `card-order.js` are the reference; allowed staging values are in `styles/<style>/prompt-assembly.json` → `fields`.
+
+| Field | Meaning |
+|---|---|
+| `id`, `style` | card id; style folder name (`scapes`) |
+| `title` | caption; not used in the prompt |
+| `subject` | English description of the hero; required for categories 1–4 |
+| `object` | short English name of the hero for the staging phrase («a single [object] …»); required for 1–4 |
+| `place`, `environment` | short place name and its English description (category 4 outdoors, scenes) |
+| `motif` | backdrop icon motif (pattern `motif_repeat`) |
+| `palette` | optional hero-against-backdrop colours, appended after the bible's colour phrase («Here: …») |
+| `staging` | see below |
+| `scene` | category 5 only: `theme`, `time` (words: "at sunset"), `action`, `item`, `joke`, `reactor`, `jokeObject`, `crop` (`hips` / `waist` / `knees`), `characters: [{ name, costume? }]` |
+| `promptExtra` | appended at the end; also lets a staging the bible has no fragment for pass validation |
+| `promptOverride` | the prompt, verbatim; nothing is assembled (references are still picked) |
+| `references` | reference card numbers to attach instead of the picked ones |
+
+`staging`: the nine fields of the style's checks spec (`category`, `backdrop`, `pattern`, `placement`, `support`, `camera`, `characters`, `time`, `sky_top` — same names and values as `styles/scapes/checks/check-card.mjs --help`, all required) plus prompt-only fields that pick a variant inside a fragment: `stripes`, `surface`, `medium`, `setting`, `wall`, `floor`, `shape` (default `boxy`), `material` (one label or a list: the labels of the bible's material fragments, e.g. `glossy plastic`, `metal`, `wood`), `effects`, `stage_lights`, `brand`, `brand_finish`. A field is required when its `required_when` in `fields` matches. Strip the prompt-only fields before handing `staging` to the checks.
+
+## Fragment markers in the bible
+
+A fragment is marked with an HTML comment, invisible when the Markdown is rendered:
+
+- inline, right before a code span: ``- Category 2: <!-- fragment: base.cat2 -->`a single [object] …` ``;
+- alone on its line, right before a fenced block or a blockquote: the marker names that block.
+
+A fenced block whose lines start with `[label]` is a list of items: unlabelled lines are always used, labelled ones when the rules select them (RENDERING style block, materials). A blockquote or plain fenced block is one text; hard line breaks become spaces; a leading `[label]` is its condition and is cut. Slots: `{name}` / `[name]` is a value from the order (map: `slots` in the rules), `{a | b}` / `[a / b]` is a choice (`pick` in the rules names the option by its text or a unique prefix).
+
+## Assembly rules: `styles/<style>/prompt-assembly.json`
+
+- `documents` — the bible files with fragments.
+- `fields` — staging vocabulary, defaults, `required_when`; `forbid` — stagings the bible says to avoid.
+- `cast` — characters: their fragment and their name in the reference index.
+- `slots` — where a named slot's value comes from: an order path (`scene.time`), `$cast` (the scene's character names from their bible descriptions), or `{ field, map }` (a staging field mapped to words).
+- `sections` — the prompt in the order of the bible's `PROMPTS.md`. A part is `{ fragment, when?, prefix?, pick?, items?, items_from?, drop_unfilled? }`, `{ template, when?, attach?, optional? }` (glue text written for the program) or `{ cast: true }`. `when` is an object whose keys list allowed staging values (all must match; `not` lists values none of which may match) or a list of such objects (any). A section with `required` must get a part, unless the order has `promptExtra`.
+- `references` — how many reference cards to attach, the spec and index they are read from, cards never attached, ranking weights, and the two notes that tell the model what the images are.
+
+Tests: `tests/style-prompt.test.mjs` checks that every fragment of the «Для промпта (англ.)» sections is marked, that every fragment, item and option the rules name exists, that the vocabulary matches the checks' `--help`, and assembles the five pilot cards (`tests/style-pilot-orders.mjs`).

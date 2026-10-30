@@ -5,7 +5,8 @@
 /docs/plans/*_storm.md
 /styles/*/research/
 
-# Project output and logs.
+# Project output and logs. collections/ holds the factory's cards (VISION.md «Устройство и стек»).
+/collections/
 /build/
 /dist/
 /coverage/
@@ -24,6 +25,9 @@
 /.mcp.json
 /.playwright-mcp/
 /browser-output/
+
+# Personal settings over settings/defaults.json (core/settings.js).
+/settings/local.json
 
 # Local environment files: keys never go to Git.
 .env

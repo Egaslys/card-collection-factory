@@ -342,6 +342,7 @@
 
 Общее для любого абстрактного фона:
 
+<!-- fragment: bg.abstract -->
 ```
 The backdrop is a flat graphic pattern in two close tones of one single hue, with crisp, clean edges
 between the bands and only a small step in lightness between them (two neighbouring shades of the same
@@ -353,6 +354,7 @@ No horizon, no scenery, no frame or border.
 
 Лучи:
 
+<!-- fragment: bg.rays -->
 ```
 Backdrop: a sunburst of about 12 straight light rays radiating from a point directly behind the hero
 (on the hero's vertical axis, slightly below its middle); light rays and dark gaps are about equally
@@ -361,6 +363,7 @@ wide, roughly 14 degrees each, with crisp straight edges, in two close tones of 
 
 Кольца:
 
+<!-- fragment: bg.rings -->
 ```
 Backdrop: soft concentric rings centred directly behind the hero, each pair of one light and one dark ring
 about one eighth of the frame width, about six rings from the centre to the far corner, crisp edges, two
@@ -369,6 +372,7 @@ close tones of one hue, lighter toward the centre.
 
 Прямые полосы:
 
+<!-- fragment: bg.stripes -->
 ```
 Backdrop: a few broad straight stripes, {vertical | diagonal, rising to the right at about 40 degrees}:
 only six to eight stripes across the whole frame, each stripe about one seventh of the frame width — wide
@@ -377,6 +381,7 @@ bands, never thin pinstripes — alternating two close tones of one hue, crisp e
 
 Повторяющиеся значки:
 
+<!-- fragment: bg.motifs -->
 ```
 Backdrop: a tone-on-tone repeat pattern of small {motif from the set theme} icons, each about one tenth
 of the frame width, in a staggered grid, slightly lighter than the backdrop colour, so faint that it
@@ -385,6 +390,7 @@ reads as texture.
 
 Ровный градиент (только для стоящего или подвешенного предмета):
 
+<!-- fragment: bg.plain-gradient -->
 ```
 Backdrop: a smooth single-colour studio backdrop, lightest directly behind the hero and slightly darker
 toward the corners, meeting a floor plane.
@@ -392,6 +398,7 @@ toward the corners, meeting a floor plane.
 
 Висит на поле:
 
+<!-- fragment: bg.floating -->
 ```
 Placement: the hero floats in the middle of the frame in front of the patterned backdrop, fully inside
 the frame, with no ground, no floor and no shadow on the backdrop below it.
@@ -399,6 +406,7 @@ the frame, with no ground, no floor and no shadow on the backdrop below it.
 
 Гладкая плоскость:
 
+<!-- fragment: bg.smooth-floor -->
 ```
 Placement: the hero stands on a seamless, untextured floor plane a little lighter than the backdrop;
 the floor spans the full width of the frame down to the bottom edge and meets the backdrop along a
@@ -410,6 +418,7 @@ edge, with a soft contact shadow.
 
 Кусок настоящей поверхности:
 
+<!-- fragment: bg.surface-patch -->
 ```
 Placement: the hero stands on a band of real {sand | grass | wooden boards | ship deck | tiles | sea
 water} with clearly visible texture that fills the bottom quarter of the frame from edge to edge; its
@@ -420,6 +429,7 @@ soft contact shadow.
 
 Стена:
 
+<!-- fragment: bg.wall -->
 ```
 Backdrop: a wall directly behind the hero — {vertical wallpaper stripes | vertical wooden planks with
 thin dark gaps | brick | curtain} — in one hue, with a floor of {wooden boards | tiles | stage boards}
@@ -430,6 +440,7 @@ square-on, its depth must still be clearly visible.
 
 Предмет на стене (категория 2 на обоях с узором или на стене ровного цвета, 3 на стене из досок, кирпича или штукатурки):
 
+<!-- fragment: bg.on-wall -->
 ```
 Placement: the hero hangs on the wall and faces the viewer, with no support below; it shows its own
 thickness and depth (a visible rim, side or frame edge), and its soft shadow falls on the wall right next
@@ -439,6 +450,7 @@ painted wooden planks with grooves | brick | plaster with ivy}.
 
 Без задника (единственный фрагмент камеры для такого кадра; углы — по [COMPOSITION.md](COMPOSITION.md#камера)):
 
+<!-- fragment: bg.no-backdrop -->
 ```
 No backdrop: seen from above at an angle of about 30–50 degrees (never straight down), the hero lies on a surface that
 fills the whole frame ({wooden boards running diagonally | a lawn with a white pitch line | pool tiles
@@ -448,6 +460,7 @@ no wall, no horizon. Soft contact shadow; on water, a reflection and ripple ring
 
 Обстановка:
 
+<!-- fragment: bg.setting -->
 ```
 Setting: a real place ({environment}) with three or four planes of depth; the far plane softer and less
 detailed than the hero but not blurred, no bokeh. The horizon passes behind the hero; its height follows
@@ -458,6 +471,7 @@ behind the hero's silhouette; tufts of grass or leaves may frame the bottom edge
 
 В небе или под водой:
 
+<!-- fragment: bg.open-medium -->
 ```
 Setting: open {sky | water}: a smooth {blue sky gradient, lighter toward the bottom, with a few soft
 clouds only along the bottom and side edges | blue underwater gradient, darker toward the bottom, with

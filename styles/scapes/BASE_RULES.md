@@ -208,17 +208,17 @@
 
 Фрагменты для описания постановки в промпте генерации. Подставляются по категории карточки.
 
-- Category 1: `a single [object] floating in mid-air, no support and no floor, centred, in front of a flat tone-on-tone patterned backdrop ([rays / concentric rings / vertical stripes / diagonal stripes / repeated small icons / spiral / checker]) in one hue, lighter glow right behind the object`
-- Category 1, sky or water: `a single [object] floating in a nearly flat [sky / underwater] gradient, a few [clouds / bubbles] only near the edges, no ground, no horizon`
-- Category 2: `a single [object] standing on a smooth plain floor strip of the same hue as the backdrop, no material texture on the floor, plain gradient or tone-on-tone patterned backdrop behind`
-- Category 3: `a single [object] standing on a small patch of real [sand / grass / wooden planks / deck / water / tiles] with visible texture, flat tone-on-tone patterned backdrop behind`
-- Category 4: `a single [object] set in a real [place], ground or horizon visible, three to four depth layers, the object stays the clear centre of attention`
-- Category 4, interior: `a single [object] in a real room interior: a corner where two walls meet, or clearly visible room depth, with the floor visible; the object stays the clear centre of attention`
-- Category 4, structure against the sky: `a tall [structure] rising from below the bottom edge of the frame against an open sky, no ground visible, a few soft clouds only near the edges`
+- Category 1: <!-- fragment: base.cat1-field -->`a single [object] floating in mid-air, no support and no floor, centred, in front of a flat tone-on-tone patterned backdrop ([rays / concentric rings / vertical stripes / diagonal stripes / repeated small icons / spiral / checker]) in one hue, lighter glow right behind the object`
+- Category 1, sky or water: <!-- fragment: base.cat1-native -->`a single [object] floating in a nearly flat [sky / underwater] gradient, a few [clouds / bubbles] only near the edges, no ground, no horizon`
+- Category 2: <!-- fragment: base.cat2 -->`a single [object] standing on a smooth plain floor strip of the same hue as the backdrop, no material texture on the floor, plain gradient or tone-on-tone patterned backdrop behind`
+- Category 3: <!-- fragment: base.cat3 -->`a single [object] standing on a small patch of real [sand / grass / wooden planks / deck / water / tiles] with visible texture, flat tone-on-tone patterned backdrop behind`
+- Category 4: <!-- fragment: base.cat4 -->`a single [object] set in a real [place], ground or horizon visible, three to four depth layers, the object stays the clear centre of attention`
+- Category 4, interior: <!-- fragment: base.cat4-interior -->`a single [object] in a real room interior: a corner where two walls meet, or clearly visible room depth, with the floor visible; the object stays the clear centre of attention`
+- Category 4, structure against the sky: <!-- fragment: base.cat4-sky-structure -->`a tall [structure] rising from below the bottom edge of the frame against an open sky, no ground visible, a few soft clouds only near the edges`
 - Предмет на стене (категория 2 на стене с узором или ровного цвета, 3 на стене из материала) — фрагмент «Предмет на стене» в [BACKGROUNDS.md](BACKGROUNDS.md#для-промпта-англ).
 - Категория 4 без задника — фрагмент «Без задника» в [BACKGROUNDS.md](BACKGROUNDS.md#для-промпта-англ) (с камерой).
 - Категория 5 — каркас золотой сцены в [CHARACTERS.md](CHARACTERS.md#для-промпта-англ).
-- Для всех: `frameless card illustration, no border, no text, no title plate`; `simple clean surfaces, no fine surface texture (no fabric weave, no frost, no mesh)`.
+- Для всех: <!-- fragment: base.frameless -->`frameless card illustration, no border, no text, no title plate`; <!-- fragment: base.clean-surfaces -->`simple clean surfaces, no fine surface texture (no fabric weave, no frost, no mesh)`.
 
 ## 10. Не решено и не измерено
 

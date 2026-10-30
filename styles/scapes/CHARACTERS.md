@@ -316,26 +316,32 @@
 
 Мужчина:
 
+<!-- fragment: char.man -->
 > The Man: a heavy-set, barrel-chested man in his forties with a round belly and thick strong arms; broad jowly face with rosy cheeks, a big round nose with a pinkish tip, brown eyes under thick dark eyebrows; a very thick reddish-chestnut walrus moustache covering the upper lip, its ends curling slightly outward; short reddish-chestnut hair with a side-swept quiff, ears visible, no beard; thin dark wire glasses with round lenses sitting low on the nose (swap or remove them only when the role needs it: sunglasses, a diving mask); big five-fingered hands. Always fully dressed in the costume of his role. Do not redesign him.
 
 Свинья:
 
+<!-- fragment: char.pig -->
 > The Pig: a chubby upright pig with smooth peach-pink skin and strongly blushing cheeks; a big round head (one third to one half of its height) with a large flat coral-pink oval snout with two dark-red nostrils; big triangular pink ears standing up with tips flopping forward; bright blue eyes with short light-brown eyebrows; round belly, short legs, dark-brown cloven hooves used as hands; curly tail. Usually naked; at most swim trunks or shorts, or a single hat — never a shirt. Do not redesign it.
 
 Овца:
 
+<!-- fragment: char.sheep -->
 > The Sheep: an upright sheep whose body is a big cloud of puffy white fleece balls, each ball drawn with a soft spiral swirl, white in light and lavender-blue in shadow, with a fleece tuft on top of the head; a long horse-like muzzle in dusky mauve-grey with a darker charcoal nose tip and a wide grin; big eyes with violet irises and heavy lids, a pink blush on the cheek; long drooping grey ears, pink inside; very thin dark-grey stick-like limbs ending in black hooves. No clothes over the fleece; only hats, sunglasses, neck accessories or straps. Do not redesign it.
 
 Петух:
 
+<!-- fragment: char.rooster -->
 > The Rooster: a small cartoon rooster with ginger-orange plumage drawn as large overlapping petal-like feathers, a redder orange face and an orange tail (no dark tail feathers); a huge bright-red comb made of soft rounded lobes swept back like a quiff (not spiky); a wide golden-yellow beak, open in a grin with a red mouth, red wattles below; big white eyes with green irises and dark eyebrows; wings used as hands, the long feathers acting as fingers; yellow-orange three-toed feet. Small enough to sit on the man's shoulder. Never wears clothes. Do not redesign it.
 
 Корова:
 
+<!-- fragment: char.cow -->
 > The Cow: a plump upright Holstein cow, white with large irregular black patches; a huge bright ORANGE muzzle (not pink), round and wider than the upper head, filling the lower half of the face, with shallow darker-orange nostril dimples; cream-white upper head with black patches near the ears, a small tuft between short brown horns that curve upward; horizontal ears, black-maroon outside and pink inside; brown eyes with thick dark eyebrows; black hooves used as hands. Do not redesign it.
 
 Каркас золотой сцены (в фигурных скобках — что подставить):
 
+<!-- fragment: char.scene-frame -->
 > A simple everyday {theme} scene with {who} ({one or two of the cast}), set in a {place} with depth (foreground, characters, middle ground, far background), {time of day}. {Who} {does what} with {set item}. One gentle comic twist: {twist}. Show the twist through faces and gaze: {who reacts} looks straight at {the twist object} with a clear, readable expression, and the twist object is fully inside the frame, near the characters' head height. Medium shot at the characters' chest or eye level, characters centred and filling about three quarters of the frame, cut at the {hips / waist / knees} by the bottom edge, legs below that not shown; heads fully inside the frame, well below the top edge. No other characters; background extras only as a small soft crowd if the place needs one.
 
 ## Не решено и не измерено

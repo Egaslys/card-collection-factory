@@ -4,11 +4,11 @@
 // `-i FILE` attaches reference images, `--json` prints JSONL events, and the picture is NOT in the events:
 // Codex saves it to $CODEX_HOME/generated_images/<thread_id>/exec-<uuid>.png (the thread id is in the
 // first `thread.started` event). Codex runs in a scratch directory, never in the project.
+// Every value comes from the caller: the factory keeps them in settings/defaults.json (provider.codexCli).
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { CODEX_DEFAULTS } from './codex-cli-defaults.js';
 import { ProviderError } from './openrouter.js';
 
 /** @type {Record<string, string>} */
@@ -16,7 +16,16 @@ const MIME_BY_EXT = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image
 /** @type {Record<string, string>} */
 const EXT_BY_MIME = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp' };
 
-/** @typedef {{timeoutMs?: number, spawnImpl?: typeof spawn, codexHome?: string, defaults?: typeof CODEX_DEFAULTS}} CodexNet */
+/** @typedef {{timeoutMs?: number, spawnImpl?: typeof spawn, codexHome?: string}} CodexNet */
+/**
+ * @typedef {object} CodexSettings  the provider.codexCli settings
+ * @property {string} command  the Codex CLI command
+ * @property {string|null} model  orchestrating model; null = the model of the user's Codex config
+ * @property {number} timeoutMs
+ * @property {string} reasoningEffort
+ * @property {string} sandbox
+ * @property {string} promptTemplate  {refs} = legend of attached images (empty without references), {brief} = the prompt
+ */
 
 /**
  * Runs the command, feeds `input` to stdin, collects stdout and stderr. Kills the process on timeout.
@@ -48,7 +57,8 @@ function run(spawnImpl, command, args, cwd, input, timeoutMs) {
  * Generates one image through `codex exec`. Arguments follow openrouter.js generateImage; `endpoint`/`apiKey`
  * do not exist here (Codex uses its own login), `resolution` is ignored, `params` is ignored.
  * @param {object} o
- * @param {string} [o.model] Codex orchestrating model (`-m`); omitted: the model from the user's Codex config
+ * @param {CodexSettings} o.settings
+ * @param {string} [o.model] Codex orchestrating model (`-m`); omitted: settings.model, then the user's Codex config
  * @param {string} o.prompt
  * @param {{bytes?: Uint8Array, path?: string, mime?: string}[]} [o.references] attached as `-i` files (at most 5 work in Codex's image tool)
  * @param {string} [o.aspectRatio] e.g. "4:5": Codex's image tool has no size parameter, so it is only said in the brief
@@ -57,8 +67,7 @@ function run(spawnImpl, command, args, cwd, input, timeoutMs) {
  * @param {CodexNet} [o.net]
  * @returns {Promise<{bytes: Buffer, mime: string|undefined, model: string, cost: null, usage: undefined, raw: {threadId: string, file: string}}>}
  */
-export async function generateImage({ model, prompt, references = [], aspectRatio, net = {} }) {
-  const d = net.defaults ?? CODEX_DEFAULTS;
+export async function generateImage({ settings: d, model, prompt, references = [], aspectRatio, net = {} }) {
   const spawnImpl = net.spawnImpl ?? spawn;
   const codexHome = net.codexHome ?? process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex');
   const scratch = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'ccf-codex-'));

@@ -8,17 +8,26 @@ Update this map in the same task when an area, an entry point, a system file or 
 
 - `AGENTS.md` — the agent's rules, what the project is, the task → skill table, commands.
 - `README.md` — the purpose of the project for a person.
+- `ccf.mjs` — the factory's commands for an agent in the terminal (`node ccf.mjs --help`): `card make`, `card check`, `models`, `credits`; thin calls of `core/` operations, `--json` for agents.
 - `docs/plans/VISION.md` — the author's accepted vision of the project (not a log).
 - `docs/plans/ROADMAP.md` — the directions of the work on the product: what is done and what is left, with links to plans.
 - `docs/plans/` also holds local working documents ignored by Git (handoff, brainstorm logs, source materials): see «Local working documents» in `AGENTS.md`.
 
 ## Product
 
-- `styles/` — art styles the product generates in; one per folder. `styles/scapes/` — the first style: its style bible (`README.md` is the entry point and map of the bible documents); `references/` — all 160 reference cards with an index (`references/README.md`); `checks/` — the automated part of the bible's checks (`check-card.mjs` with `thresholds.json`, the control-run spec of the references, `adjust-trial.mjs` for post-generation adjustments with the product's own processing; both read images with `sharp`; entry point `checks/README.md`); `processing.json` — the style's post-processing settings (neutral, starting settings per model, sharpening bound): the one place for their numbers; `research/` inside is local, ignored by Git.
+- `styles/` — art styles the product generates in; one per folder. `styles/scapes/` — the first style: its style bible (`README.md` is the entry point and map of the bible documents); `references/` — all 160 reference cards with an index (`references/README.md`); `checks/` — the automated part of the bible's checks (`check-card.mjs` with `thresholds.json`, the control-run spec of the references, `adjust-trial.mjs` for post-generation adjustments with the product's own processing; both read images with `sharp`; entry point `checks/README.md`); `processing.json` — the style's post-processing settings (neutral, starting settings per model, sharpening bound): the one place for their numbers; `prompt-assembly.json` — how the program assembles a card's image-model prompt from the bible's marked fragments (which fragment for which staging, slot filling, staging vocabulary of a card order, reference-card picking); `research/` inside is local, ignored by Git.
+
+- `core/style/` — the card order and its prompt: `card-order.js` (`CardOrder` typedef, `validateOrder`), `prompt.js` (`buildPrompt`: order → prompt, fragments used, reference cards to attach), `fragments.js` (parses `<!-- fragment: id -->` markers in the bible, fills slots), `assembly.js`, `references.js`, `style.js`; fields and formats for agents: `core/style/README.md`. Tests: `tests/style-prompt.test.mjs` (with the five pilot cards as orders in `tests/style-pilot-orders.mjs`).
 
 - `core/image/` — image processing: `prepare.js` (Node, `sharp`: `prepareCard` turns a model image into card pixels of the size the caller gives — cover scale, centre crop, Lanczos-3; `encodePng`) and `adjust.js` (browser-safe pure functions: `adjust(pixels, width, height, settings)` — brightness, saturation, luma unsharp mask; the same code for the pipeline and the editor preview). Tests: `tests/core-image.test.mjs`.
 
-- `core/providers/` — image provider: `openrouter.js` (`generateImage`, `listImageModels`, `getCredits`, `loadApiKey`; OpenRouter-compatible endpoint, set by the caller) and `defaults.js` (the one object of default endpoint/model/params until the settings file exists). Tests: `tests/provider-openrouter.test.mjs`, mocked fetch. `codex-cli.js` (`generateImage` with the same contract through `codex exec` under the ChatGPT subscription, no per-image payment; its defaults are in `codex-cli-defaults.js`). Tests: `tests/provider-codex-cli.test.mjs`, mocked spawn.
+- `core/card/` — the production loop of one card: `make.js` (`makeCard`: order → prompt → generation → `core/image` → the style's checks, regenerating within the attempt limit and the spend cap; `recheckCard`; `providerFrom` picks the provider from the settings; the outline policy is in its header), `check.js` (plugs in a style's checker `styles/<style>/checks/check-card.mjs`), `card-file.js` (the one description of the card folder and `card.json`). Tests: `tests/card-loop.test.mjs`, fake provider.
+
+- `core/settings.js` + `settings/` — the factory settings: `settings/defaults.json` (tracked; provider choice and values, attempts and spend cap per run, post-processing overrides per model; what each means is in its `_about`) and `settings/local.json` (personal override, ignored by Git; the editor will write it). The API key is never in settings.
+
+- `collections/` — the factory's output, ignored by Git: `<collection>/sets/<set>/cards/<card>/` with `card.json`, `card.png` and `attempts/<n>/` (layout: `core/card/card-file.js`).
+
+- `core/providers/` — image providers; every value comes from the caller (the factory's settings, `settings/defaults.json` → `provider`): `openrouter.js` (`generateImage`, `listImageModels`, `getCredits`, `loadApiKey`; OpenRouter-compatible endpoint). Tests: `tests/provider-openrouter.test.mjs`, mocked fetch. `codex-cli.js` (`generateImage` with the same contract through `codex exec` under the ChatGPT subscription, no per-image payment). Tests: `tests/provider-codex-cli.test.mjs`, mocked spawn.
 
 ## Agent setup
 

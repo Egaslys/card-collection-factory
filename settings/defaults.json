@@ -1,0 +1,31 @@
+{
+  "_about": "Factory settings: the one place for their values (core/settings.js reads them). This file holds the shared defaults and is tracked by Git. Personal changes go to settings/local.json next to it (ignored by Git; the editor will write it): the same structure, only the keys that change; objects merge key by key, other values replace. An empty object here is an open map: any keys may be added under it. The API key is never here. provider.use: which image provider generates, \"openrouter\" or \"codex-cli\". provider.openrouter (core/providers/openrouter.js): OpenRouter-compatible endpoint, model id, aspect ratio and resolution sent with every request, keyEnvVar = the environment variable (or the line of .env in the project root) that holds the key, params = any other request fields passed as is, timeout per call in ms, retries on HTTP 429/5xx and the backoff before the first retry in ms. provider.codexCli (core/providers/codex-cli.js; Codex's own login, no per-image payment): the command, the orchestrating model (null = the user's Codex config), the aspect ratio said in the brief, timeout in ms, reasoning effort, sandbox, and the prompt template ({refs} = legend of attached images, {brief} = the card prompt). card: attempts = how many generations of one card one `card make` run may spend at most; maxSpendUsd = the spend cap of one run in USD, checked before every paid call. processing: post-processing settings per model (core/image/adjust.js settings object; the key is the OpenRouter model id, or \"codex-cli\"), only to override the style's own starting settings (styles/<style>/processing.json → start).",
+  "provider": {
+    "use": "openrouter",
+    "openrouter": {
+      "endpoint": "https://openrouter.ai/api/v1",
+      "model": "google/gemini-nano-banana-2.1",
+      "aspectRatio": "4:5",
+      "resolution": "1K",
+      "keyEnvVar": "OPENROUTER_API_KEY",
+      "params": {},
+      "timeoutMs": 600000,
+      "retries": 2,
+      "backoffMs": 2000
+    },
+    "codexCli": {
+      "command": "codex",
+      "model": null,
+      "aspectRatio": "4:5",
+      "timeoutMs": 600000,
+      "reasoningEffort": "low",
+      "sandbox": "read-only",
+      "promptTemplate": "Use your image generation tool exactly once to create one image from the brief below, then reply with the single word DONE. Do not run shell commands or edit files.\n{refs}\nBRIEF: {brief}\n"
+    }
+  },
+  "card": {
+    "attempts": 3,
+    "maxSpendUsd": 0.2
+  },
+  "processing": {}
+}

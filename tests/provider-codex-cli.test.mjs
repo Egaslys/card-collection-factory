@@ -6,9 +6,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { generateImage } from '../core/providers/codex-cli.js';
-import { CODEX_DEFAULTS } from '../core/providers/codex-cli-defaults.js';
 import { ProviderError } from '../core/providers/openrouter.js';
+import { ROOT } from './root.mjs';
 
+const CODEX = JSON.parse(fs.readFileSync(path.join(ROOT, 'settings/defaults.json'), 'utf8')).provider.codexCli;
 const png = Buffer.from('fake-png');
 const THREAD = 'thread-1';
 const events = (...e) => e.map(x => JSON.stringify(x)).join('\n') + '\n';
@@ -49,7 +50,7 @@ const putImage = (codexHome, name = 'exec-1.png', bytes = png) => {
 test('generateImage: аргументы, подсказка, результат; образцы как файлы, рабочая папка удаляется', async () => {
   const codexHome = home();
   const m = mock({ onSpawn: () => putImage(codexHome) });
-  const r = await generateImage({ model: 'gpt-x', prompt: 'a bobber', aspectRatio: '4:5', resolution: '1K', params: { q: 1 },
+  const r = await generateImage({ settings: CODEX, model: 'gpt-x', prompt: 'a bobber', aspectRatio: '4:5', resolution: '1K', params: { q: 1 },
     references: [{ bytes: Buffer.from('abc'), mime: 'image/png' }, { path: '/abs/card.png' }], net: { spawnImpl: m.spawnImpl, codexHome } });
   const [c] = m.calls;
   assert.equal(c.cmd, 'codex');
@@ -77,7 +78,7 @@ test('generateImage: аргументы, подсказка, результат;
 test('generateImage: без образцов и модели нет -i и -m, берётся самый новый файл', async () => {
   const codexHome = home();
   const m = mock({ onSpawn: () => { putImage(codexHome, 'old.png', Buffer.from('old')); fs.utimesSync(path.join(codexHome, 'generated_images', THREAD, 'old.png'), 1, 1); putImage(codexHome, 'new.webp', png); } });
-  const r = await generateImage({ prompt: 'p', net: { spawnImpl: m.spawnImpl, codexHome } });
+  const r = await generateImage({ settings: CODEX, prompt: 'p', net: { spawnImpl: m.spawnImpl, codexHome } });
   assert.ok(!m.calls[0].args.includes('-i') && !m.calls[0].args.includes('-m'));
   assert.doesNotMatch(m.calls[0].input, /attached image/);
   assert.equal(r.mime, 'image/webp');
@@ -85,10 +86,10 @@ test('generateImage: без образцов и модели нет -i и -m, б
   assert.deepEqual(r.bytes, png);
 });
 
-test('generateImage: умолчания можно подменить через net.defaults', async () => {
+test('generateImage: значения берутся из настроек вызывающего', async () => {
   const codexHome = home();
   const m = mock({ onSpawn: () => putImage(codexHome) });
-  await generateImage({ prompt: 'p', net: { spawnImpl: m.spawnImpl, codexHome, defaults: { ...CODEX_DEFAULTS, command: 'codex2', model: 'dm', reasoningEffort: 'high' } } });
+  await generateImage({ prompt: 'p', settings: { ...CODEX, command: 'codex2', model: 'dm', reasoningEffort: 'high' }, net: { spawnImpl: m.spawnImpl, codexHome } });
   assert.equal(m.calls[0].cmd, 'codex2');
   assert.equal(m.calls[0].args[m.calls[0].args.indexOf('-m') + 1], 'dm');
   assert.ok(m.calls[0].args.includes('model_reasoning_effort="high"'));
@@ -96,27 +97,27 @@ test('generateImage: умолчания можно подменить через
 
 test('generateImage: ненулевой код выхода, ошибка в событиях, нет картинки', async () => {
   const codexHome = home();
-  await assert.rejects(generateImage({ prompt: 'p', net: { spawnImpl: mock({ code: 1, stderr: 'boom' }).spawnImpl, codexHome } }),
+  await assert.rejects(generateImage({ settings: CODEX, prompt: 'p', net: { spawnImpl: mock({ code: 1, stderr: 'boom' }).spawnImpl, codexHome } }),
     e => e instanceof ProviderError && /код выхода 1/.test(e.message) && /boom/.test(e.providerMessage));
   const bad = events({ type: 'thread.started', thread_id: THREAD }, { type: 'error', message: 'model is not supported when using Codex with a ChatGPT account' });
-  await assert.rejects(generateImage({ prompt: 'p', net: { spawnImpl: mock({ stdout: bad }).spawnImpl, codexHome } }),
+  await assert.rejects(generateImage({ settings: CODEX, prompt: 'p', net: { spawnImpl: mock({ stdout: bad }).spawnImpl, codexHome } }),
     e => e instanceof ProviderError && /not supported/.test(e.providerMessage));
-  await assert.rejects(generateImage({ prompt: 'p', net: { spawnImpl: mock().spawnImpl, codexHome } }), /картинка не создана/);
-  await assert.rejects(generateImage({ prompt: 'p', net: { spawnImpl: mock({ stdout: 'garbage\n' }).spawnImpl, codexHome } }), /thread\.started/);
+  await assert.rejects(generateImage({ settings: CODEX, prompt: 'p', net: { spawnImpl: mock().spawnImpl, codexHome } }), /картинка не создана/);
+  await assert.rejects(generateImage({ settings: CODEX, prompt: 'p', net: { spawnImpl: mock({ stdout: 'garbage\n' }).spawnImpl, codexHome } }), /thread\.started/);
 });
 
 test('generateImage: таймаут убивает процесс; нет команды — понятная ошибка', async () => {
   const m = mock({ hang: true });
-  await assert.rejects(generateImage({ prompt: 'p', net: { spawnImpl: m.spawnImpl, timeoutMs: 20, codexHome: home() } }), e => e instanceof ProviderError && /не закончил/.test(e.message));
+  await assert.rejects(generateImage({ settings: CODEX, prompt: 'p', net: { spawnImpl: m.spawnImpl, timeoutMs: 20, codexHome: home() } }), e => e instanceof ProviderError && /не закончил/.test(e.message));
   assert.equal(m.calls[0].child.killed, true);
   assert.equal(fs.existsSync(m.calls[0].opts.cwd), false);
   const enoent = Object.assign(new Error('x'), { code: 'ENOENT' });
-  await assert.rejects(generateImage({ prompt: 'p', net: { spawnImpl: mock({ spawnError: enoent }).spawnImpl, codexHome: home() } }), /не найдена/);
+  await assert.rejects(generateImage({ settings: CODEX, prompt: 'p', net: { spawnImpl: mock({ spawnError: enoent }).spawnImpl, codexHome: home() } }), /не найдена/);
 });
 
 test('generateImage: образец без пути и mime, путь с запятой — ошибки до запуска', async () => {
   const m = mock();
-  await assert.rejects(generateImage({ prompt: 'p', references: [{ bytes: Buffer.from('a') }], net: { spawnImpl: m.spawnImpl } }), /нет ни пути/);
-  await assert.rejects(generateImage({ prompt: 'p', references: [{ path: '/a,b.png' }], net: { spawnImpl: m.spawnImpl } }), /запят/);
+  await assert.rejects(generateImage({ settings: CODEX, prompt: 'p', references: [{ bytes: Buffer.from('a') }], net: { spawnImpl: m.spawnImpl } }), /нет ни пути/);
+  await assert.rejects(generateImage({ settings: CODEX, prompt: 'p', references: [{ path: '/a,b.png' }], net: { spawnImpl: m.spawnImpl } }), /запят/);
   assert.equal(m.calls.length, 0);
 });

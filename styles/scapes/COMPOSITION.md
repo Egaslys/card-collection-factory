@@ -284,36 +284,44 @@
 
 Предмет на абстрактном фоне:
 
+<!-- fragment: comp.field -->
 > A single large hero object, centred horizontally; its middle sits a little below the centre of a portrait frame (430 × 480), with slightly more air above it than below. It is big in the frame: it spans about four fifths of the frame width or about three quarters of the frame height, whichever it reaches first, so it covers roughly half to two thirds of the picture. The whole object is visible with clear air around it: generous space above and below, a comfortable margin on both sides. Nothing important near the top edge or in the top corners.
 
 Висящий предмет:
 
+<!-- fragment: comp.floating -->
 > The object floats in the air, tilted about 20–30 degrees, giving a lively diagonal.
 
 Стоящий предмет:
 
+<!-- fragment: comp.standing -->
 > The object stands upright on its support.
 
 Объём:
 
 Подставлять одну из двух строк: первую — для коробчатого предмета (по умолчанию), вторую — для предмета лицом к зрителю, на стене или плоской вещи.
 
+<!-- fragment: comp.volume-boxy -->
 > [boxy object] Three-quarter view showing at least two sides and the top of the object, camera at eye level or slightly above, so the object reads as a solid chunky 3D form.
 
+<!-- fragment: comp.volume-flat -->
 > [front-facing, wall-mounted or flat object] The object may face the viewer, but its own thickness and depth stay clearly visible (a rim, a side, a curled edge, a stack of sheets) and it casts a soft shadow, or it lies on a surface in perspective — never a flat sticker.
 
 Предмет в обстановке:
 
+<!-- fragment: comp.setting -->
 > The hero object is the clear centre of a real place; a large structure may be cut off by the bottom or side edge of the frame, but its main mass and anything readable stay well inside the frame. The hero is large: it covers about half to three quarters of the frame, and its middle sits at or just below the centre of the frame; the place surrounds it rather than dominating it.
 
 Камера снизу (только для высокого героя):
 
+<!-- fragment: comp.low-camera -->
 > Low camera angle looking slightly up, so the tall object looks heroic.
 
 Без задника — один фрагмент вместе с камерой: «Без задника» в [BACKGROUNDS.md](BACKGROUNDS.md#для-промпта-англ); углы камеры для него взяты из раздела «Камера» выше.
 
 Фирменный знак (выбрать знак и способ нанесения):
 
+<!-- fragment: comp.brand-mark -->
 > On the front face of the object, one small brand mark: {a simple house silhouette with a pitched roof, a chimney on the right and a square window in the middle / a front-facing cow head with short horns, ears out to the sides and a wide muzzle with two oval nostrils}, about one tenth of the object's width, made in the object's own material and lit like it: {embossed tone-on-tone / a stitched patch / carved into the wood / a sticker with a white die-cut border / a postage stamp}. No text.
 
 ## Не решено и не измерено

@@ -1,6 +1,6 @@
 // OpenRouter-compatible image provider. Sources: OpenRouter API docs
 // (openrouter.ai/docs: POST /images, GET /models?output_modalities=image, GET /credits).
-// Every value comes from the caller; defaults live in defaults.js.
+// Every value comes from the caller: the factory keeps them in settings/defaults.json (provider.openrouter).
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
