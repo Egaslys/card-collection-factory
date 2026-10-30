@@ -18,7 +18,7 @@ Update this map in the same task when an area, an entry point, a system file or 
 
 - `core/image/` — image processing: `prepare.js` (Node, `sharp`: `prepareCard` turns a model image into card pixels of the size the caller gives — cover scale, centre crop, Lanczos-3; `encodePng`) and `adjust.js` (browser-safe pure functions: `adjust(pixels, width, height, settings)` — brightness, saturation, luma unsharp mask; the same code for the pipeline and the editor preview). Tests: `tests/core-image.test.mjs`.
 
-- `core/providers/` — image provider: `openrouter.js` (`generateImage`, `listImageModels`, `getCredits`, `loadApiKey`; OpenRouter-compatible endpoint, set by the caller) and `defaults.js` (the one object of default endpoint/model/params until the settings file exists). Tests: `tests/provider-openrouter.test.mjs`, mocked fetch.
+- `core/providers/` — image provider: `openrouter.js` (`generateImage`, `listImageModels`, `getCredits`, `loadApiKey`; OpenRouter-compatible endpoint, set by the caller) and `defaults.js` (the one object of default endpoint/model/params until the settings file exists). Tests: `tests/provider-openrouter.test.mjs`, mocked fetch. `codex-cli.js` (`generateImage` with the same contract through `codex exec` under the ChatGPT subscription, no per-image payment; its defaults are in `codex-cli-defaults.js`). Tests: `tests/provider-codex-cli.test.mjs`, mocked spawn.
 
 ## Agent setup
 
