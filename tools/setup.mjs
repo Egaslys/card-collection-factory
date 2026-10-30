@@ -10,7 +10,6 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { cli } from './cli-args.mjs';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const STAMP = path.join('node_modules', '.ccf-install.json');
@@ -113,6 +112,15 @@ export function setup({ root = ROOT, log = console.log, check = false } = {}) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  // The option parser needs a newer Node than very old ones have, so the version is checked before it is loaded:
+  // a person with an old Node gets the Russian message, not an import error.
+  const engines = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).engines?.node;
+  if (!nodeIsEnough(process.version, engines)) {
+    console.log(`Версия Node.js ${process.version} слишком старая: нужна ${engines.replace('>=', '')} или новее.`);
+    console.log(`Скачайте текущую версию (LTS) на ${NODE_URL}, установите и запустите файл снова.`);
+    process.exit(1);
+  }
+  const { cli } = await import('./cli-args.mjs');
   const { values } = await cli({
     name: 'tools/setup.mjs',
     usage: ['tools/setup.mjs [--check]'],
@@ -125,7 +133,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const code = setup({ check: values.check });
   if (code === 0) {
     console.log('\nУстановлено, готово.');
-    console.log('Редактора и команд для агента пока нет: продукт ещё пишется, запускать нечего.');
+    console.log('Редактор запускает файл запуска (run.command, run.sh или run.bat) или команда `node ccf.mjs editor`; команды для агента — `node ccf.mjs --help`.');
   }
   process.exitCode = code;
 }

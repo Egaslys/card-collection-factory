@@ -20,6 +20,8 @@ node tools\setup.mjs %*
 set "RC=%ERRORLEVEL%"
 rem The editor: opens in the browser and runs until Ctrl+C (or the window is closed).
 if not "%RC%"=="0" goto done
+rem With options (--help, --check) only the setup runs; the editor starts on a plain launch.
+if not "%~1"=="" goto done
 node editor\server.mjs
 set "RC=%ERRORLEVEL%"
 :done
