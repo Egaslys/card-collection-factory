@@ -1,0 +1,582 @@
+// The store: collections, their sets, the collection's card pool, moves between them, export and live events.
+// Layout and formats: core/store/README.md (the one description). Every write of the product goes through here, so
+// the editor's live view sees it. `createStore({ root })` gives the same operations over another folder (tests);
+// core/store/index.js exports them over the factory's collections/.
+import { spawn as nodeSpawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { readCardFile } from '../card/card-file.js';
+import { exists, readJson, subdirs, writeJsonAtomic } from './files.js';
+import { checkId, reserveId, slugify } from './ids.js';
+import {
+  CARDS_DIR, CARD_FILE, COLLECTIONS_DIR, COLLECTION_FILE, DEFAULT_STYLE, EXPORT_CARDS_FOLDER, EXPORT_DIR, FINAL_IMAGE, SETS_DIR,
+  SET_FILE, SLOT_COUNT, WINDOW_KINDS, WINDOW_TEMPLATES,
+} from './layout.js';
+import { watchStore } from './watch.js';
+import { writeZip } from './zip.js';
+
+/**
+ * @typedef {object} Collection  collection.json
+ * @property {string} id
+ * @property {string} title
+ * @property {string} description
+ * @property {Record<string, unknown>} fields  free-form fields of the collection (season, audience, …)
+ * @property {string} style  styles/<style>
+ * @property {string[]} sets  set ids in the collection's order
+ * @property {string} createdAt  ISO time
+ * @property {string} updatedAt
+ */
+
+/**
+ * @typedef {object} Brief  what the set was asked for, in the producer's words
+ * @property {string} theme
+ * @property {string} wishes
+ * @property {number} variants  how many variants of the set were asked for
+ */
+
+/**
+ * The set window; other keys (e.g. core/set's `layout`) are kept as given. Checked when written.
+ * @typedef {{kind: string, template: string} & Record<string, unknown>} SetWindow  kind: one of WINDOW_KINDS; template: one of WINDOW_TEMPLATES
+ */
+
+/**
+ * @typedef {object} CardSet  set.json; keys other than these (e.g. `plan` of core/set) are kept as they are
+ * @property {string} id
+ * @property {string} title
+ * @property {number} number  the set's number in the collection (variants of one set share it)
+ * @property {Brief} brief
+ * @property {SetWindow} window
+ * @property {(string|null)[]} slots  SLOT_COUNT card ids or null, in window order (row by row, left to right)
+ * @property {string} variantGroup  sets with the same group are variants of one set; a new set's group is its own id
+ * @property {unknown} [plan]  the set's plan (core/set), stored as given
+ * @property {string} createdAt
+ * @property {string} updatedAt
+ */
+
+/**
+ * @typedef {object} CardSummary
+ * @property {string} id
+ * @property {string} title  the order's title, else its object, else the id
+ * @property {string|null} image  absolute path of card.png; null while there is none
+ * @property {'new'|'made'|'failed'} status  new: no attempt yet; made: card.png chosen; failed: attempts, none usable
+ * @property {{blocking: number, warns: number, needsEyes: number, maskStatus: string}|null} checks  the chosen attempt's
+ * @property {number} attempts
+ * @property {number} cost  USD, sum of the attempts whose cost is known
+ * @property {number} costUnknown  attempts whose cost the provider did not report
+ * @property {string|null} setId  the set the card sits in; null = in the pool
+ * @property {number|null} slot  0-based index into that set's slots
+ * @property {string|null} updatedAt  last change of card.json or card.png
+ * @property {string} [error]  card.json could not be read
+ */
+
+/**
+ * @typedef {object} CollectionSummary
+ * @property {string} id
+ * @property {string} title
+ * @property {string} description
+ * @property {number} setCount
+ * @property {number} cardCount
+ * @property {string|null} cover  image of the first card in the first set (else of any card); null when none
+ */
+
+/** @typedef {{setId: string, slot: number}} Place */
+
+/**
+ * tools/trash.mjs, the project's one way to delete (checks the paths, then the OS trash). Imported by a computed URL
+ * so the type check of core/ does not take in the untyped tools/; this is its contract.
+ * @typedef {(paths: string[], o: {root?: string, roots?: string[], move?: (paths: string[]) => string}) => {ok: boolean, lines: string[]}} TrashFn
+ */
+const TRASH_MODULE = new URL('../../tools/trash.mjs', import.meta.url).href;
+const loadTrash = async () => /** @type {{trash: TrashFn}} */ (await import(TRASH_MODULE)).trash;
+
+const COLLECTION_KEYS =['title', 'description', 'fields', 'style', 'sets'];
+const PROTECTED_SET_KEYS = ['id', 'createdAt', 'updatedAt'];
+
+/** @param {unknown} v @returns {v is Record<string, any>} */
+const isObject = v => typeof v === 'object' && v !== null && !Array.isArray(v);
+const now = () => new Date().toISOString();
+
+/** @param {string} what @param {unknown} v */
+function text(what, v) {
+  if (typeof v !== 'string') throw new Error(`${what}: нужна строка.`);
+  return v;
+}
+
+/** @param {unknown} v */
+function title(v) {
+  if (typeof v !== 'string' || !v.trim()) throw new Error('Нужно название (непустая строка).');
+  return v.trim();
+}
+
+/** @param {unknown} brief @param {Brief} [base] @returns {Brief} */
+function checkBrief(brief = {}, base = { theme: '', wishes: '', variants: 1 }) {
+  if (!isObject(brief)) throw new Error('Вводные набора (brief) — объект { theme, wishes, variants }.');
+  const out = { ...base, ...brief };
+  text('Тема набора (brief.theme)', out.theme);
+  text('Пожелания (brief.wishes)', out.wishes);
+  if (!Number.isInteger(out.variants) || out.variants < 1) throw new Error('Число вариантов (brief.variants) — целое от 1.');
+  return out;
+}
+
+/** @param {unknown} window @param {Partial<SetWindow>} [base] @returns {SetWindow} */
+function checkWindow(window = {}, base = { kind: 'large', template: WINDOW_TEMPLATES[0] }) {
+  if (!isObject(window)) throw new Error('Окно набора (window) — объект { kind, template }.');
+  const out = /** @type {SetWindow} */ ({ ...base, ...window });
+  if (!(/** @type {readonly string[]} */ (WINDOW_KINDS)).includes(out.kind)) throw new Error(`Вид окна «${out.kind}» неизвестен: ${WINDOW_KINDS.join(', ')}.`);
+  if (!(/** @type {readonly string[]} */ (WINDOW_TEMPLATES)).includes(out.template)) throw new Error(`Шаблон окна «${out.template}» неизвестен: ${WINDOW_TEMPLATES.join(', ')}.`);
+  return out;
+}
+
+/** @param {unknown} n */
+function checkNumber(n) {
+  if (!Number.isInteger(n) || /** @type {number} */ (n) < 1) throw new Error('Номер набора — целое от 1.');
+  return /** @type {number} */ (n);
+}
+
+/** A file or folder name a person reads: no characters a file system refuses, no trailing dots or spaces. */
+function fileName(/** @type {string} */ name, /** @type {string} */ fallback) {
+  let s = String(name).replace(/[/\\:*?"<>|\x00-\x1f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80).replace(/[. ]+$/, '');
+  if (/^(con|prn|aux|nul|com\d|lpt\d)$/i.test(s)) s = '_' + s;
+  return s || fallback;
+}
+
+/** "name", "name (2)", … not yet in `used` (compared without case, as on macOS and Windows). */
+function uniqueName(/** @type {Set<string>} */ used, /** @type {string} */ name, ext = '') {
+  for (let n = 1; ; n++) {
+    const candidate = (n === 1 ? name : `${name} (${n})`) + ext;
+    if (!used.has(candidate.toLowerCase())) { used.add(candidate.toLowerCase()); return candidate; }
+  }
+}
+
+const pad = (/** @type {number} */ n) => String(n).padStart(2, '0');
+const stampName = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+
+/**
+ * @param {object} [o]
+ * @param {string} [o.root]  the collections folder; the factory's collections/ by default
+ * @param {(paths: string[]) => string} [o.trashMove]  replaces the OS trash (tests); see tools/trash.mjs
+ * @param {typeof nodeSpawn} [o.spawn]  replaces child_process.spawn for openFolder (tests)
+ * @param {NodeJS.Platform} [o.platform]
+ */
+export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpawn, platform = process.platform } = {}) {
+  root = path.resolve(root);
+
+  const collectionDir = (/** @type {string} */ c) => path.join(root, checkId('коллекция', c));
+  const setDir = (/** @type {string} */ c, /** @type {string} */ s) => path.join(collectionDir(c), SETS_DIR, checkId('набор', s));
+
+  /**
+   * Where core/card writes the card (the folder may not exist yet).
+   * @param {string} collectionId @param {string} cardId
+   */
+  const cardDir = (collectionId, cardId) => path.join(collectionDir(collectionId), CARDS_DIR, checkId('карточка', cardId));
+
+  /** @param {string} c @returns {Collection} */
+  function readCollection(c) {
+    const file = path.join(collectionDir(c), COLLECTION_FILE);
+    if (!exists(file)) throw new Error(`Коллекции «${c}» нет (${file}).`);
+    return readJson(file);
+  }
+  /** @param {Collection} col */
+  const writeCollection = col => writeJsonAtomic(path.join(collectionDir(col.id), COLLECTION_FILE), col);
+
+  /** @param {string} c @param {string} s @returns {CardSet} */
+  function readSet(c, s) {
+    const file = path.join(setDir(c, s), SET_FILE);
+    if (!exists(file)) throw new Error(`Набора «${s}» в коллекции «${c}» нет.`);
+    return readJson(file);
+  }
+  /** @param {string} c @param {CardSet} set */
+  const writeSet = (c, set) => writeJsonAtomic(path.join(setDir(c, set.id), SET_FILE), set);
+
+  /** The collection's sets: first in its order, then any not listed there, by number. @param {string} c @param {Collection} col */
+  function allSets(c, col = readCollection(c)) {
+    const ids = subdirs(path.join(collectionDir(c), SETS_DIR)).filter(s => exists(path.join(setDir(c, s), SET_FILE)));
+    const listed = col.sets.filter(s => ids.includes(s));
+    const rest = ids.filter(s => !listed.includes(s));
+    const sets = [...listed, ...rest].map(s => readSet(c, s));
+    const tail = sets.slice(listed.length).sort((a, b) => a.number - b.number);
+    return [...sets.slice(0, listed.length), ...tail];
+  }
+
+  /** @param {CardSet[]} sets @returns {Map<string, Place>} */
+  function placesOf(sets) {
+    const places = new Map();
+    for (const set of sets) set.slots.forEach((id, slot) => { if (id) places.set(id, { setId: set.id, slot }); });
+    return places;
+  }
+
+  /** @param {string} c */
+  const cardIds = c => {
+    const dir = path.join(collectionDir(c), CARDS_DIR);
+    return subdirs(dir).sort((a, b) => birth(path.join(dir, a)) - birth(path.join(dir, b)) || a.localeCompare(b));
+  };
+  /** @param {string} p */
+  const birth = p => { const s = fs.statSync(p); return s.birthtimeMs || s.ctimeMs; };
+
+  /** @param {string} c @param {string} k @param {Place|undefined} place @returns {CardSummary} */
+  function summary(c, k, place) {
+    const dir = cardDir(c, k);
+    const png = path.join(dir, FINAL_IMAGE);
+    const times = [png, path.join(dir, CARD_FILE)].map(f => { try { return fs.statSync(f).mtimeMs; } catch { return 0; } });
+    const latest = Math.max(...times);
+    /** @type {CardSummary} */
+    const out = {
+      id: k, title: k, image: null, status: 'new', checks: null, attempts: 0, cost: 0, costUnknown: 0,
+      setId: place?.setId ?? null, slot: place?.slot ?? null, updatedAt: latest ? new Date(latest).toISOString() : null,
+    };
+    let card;
+    try { card = readCardFile(dir); } catch (e) { out.error = `card.json не читается: ${/** @type {Error} */ (e).message}`; return out; }
+    if (!card) return out;
+    out.title = card.order?.title || card.order?.object || k;
+    out.attempts = card.attempts.length;
+    for (const a of card.attempts) { if (a.cost == null) out.costUnknown++; else out.cost += a.cost; }
+    out.cost = Math.round(out.cost * 1e6) / 1e6;
+    const chosen = card.attempts.find(a => a.n === card.chosen);
+    if (chosen && exists(png)) {
+      out.status = 'made';
+      out.image = png;
+      const ch = chosen.check;
+      if (ch) out.checks = { blocking: ch.blocking, warns: ch.warns, needsEyes: ch.fails.length - ch.blocking, maskStatus: ch.maskStatus };
+    } else if (card.attempts.length) out.status = 'failed';
+    return out;
+  }
+
+  /** @param {string} p */
+  async function toTrash(p) {
+    // Only inside the collections folder, never the folder itself.
+    const r = (await loadTrash())([p], { root, roots: [root], move: trashMove });
+    if (!r.ok) throw new Error('Не удалось убрать в корзину:\n' + r.lines.join('\n'));
+  }
+
+  /**
+   * Places all cards so that each sits in at most one slot: `changes` maps set id → its new slots; any other set
+   * holding one of the cards placed there loses it. Writes only the sets that changed.
+   * @param {string} c @param {CardSet[]} sets @param {Map<string, (string|null)[]>} changes
+   */
+  function applySlots(c, sets, changes) {
+    const placed = new Set([...changes.values()].flat().filter(Boolean));
+    const t = now();
+    for (const set of sets) {
+      const before = JSON.stringify(set.slots);
+      const slots = changes.get(set.id) ?? set.slots.map(id => (id && placed.has(id) ? null : id));
+      if (JSON.stringify(slots) !== before) writeSet(c, { ...set, slots, updatedAt: t });
+    }
+  }
+
+  /** @param {string} c @param {unknown} slots */
+  function checkSlots(c, slots) {
+    if (!Array.isArray(slots) || slots.length !== SLOT_COUNT) throw new Error(`Слоты набора — массив из ${SLOT_COUNT} id карточек или null.`);
+    const seen = new Set();
+    for (const id of slots) {
+      if (id === null) continue;
+      if (!exists(cardDir(c, id))) throw new Error(`Карточки «${id}» в коллекции «${c}» нет.`);
+      if (seen.has(id)) throw new Error(`Карточка «${id}» стоит в наборе дважды.`);
+      seen.add(id);
+    }
+    return /** @type {(string|null)[]} */ (slots);
+  }
+
+  return {
+    root,
+    cardDir,
+
+    /** @returns {Promise<CollectionSummary[]>} oldest first; folders without collection.json are not collections */
+    async listCollections() {
+      const out = [];
+      for (const c of subdirs(root)) {
+        if (!exists(path.join(root, c, COLLECTION_FILE))) continue;
+        const col = readCollection(c);
+        const sets = allSets(c, col);
+        const cards = cardIds(c);
+        let cover = null;
+        for (const id of [...sets.flatMap(s => s.slots), ...cards]) {
+          if (id && exists(path.join(cardDir(c, id), FINAL_IMAGE))) { cover = path.join(cardDir(c, id), FINAL_IMAGE); break; }
+        }
+        out.push({ id: col.id, title: col.title, description: col.description, setCount: sets.length, cardCount: cards.length, cover, createdAt: col.createdAt });
+      }
+      return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map(({ createdAt, ...rest }) => rest);
+    },
+
+    /**
+     * @param {{title: string, description?: string, fields?: Record<string, unknown>, style?: string}} o
+     * @returns {Promise<Collection>}
+     */
+    async createCollection({ title: t, description = '', fields = {}, style = DEFAULT_STYLE }) {
+      const name = title(t);
+      text('Описание коллекции', description);
+      if (!isObject(fields)) throw new Error('Поля коллекции (fields) — объект.');
+      const id = reserveId(root, slugify(name, 'collection'));
+      for (const d of [CARDS_DIR, SETS_DIR]) fs.mkdirSync(path.join(root, id, d), { recursive: true });
+      const at = now();
+      /** @type {Collection} */
+      const col = { id, title: name, description, fields, style: text('Стиль', style), sets: [], createdAt: at, updatedAt: at };
+      writeCollection(col);
+      return col;
+    },
+
+    /** @param {string} collectionId @returns {Promise<{collection: Collection, sets: CardSet[], pool: CardSummary[]}>} */
+    async getCollection(collectionId) {
+      const collection = readCollection(collectionId);
+      const sets = allSets(collectionId, collection);
+      const places = placesOf(sets);
+      const pool = cardIds(collectionId).filter(k => !places.has(k)).map(k => summary(collectionId, k, undefined));
+      return { collection, sets, pool };
+    },
+
+    /**
+     * Keys: title, description, fields (replaced as a whole), style, sets (the new order: the same set ids).
+     * @param {string} collectionId @param {Partial<Collection>} patch @returns {Promise<Collection>}
+     */
+    async updateCollection(collectionId, patch) {
+      const col = readCollection(collectionId);
+      if (!isObject(patch)) throw new Error('Изменения коллекции — объект.');
+      for (const key of Object.keys(patch)) if (!COLLECTION_KEYS.includes(key)) throw new Error(`Коллекция: поле «${key}» менять нельзя или его нет (можно: ${COLLECTION_KEYS.join(', ')}).`);
+      const next = { ...col, ...patch, updatedAt: now() };
+      if ('title' in patch) next.title = title(patch.title);
+      if ('description' in patch) text('Описание коллекции', patch.description);
+      if ('style' in patch) text('Стиль', patch.style);
+      if ('fields' in patch && !isObject(patch.fields)) throw new Error('Поля коллекции (fields) — объект.');
+      if ('sets' in patch) {
+        const have = allSets(collectionId, col).map(s => s.id).sort();
+        if (!Array.isArray(patch.sets) || JSON.stringify([...patch.sets].sort()) !== JSON.stringify(have)) {
+          throw new Error(`Порядок наборов — все id наборов коллекции ровно по разу: ${have.join(', ')}.`);
+        }
+      }
+      writeCollection(next);
+      return next;
+    },
+
+    /** Moves the collection's folder (sets, cards, exports) to the OS trash. @param {string} collectionId */
+    async deleteCollection(collectionId) {
+      readCollection(collectionId);
+      await toTrash(collectionDir(collectionId));
+    },
+
+    /**
+     * Other keys of `o` (e.g. `plan`) are stored in set.json as given.
+     * @param {string} collectionId
+     * @param {{title: string, brief?: Partial<Brief>, window?: Partial<SetWindow>, number?: number, variantGroup?: string, plan?: unknown} & Record<string, unknown>} o
+     * @returns {Promise<CardSet>}
+     */
+    async createSet(collectionId, o) {
+      const col = readCollection(collectionId);
+      if (!isObject(o)) throw new Error('Набор: нужен объект { title, brief, window }.');
+      const { title: t, brief, window, number, variantGroup, slots, ...extra } = o;
+      for (const key of PROTECTED_SET_KEYS) if (key in extra) throw new Error(`Набор: поле «${key}» задаёт хранилище.`);
+      const name = title(t);
+      const b = checkBrief(brief);
+      const w = checkWindow(window);
+      const sets = allSets(collectionId, col);
+      const n = number === undefined ? Math.max(0, ...sets.map(s => s.number)) + 1 : checkNumber(number);
+      const id = reserveId(path.join(collectionDir(collectionId), SETS_DIR), slugify(name, 'set'));
+      const at = now();
+      /** @type {CardSet} */
+      const set = {
+        id, title: name, number: n, brief: b, window: w, slots: Array(SLOT_COUNT).fill(null),
+        variantGroup: variantGroup === undefined ? id : text('Группа вариантов', variantGroup), ...extra, createdAt: at, updatedAt: at,
+      };
+      writeSet(collectionId, set);
+      if (slots !== undefined) applySlots(collectionId, [...sets, set], new Map([[id, checkSlots(collectionId, slots)]]));
+      writeCollection({ ...col, sets: [...col.sets.filter(s => s !== id), id], updatedAt: at });
+      return readSet(collectionId, id);
+    },
+
+    /** @param {string} collectionId @param {string} setId @returns {Promise<CardSet>} */
+    async getSet(collectionId, setId) {
+      readCollection(collectionId);
+      return readSet(collectionId, setId);
+    },
+
+    /**
+     * Merges `patch` into set.json: brief and window key by key (checked), slots as in setSlots, any other key
+     * (e.g. `plan`) replaced as given; keys not in the patch are kept. id, createdAt, updatedAt cannot be set.
+     * @param {string} collectionId @param {string} setId @param {Record<string, unknown>} patch
+     * @returns {Promise<CardSet>}
+     */
+    async updateSet(collectionId, setId, patch) {
+      const col = readCollection(collectionId);
+      const set = readSet(collectionId, setId);
+      if (!isObject(patch)) throw new Error('Изменения набора — объект.');
+      for (const key of PROTECTED_SET_KEYS) if (key in patch) throw new Error(`Набор: поле «${key}» задаёт хранилище.`);
+      const { slots, ...rest } = patch;
+      const next = { ...set, ...rest, updatedAt: now() };
+      if ('title' in rest) next.title = title(rest.title);
+      if ('brief' in rest) next.brief = checkBrief(rest.brief, set.brief);
+      if ('window' in rest) next.window = checkWindow(rest.window, set.window);
+      if ('number' in rest) checkNumber(rest.number);
+      if ('variantGroup' in rest) text('Группа вариантов', rest.variantGroup);
+      writeSet(collectionId, next);
+      if (slots !== undefined) applySlots(collectionId, allSets(collectionId, col), new Map([[setId, checkSlots(collectionId, slots)]]));
+      return readSet(collectionId, setId);
+    },
+
+    /** Trashes the set's folder; its cards stay in the collection's pool. @param {string} collectionId @param {string} setId */
+    async deleteSet(collectionId, setId) {
+      const col = readCollection(collectionId);
+      readSet(collectionId, setId);
+      await toTrash(setDir(collectionId, setId));
+      writeCollection({ ...col, sets: col.sets.filter(s => s !== setId), updatedAt: now() });
+    },
+
+    /**
+     * Puts the cards into the set's slots; a card placed here leaves any other set it was in.
+     * @param {string} collectionId @param {string} setId @param {(string|null)[]} slots @returns {Promise<CardSet>}
+     */
+    async setSlots(collectionId, setId, slots) {
+      const sets = allSets(collectionId);
+      if (!sets.some(s => s.id === setId)) readSet(collectionId, setId); // throws "no such set"
+      applySlots(collectionId, sets, new Map([[setId, checkSlots(collectionId, slots)]]));
+      return readSet(collectionId, setId);
+    },
+
+    /**
+     * Moves a card to a set's slot (0-based) or back to the pool. A card already in the target slot swaps places
+     * with the moved one: it takes the moved card's old slot, or goes to the pool when the moved card came from it.
+     * @param {string} collectionId @param {string} cardId @param {Place | {pool: true}} to
+     * @returns {Promise<CardSummary>}
+     */
+    async moveCard(collectionId, cardId, to) {
+      if (!exists(cardDir(collectionId, cardId))) throw new Error(`Карточки «${cardId}» в коллекции «${collectionId}» нет.`);
+      const sets = allSets(collectionId);
+      const from = placesOf(sets).get(cardId);
+      /** @type {Map<string, (string|null)[]>} */
+      const changes = new Map();
+      const slotsOf = (/** @type {string} */ s) => changes.get(s) ?? [.../** @type {CardSet} */ (sets.find(x => x.id === s)).slots];
+      if ('pool' in to && to.pool) {
+        if (from) changes.set(from.setId, slotsOf(from.setId).map(id => (id === cardId ? null : id)));
+      } else {
+        const { setId, slot } = /** @type {Place} */ (to);
+        if (!sets.some(s => s.id === setId)) readSet(collectionId, setId);
+        if (!Number.isInteger(slot) || slot < 0 || slot >= SLOT_COUNT) throw new Error(`Слот — целое от 0 до ${SLOT_COUNT - 1}.`);
+        const target = slotsOf(setId);
+        const other = target[slot];
+        if (from) {
+          const source = from.setId === setId ? target : slotsOf(from.setId);
+          source[from.slot] = other && other !== cardId ? other : null;
+          if (from.setId !== setId) changes.set(from.setId, source);
+        }
+        target[slot] = cardId;
+        changes.set(setId, target);
+      }
+      if (changes.size) applySlots(collectionId, sets, changes);
+      return summary(collectionId, cardId, placesOf(allSets(collectionId)).get(cardId));
+    },
+
+    /** Removes the card from its set and trashes its folder (with every attempt). @param {string} collectionId @param {string} cardId */
+    async deleteCard(collectionId, cardId) {
+      const dir = cardDir(collectionId, cardId);
+      if (!exists(dir)) throw new Error(`Карточки «${cardId}» в коллекции «${collectionId}» нет.`);
+      const sets = allSets(collectionId);
+      const from = placesOf(sets).get(cardId);
+      if (from) {
+        const slots = /** @type {CardSet} */ (sets.find(s => s.id === from.setId)).slots.map(id => (id === cardId ? null : id));
+        applySlots(collectionId, sets, new Map([[from.setId, slots]]));
+      }
+      await toTrash(dir);
+    },
+
+    /**
+     * A new card id from the card's title (or any text), unique in the collection; its folder is created at once,
+     * so two parallel callers never get the same id.
+     * @param {string} collectionId @param {string} base @returns {string}
+     */
+    newCardId(collectionId, base) {
+      readCollection(collectionId);
+      return reserveId(path.join(collectionDir(collectionId), CARDS_DIR), slugify(base, 'card'));
+    },
+
+    /**
+     * all cards of the collection (oldest first), or one set's in slot order, or the pool's (cards in no set).
+     * @param {string} collectionId @param {{setId?: string, pool?: boolean}} [o] @returns {Promise<CardSummary[]>}
+     */
+    async listCards(collectionId, { setId, pool } = {}) {
+      const sets = allSets(collectionId);
+      const places = placesOf(sets);
+      if (setId !== undefined) {
+        const set = sets.find(s => s.id === setId) ?? readSet(collectionId, setId);
+        return set.slots.flatMap((k, slot) => (k && exists(cardDir(collectionId, k)) ? [summary(collectionId, k, { setId, slot })] : []));
+      }
+      return cardIds(collectionId).filter(k => !pool || !places.has(k)).map(k => summary(collectionId, k, places.get(k)));
+    },
+
+    /**
+     * Copies card images out under collections/<c>/export/: the collection's folder, in it a folder per set
+     * («03 Title», cards «01 Title.png» in slot order) and «Карточки» for the chosen single cards. No setIds and no
+     * cardIds = every set of the collection. Cards without an image are skipped and listed.
+     * @param {{collectionId: string, setIds?: string[], cardIds?: string[], format?: 'png'|'zip', name?: string}} o
+     * @returns {Promise<{path: string, files: number, skipped: {id: string, reason: string}[]}>}
+     */
+    async exportItems({ collectionId, setIds, cardIds: chosen, format = 'png', name }) {
+      if (format !== 'png' && format !== 'zip') throw new Error(`Формат выгрузки «${format}» неизвестен: png или zip.`);
+      const col = readCollection(collectionId);
+      const sets = allSets(collectionId, col);
+      const pickSets = setIds ?? (chosen ? [] : sets.map(s => s.id));
+      const top = fileName(col.title, col.id);
+      /** @type {{name: string, source: string}[]} */
+      const entries = [];
+      /** @type {{id: string, reason: string}[]} */
+      const skipped = [];
+      const folders = new Set();
+      /** @param {string} folder @param {Set<string>} used @param {string} k @param {string} prefix */
+      const add = (folder, used, k, prefix) => {
+        const s = summary(collectionId, k, undefined);
+        if (!s.image) { skipped.push({ id: k, reason: 'нет готовой картинки' }); return; }
+        entries.push({ name: `${top}/${folder}/${uniqueName(used, fileName(prefix + s.title, k), '.png')}`, source: s.image });
+      };
+      for (const s of pickSets) {
+        const set = sets.find(x => x.id === s) ?? readSet(collectionId, s);
+        const folder = uniqueName(folders, fileName(`${pad(set.number)} ${set.title}`, set.id));
+        const used = new Set();
+        set.slots.forEach((k, slot) => { if (k) add(folder, used, k, `${pad(slot + 1)} `); });
+      }
+      if (chosen?.length) {
+        const folder = uniqueName(folders, EXPORT_CARDS_FOLDER);
+        const used = new Set();
+        for (const k of chosen) {
+          if (!exists(cardDir(collectionId, k))) throw new Error(`Карточки «${k}» в коллекции «${collectionId}» нет.`);
+          add(folder, used, k, '');
+        }
+      }
+      if (!entries.length) throw new Error('Выгружать нечего: у выбранных карточек нет готовых картинок.');
+
+      const exportDir = path.join(collectionDir(collectionId), EXPORT_DIR);
+      fs.mkdirSync(exportDir, { recursive: true });
+      const taken = new Set(fs.readdirSync(exportDir).map(f => f.toLowerCase().replace(/\.zip$/, '')));
+      const base = uniqueName(taken, fileName(name ?? stampName(), 'export'));
+      if (format === 'zip') {
+        const file = path.join(exportDir, base + '.zip');
+        writeZip(file, entries);
+        return { path: file, files: entries.length, skipped };
+      }
+      const out = path.join(exportDir, base);
+      for (const e of entries) {
+        const dest = path.join(out, ...e.name.split('/'));
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.copyFileSync(e.source, dest);
+      }
+      return { path: out, files: entries.length, skipped };
+    },
+
+    /** Opens a folder (or shows a file) in the OS file manager. @param {string} target */
+    async openFolder(target) {
+      if (!exists(target)) throw new Error(`Нет такой папки: ${target}`);
+      const command = platform === 'darwin' ? 'open' : platform === 'win32' ? 'explorer' : 'xdg-open';
+      const child = spawn(command, [path.resolve(target)], { detached: true, stdio: 'ignore' });
+      await new Promise((resolve, reject) => {
+        child.once('spawn', resolve);
+        child.once('error', e => reject(new Error(`Не удалось открыть папку (${command}): ${e.message}`)));
+      });
+      child.unref();
+    },
+
+    /**
+     * Calls `onEvent` for every created, updated or deleted collection, set or card, whoever wrote it.
+     * @param {(e: import('./watch.js').StoreEvent) => void} onEvent
+     * @param {import('./watch.js').WatchOptions} [o]
+     * @returns {() => void} stop
+     */
+    watch(onEvent, o) {
+      return watchStore(root, onEvent, o);
+    },
+  };
+}

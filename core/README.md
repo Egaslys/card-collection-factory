@@ -14,36 +14,31 @@ For agents. The product's vision: `docs/plans/VISION.md` («Устройство
 | `set/` | planning a set and a collection by the style's rules, generating them | `set/README.md` |
 | `settings.js` | `settings/defaults.json` + `settings/local.json`; the key is never in settings | |
 
-## Data layout (one source: `store/README.md` once written; until then this section)
+## Data layout
 
-```
-collections/<collection>/
-  collection.json        id, title, description, fields {…}, style, set order
-  cards/<card>/          the collection's card pool: every card lives here once (card.json, card.png, attempts/)
-  sets/<set>/set.json    id, title, number in the collection, brief (theme, wishes), window (kind, template colour),
-                         slots: 10 card ids or null in window order, variant group
-  export/                what export wrote; «Открыть в папке» opens it
-```
-
-A card belongs to the collection, not to a set: moving a card between sets or back to the pool changes only `set.json` slots. A set variant is a set with the same variant group.
+The factory folder `collections/` (collections, their sets, the collection's card pool, exports) and the formats of `collection.json` and `set.json`: [store/README.md](store/README.md), the one description. A card belongs to the collection, not to a set; which set it sits in is recorded only in `set.json` slots.
 
 ## Store API (the agreed contract; `store/` implements it, `set/`, `card/`, the editor and `ccf.mjs` call it)
+
+Import from `core/store/index.js`; `createStore({ root })` gives the same operations over another folder. Exact behaviour: JSDoc in `store/store.js`.
 
 ```
 listCollections() → [{ id, title, description, setCount, cardCount, cover }]
 createCollection({ title, description, fields?, style? }) → Collection
-getCollection(collectionId) → { collection, sets: Set[], pool: CardSummary[] }   // pool = cards in no set
+getCollection(collectionId) → { collection, sets: CardSet[], pool: CardSummary[] }   // pool = cards in no set
 updateCollection(collectionId, patch) / deleteCollection(collectionId)           // delete = OS trash
-createSet(collectionId, { title, brief: { theme, wishes, variants }, window: { kind, template }, number?, variantGroup? }) → Set
+createSet(collectionId, { title, brief: { theme, wishes, variants }, window: { kind, template }, number?, variantGroup?, plan?, … }) → CardSet
 getSet(collectionId, setId) / updateSet(collectionId, setId, patch) / deleteSet(collectionId, setId)
-setSlots(collectionId, setId, slots)                 // 10 card ids or null, window order
-moveCard(collectionId, cardId, { setId, slot } | { pool: true })
-newCardId(collectionId, base) → id                   // unique, readable (from the card's title)
-cardDir(collectionId, cardId) → absolute path        // where core/card writes the card
-listCards(collectionId, { setId? , pool? }) → CardSummary[]   // id, title, image, status, cost, check summary, setId, slot
-exportItems({ collectionId, setIds?, cardIds?, format: 'png' | 'zip' }) → { path }
+                                                     // set.json keeps `plan` (core/set) and any other key as given
+setSlots(collectionId, setId, slots)                 // 10 card ids or null, window order; slot = 0-based index
+moveCard(collectionId, cardId, { setId, slot } | { pool: true }) → CardSummary   // into a taken slot: the cards swap
+deleteCard(collectionId, cardId)                     // OS trash; its slot becomes empty
+newCardId(collectionId, base) → id                   // sync; unique, readable (from the card's title); creates the folder
+cardDir(collectionId, cardId) → absolute path        // sync; where core/card writes the card
+listCards(collectionId, { setId? , pool? }) → CardSummary[]   // id, title, image, status, checks, cost, setId, slot
+exportItems({ collectionId, setIds?, cardIds?, format: 'png' | 'zip', name? }) → { path, files, skipped }
 openFolder(path)                                     // the OS file manager
-watch(onEvent) → stop                                // { type: 'collection' | 'set' | 'card', collectionId, id, change }
+watch(onEvent, { debounceMs?, pollMs?, poll? }?) → stop   // { type: 'collection' | 'set' | 'card', collectionId, id, change }
 ```
 
 ## Calling conventions
