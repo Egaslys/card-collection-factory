@@ -291,3 +291,61 @@ test('подбор обработки в цикле: настройки и ме�
   const card = await sharp(path.join(r.dir, 'attempts/1/card.png')).raw().toBuffer();
   assert.deepEqual(Buffer.from(adjust(prepared.data, prepared.info.width, prepared.info.height, a.processing)), card);
 });
+
+// ---------- fallback model ----------
+
+test('запасная модель: только когда основная не справилась; записана в попытке; потолок расходов проверяется и для неё', { skip: noSharp }, async () => {
+  const { makeCard } = /** @type {any} */ (loop);
+  const { ProviderError } = await import('../core/providers/openrouter.js');
+  const root = tmp();
+  const FALLBACK = 'openai/gpt-image-2.5-flare';
+  const refuse = async () => { throw new ProviderError('Провайдер ответил без картинки.', { status: 200 }); };
+  const image = await grey();
+  const backup = fakeProvider(image, 0.05, { model: FALLBACK });
+  const run = (provider, limits) => makeCard({ order: ORDER, collection: 'c', set: 'fb', settings: SETTINGS, provider, buildPrompt: fakePrompt, root, limits });
+
+  // the main model answers: the fallback is not called
+  const ok = await run({ ...fakeProvider(image, 0.04), fallback: backup }, { attempts: 1 });
+  assert.equal(backup.calls.length, 0);
+  assert.equal(ok.attempts[0].model, MODEL);
+  assert.equal(ok.attempts[0].fallbackFrom, undefined);
+
+  // the main model refuses: the fallback makes the attempt, with its own start processing
+  const r = await run({ model: MODEL, generate: refuse, fallback: backup }, { attempts: 1 });
+  assert.equal(backup.calls.length, 1);
+  assert.equal(backup.calls[0].prompt, 'PROMPT');
+  const a = JSON.parse(fs.readFileSync(path.join(r.dir, 'card.json'), 'utf8')).attempts.at(-1);
+  assert.equal(a.model, FALLBACK);
+  assert.deepEqual(a.fallbackFrom, { model: MODEL, error: { message: 'Провайдер ответил без картинки.', status: 200 } });
+  assert.equal(a.cost, 0.05);
+  assert.deepEqual(a.processing, JSON.parse(fs.readFileSync(path.join(ROOT, 'styles/scapes/processing.json'), 'utf8')).start[FALLBACK]);
+  assert.ok(a.check, 'the fallback image went through processing and checks');
+
+  // both fail: the fallback's error is the attempt's error, the run stops
+  const failing = { model: FALLBACK, generate: async () => { throw new ProviderError('Провайдер вернул HTTP 402 (/images): нет средств', { status: 402 }); } };
+  const both = await run({ model: MODEL, generate: refuse, fallback: failing }, { attempts: 2 });
+  assert.equal(both.stop, 'provider-error');
+  assert.equal(both.attempts.length, 1);
+  assert.equal(both.attempts[0].error.status, 402);
+  assert.equal(both.attempts[0].fallbackFrom.model, MODEL);
+
+  // the fallback's known price (0.05) would pass the cap: it is not called
+  const before = backup.calls.length;
+  const capped = await run({ model: MODEL, generate: refuse, fallback: backup }, { attempts: 1, maxSpendUsd: 0.04 });
+  assert.equal(capped.stop, 'budget');
+  assert.equal(backup.calls.length, before);
+  assert.match(capped.attempts[0].error.message, /без картинки/);
+});
+
+test('запасная модель из настроек: fallbackModel у OpenRouter; у codex-cli её нет', { skip: noSharp }, () => {
+  const { providerFrom } = /** @type {any} */ (loop);
+  const real = loadSettings().provider;
+  process.env.CCF_TEST_KEY = 'test-key';
+  const p = providerFrom({ ...real, openrouter: { ...real.openrouter, keyEnvVar: 'CCF_TEST_KEY' } });
+  assert.equal(p.model, real.openrouter.model);
+  assert.equal(p.fallback.model, real.openrouter.fallbackModel);
+  assert.equal(providerFrom({ ...real, openrouter: { ...real.openrouter, keyEnvVar: 'CCF_TEST_KEY', fallbackModel: null } }).fallback, undefined);
+  assert.equal(providerFrom({ ...real, use: 'codex-cli' }).fallback, undefined);
+  delete process.env.CCF_TEST_KEY;
+});
+

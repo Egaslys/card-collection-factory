@@ -11,6 +11,7 @@ export const SETTINGS_DIR = path.join(ROOT, 'settings');
  * @typedef {object} OpenRouterSettings
  * @property {string} endpoint
  * @property {string} model
+ * @property {string|null} fallbackModel  tried in the same attempt when `model` fails; null = none
  * @property {string} aspectRatio
  * @property {string} resolution
  * @property {string} keyEnvVar  name of the environment variable holding the key; the key itself is never in settings

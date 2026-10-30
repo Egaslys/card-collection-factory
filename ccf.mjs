@@ -27,7 +27,9 @@ style's phrases, the image is generated, cropped to the card, post-processed and
 checks. While a check FAILs, the card is generated again, up to the attempt limit and the spend cap (settings/,
 or the options below). A FAIL that rests on an unconfirmed hero outline does not cause a regeneration: look at
 attempts/<n>/card.mask.png and run "card check". The card folder is
-collections/<collection>/sets/<set>/cards/<order id>/; running again appends attempts to it.`,
+collections/<collection>/sets/<set>/cards/<order id>/; running again appends attempts to it.
+An order of kind "character-sheet" (an anchor portrait, core/style/README.md) keeps the model's frame, skips the
+pixel checks and stops after one attempt: run it again for another; the checks for eyes are printed.`,
     options: {
       collection: { type: 'string', value: 'NAME', help: 'collection folder name (required)' },
       set: { type: 'string', value: 'NAME', help: 'set folder name (required)' },
@@ -148,6 +150,7 @@ function printReport(r) {
   for (const w of r.warnings) console.log(`Внимание: ${w}`);
   for (const a of r.attempts) {
     console.log(`\nПопытка ${a.n} — ${a.model}, ${usd(a.cost)}`);
+    if (a.fallbackFrom) console.log(`  основная модель ${a.fallbackFrom.model} не справилась (${a.fallbackFrom.error.message}) — попытку сделала запасная`);
     if (a.error) console.log(`  ОШИБКА (${a.error.stage === 'generate' ? 'генерация' : 'обработка'}): ${a.error.message}`);
     if (a.check) {
       const eyes = a.check.fails.length - a.check.blocking;

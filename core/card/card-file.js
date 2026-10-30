@@ -10,6 +10,10 @@
 //       check.json         the full result of the style's checks (measures, results, visual checklist)
 //       card.mask.png      the proposed hero outline over the card, when the checks found one
 //
+// An order whose output is not a card (kind "character-sheet", core/style/README.md) keeps the model's frame:
+// prepared.png and card.png have the model image's size, not the card size, and check.json holds only the list of
+// checks for eyes (`visual`, no `results`): no pixel checks run, so nothing blocks.
+//
 // collections/ is not tracked by Git (VISION.md «Устройство и стек»).
 import fs from 'node:fs';
 import path from 'node:path';
@@ -49,7 +53,9 @@ export const ATTEMPT_FILES = { original: 'model', prepared: 'prepared.png', card
  * @typedef {object} Attempt
  * @property {number} n
  * @property {string} at  ISO time the generation was requested
- * @property {string} model
+ * @property {string} model  the model that made the image (the fallback one when `fallbackFrom` is set)
+ * @property {{model: string, error: {message: string, status?: number}}} [fallbackFrom]  the main model failed in this
+ *   attempt (error, refusal, no image) and the fallback model made it
  * @property {string} prompt  exactly as sent
  * @property {string[]} references  style reference images sent with the prompt
  * @property {number|null} cost  USD as reported by the provider; null = unknown

@@ -37,8 +37,9 @@ import { tuneProcessing } from './tune.js';
  * The image provider of a run. model: the id recorded in the attempts and used to pick post-processing;
  * free: the provider takes no payment per image (its cost is recorded as 0); generate: one image for the prompt,
  * answering like core/providers/openrouter.js generateImage.
- * aspectRatio: the order kind's own frame, else the provider settings'.
- * @typedef {{model: string, free?: boolean, generate: (req: {prompt: string, references: {path: string}[], aspectRatio?: string}) => Promise<{bytes: Uint8Array, mime?: string, cost: number|null}>}} Provider
+ * aspectRatio: the order kind's own frame, else the provider settings'. fallback: the provider to try, in the same
+ * attempt, when this one fails (an error, a refusal, an answer without an image).
+ * @typedef {{model: string, free?: boolean, fallback?: Provider, generate: (req: {prompt: string, references: {path: string}[], aspectRatio?: string}) => Promise<{bytes: Uint8Array, mime?: string, cost: number|null}>}} Provider
  */
 
 /**
@@ -53,6 +54,7 @@ import { tuneProcessing } from './tune.js';
  * @property {number} n
  * @property {string} model
  * @property {number|null} cost
+ * @property {Attempt['fallbackFrom']} [fallbackFrom]
  * @property {Attempt['error']} [error]
  * @property {import('./card-file.js').CheckSummary} [check]
  * @property {{doc: string, check: number, what: string}[]} [visual]  the checks left for eyes
@@ -142,8 +144,8 @@ async function readPixels(file) {
 }
 
 /**
- * The provider chosen in the settings (provider.use). The OpenRouter key is read from the environment or .env,
- * never printed.
+ * The provider chosen in the settings (provider.use); for OpenRouter with `fallbackModel` set, that model is the
+ * fallback of the main one. The OpenRouter key is read from the environment or .env, never printed.
  * @param {import('../settings.js').ProviderSettings} settings
  * @returns {Provider}
  */
@@ -159,12 +161,14 @@ export function providerFrom(settings) {
   const o = settings.openrouter;
   const apiKey = openrouter.loadApiKey({ envVar: o.keyEnvVar });
   const net = { timeoutMs: o.timeoutMs, retries: o.retries, backoffMs: o.backoffMs };
-  return {
-    model: o.model,
+  /** @param {string} model @returns {Provider} */
+  const on = model => ({
+    model,
     generate: ({ prompt, references, aspectRatio }) => openrouter.generateImage({
-      endpoint: o.endpoint, apiKey, model: o.model, prompt, references, aspectRatio: aspectRatio ?? o.aspectRatio, resolution: o.resolution, params: o.params, net,
+      endpoint: o.endpoint, apiKey, model, prompt, references, aspectRatio: aspectRatio ?? o.aspectRatio, resolution: o.resolution, params: o.params, net,
     }),
-  };
+  });
+  return { ...on(o.model), ...(o.fallbackModel ? { fallback: on(o.fallbackModel) } : {}) };
 }
 
 /**
@@ -232,7 +236,7 @@ export function cardReport(dir, card, ns) {
     const files = {};
     for (const [k, name] of Object.entries({ ...ATTEMPT_FILES, original: a.original ?? '' })) if (name && fs.existsSync(path.join(adir, name))) files[k] = path.join(adir, name);
     const visual = visualOf(a.n);
-    return { n: a.n, model: a.model, cost: a.cost, ...(a.error ? { error: a.error } : {}), ...(a.check ? { check: a.check } : {}), ...(visual ? { visual } : {}), files };
+    return { n: a.n, model: a.model, cost: a.cost, ...(a.fallbackFrom ? { fallbackFrom: a.fallbackFrom } : {}), ...(a.error ? { error: a.error } : {}), ...(a.check ? { check: a.check } : {}), ...(visual ? { visual } : {}), files };
   });
   const chosen = card.attempts.find(a => a.n === card.chosen);
   return {
@@ -263,35 +267,48 @@ export async function makeCard({ order, collection, set, settings, provider, bui
   const card = readCardFile(dir) ?? { order, attempts: [], chosen: null };
   card.order = order;
   const lim = { attempts: limits.attempts ?? settings.card.attempts, maxSpendUsd: limits.maxSpendUsd ?? settings.card.maxSpendUsd };
-  const model = provider.model;
-  const { processing, warning } = processingFor({ style: order.style, model, settings });
+  /** @type {Set<string>} */
+  const warnings = new Set();
+  /** @param {string} model the highest known price of one call with the model in this card (0 = none known) */
+  const priceHint = model => Math.max(0, ...card.attempts.filter(a => a.model === model && typeof a.cost === 'number').map(a => /** @type {number} */ (a.cost)));
+  const request = { prompt, references: references.map(r => ({ path: r.path })), ...(output.aspectRatio ? { aspectRatio: output.aspectRatio } : {}) };
+  /** @param {any} e */
+  const failure = e => ({ message: String(e?.message ?? e), ...(e?.status ? { status: e.status } : {}) });
   /** @type {number[]} */
   const ns = [];
   let spent = 0;
-  /** @type {StopReason} */
+  /** @type {StopReason|undefined} */
   let stop;
   for (;;) {
-    const known = card.attempts.filter(a => a.model === model && typeof a.cost === 'number').map(a => /** @type {number} */ (a.cost));
-    const limit = nextStep({ done: ns.length, spent, limits: lim, priceHint: Math.max(0, ...known) });
+    const limit = nextStep({ done: ns.length, spent, limits: lim, priceHint: priceHint(provider.model) });
     if (limit) { stop = limit; break; }
     const n = Math.max(0, ...card.attempts.map(a => a.n)) + 1;
     /** @type {Attempt} */
-    const attempt = { n, at: new Date().toISOString(), model, prompt, references: references.map(r => path.relative(ROOT, r.path)), cost: null };
+    const attempt = { n, at: new Date().toISOString(), model: provider.model, prompt, references: references.map(r => path.relative(ROOT, r.path)), cost: null };
     card.attempts.push(attempt);
     ns.push(n);
     const adir = attemptDir(dir, n);
     fs.mkdirSync(adir, { recursive: true });
-    let answer;
+    let answer, used = provider;
     try {
-      answer = await provider.generate({ prompt, references: references.map(r => ({ path: r.path })), ...(output.aspectRatio ? { aspectRatio: output.aspectRatio } : {}) });
+      answer = await provider.generate(request);
     } catch (/** @type {any} */ e) {
-      attempt.error = { stage: 'generate', message: String(e?.message ?? e), ...(e?.status ? { status: e.status } : {}) };
-      stop = 'provider-error';
-      writeCardFile(dir, card);
-      break;
+      const fallback = provider.fallback;
+      if (!fallback) { attempt.error = { stage: 'generate', ...failure(e) }; stop = 'provider-error'; }
+      else if (spent + priceHint(fallback.model) > lim.maxSpendUsd + EPSILON_USD) { attempt.error = { stage: 'generate', ...failure(e) }; stop = 'budget'; }
+      else {
+        // the main model failed (error, refusal, no image): the fallback model makes this attempt
+        attempt.fallbackFrom = { model: provider.model, error: failure(e) };
+        attempt.model = fallback.model;
+        used = fallback;
+        try { answer = await fallback.generate(request); } catch (/** @type {any} */ e2) { attempt.error = { stage: 'generate', ...failure(e2) }; stop = 'provider-error'; }
+      }
+      if (!answer) { writeCardFile(dir, card); break; }
     }
-    attempt.cost = provider.free ? 0 : answer.cost;
+    attempt.cost = used.free ? 0 : answer.cost;
     spent += attempt.cost ?? 0;
+    const { processing, warning } = processingFor({ style: order.style, model: used.model, settings });
+    if (warning) warnings.add(warning);
     try {
       await processAttempt({ order, attempt, dir: adir, bytes: answer.bytes, mime: answer.mime, processing, output, tune: settings.card.tuneProcessing });
     } catch (/** @type {any} */ e) {
@@ -304,7 +321,7 @@ export async function makeCard({ order, collection, set, settings, provider, bui
   choose(dir, card);
   writeCardFile(dir, card);
   const report = cardReport(dir, card, ns);
-  return { ...report, stop, spent, limits: lim, warnings: warning ? [warning] : [] };
+  return { ...report, stop: /** @type {StopReason} */ (stop), spent, limits: lim, warnings: [...warnings] };
 }
 
 /**
