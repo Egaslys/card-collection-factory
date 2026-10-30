@@ -161,7 +161,7 @@ const PILOT_EXPECT = {
   },
   'c5-gone-fishing': {
     fragments: ['char.scene-frame', 'char.man', 'char.pig', 'bg.setting', 'colour.palette', 'colour.shadows-light', 'render.style', 'render.style[low sun or stage spots]', 'render.style[scene]'],
-    text: ['A simple everyday lake fishing scene with the Man and the Pig (two of the cast), set in a small wooden dock on a calm lake', ', at sunset. The Man and the Pig sit on the dock fishing with rods.', 'the Man looks straight at the boot', 'cut at the waist by the bottom edge', 'Images 1–2 show the Man and the Pig'],
+    text: ['A simple everyday lake fishing scene with the Man and the Pig (two of the cast), set in a small wooden dock on a calm lake', ', at sunset. The Man and the Pig sit on the dock fishing with rods.', 'the Man looks straight at the boot', 'cut at the waist by the bottom edge', 'Image 1 is the canonical look of the Man', 'Image 2 is the canonical look of the Pig', 'Images 3–4 are style references'],
   },
 };
 
@@ -179,7 +179,7 @@ for (const order of PILOT_ORDERS) {
       if (f && !f.items && !slotsOf(f.text).length) assert.ok(r.prompt.includes(f.text.slice(1).replace(/\.$/, '')), `${id} не слово в слово`);
     }
     assert.ok(!/[{}[\]]/.test(r.prompt.replace(/\(around #[0-9A-F]+\)/g, '')), 'в запросе остался незаполненный слот');
-    assert.equal(r.references.length, style.assembly.references.count);
+    assert.equal(r.references.length, style.assembly.references.count + (order.staging.category === 5 ? order.scene.characters.length : 0));
     for (const ref of r.references) assert.ok(fs.existsSync(ref.path), ref.path);
     // Section order follows PROMPTS.md: format first, rendering after colour.
     const names = r.sections.map(s => s.name);
@@ -217,6 +217,38 @@ test('эталоны: подбираются по постановке, искл
   const forced = pilot('c1-bobber');
   forced.references = [17, 75];
   assert.deepEqual(pickReferences(forced, style).map(r => r.ref), [17, 75]);
+});
+
+test('опорные портреты: файл на каждого персонажа, сцена прикладывает их первыми, предмет и лист — нет', async () => {
+  const rules = style.assembly.references.anchors;
+  for (const name of Object.keys(style.assembly.cast)) {
+    const file = path.join(style.dir, rules.dir, rules.file.replace('{name}', name));
+    assert.ok(fs.existsSync(file), `нет опорного портрета ${file}`);
+    const png = fs.readFileSync(file);
+    assert.equal(png.subarray(1, 4).toString(), 'PNG', `${name}: не PNG`);
+    assert.equal(png.readUInt32BE(16) * 3, png.readUInt32BE(20) * 2, `${name}: не 2:3`);
+  }
+  const scene = await buildPrompt(pilot('c5-gone-fishing'));
+  assert.deepEqual(scene.references.map(r => r.anchor), ['man', 'pig', undefined, undefined]);
+  assert.deepEqual(scene.references.map(r => path.basename(r.path)).slice(0, 2), ['man.png', 'pig.png']);
+  assert.ok(scene.references.slice(2).every(r => r.ref), 'после портретов — эталонные карточки');
+  assert.match(scene.prompt, /Reference images: Image 1 is the canonical look of the Man: copy its design exactly/);
+  assert.ok(scene.prompt.indexOf('Image 1 is') < scene.prompt.indexOf('Image 2 is') && scene.prompt.indexOf('Image 2 is') < scene.prompt.indexOf('Images 3–4'));
+  // One character: one anchor, the style cards are numbered from 2.
+  const one = pilot('c5-gone-fishing');
+  one.staging.characters = 1;
+  one.scene.characters = [{ name: 'sheep' }];
+  one.scene.reactor = 'the Sheep';
+  const r1 = await buildPrompt(one);
+  assert.deepEqual(r1.references.map(r => r.anchor), ['sheep', undefined, undefined]);
+  assert.match(r1.prompt, /Image 1 is the canonical look of the Sheep.*Images 2–3 are style references/);
+  // Never more images than the provider takes (Codex: 5), whatever `count` says.
+  const wide = structuredClone(style);
+  wide.assembly.references.count = 9;
+  assert.equal(pickReferences(pilot('c5-gone-fishing'), wide).length, rules.max_images - 2);
+  // An object card and a character sheet get no anchors.
+  assert.ok((await buildPrompt(pilot('c1-bobber'))).references.every(r => r.ref && !r.anchor));
+  assert.ok((await buildPrompt({ kind: 'character-sheet', id: 'a', style: 'scapes', character: 'pig' })).references.every(r => !r.anchor));
 });
 
 test('promptExtra дописывается, promptOverride заменяет запрос', async () => {

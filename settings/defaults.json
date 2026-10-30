@@ -1,5 +1,5 @@
 {
-  "_about": "Factory settings: the one place for their values (core/settings.js reads them). This file holds the shared defaults and is tracked by Git. Personal changes go to settings/local.json next to it (ignored by Git; the editor will write it): the same structure, only the keys that change; objects merge key by key, other values replace. An empty object here is an open map: any keys may be added under it. The API key is never here. provider.use: which image provider generates, \"openrouter\" or \"codex-cli\". provider.openrouter (core/providers/openrouter.js): OpenRouter-compatible endpoint, model id, fallbackModel = the model tried in the same attempt when the main one fails (an error, a refusal, an answer without an image; null = none), aspect ratio and resolution sent with every request, keyEnvVar = the environment variable (or the line of .env in the project root) that holds the key, params = any other request fields passed as is, timeout per call in ms, retries on HTTP 429/5xx and the backoff before the first retry in ms. provider.codexCli (core/providers/codex-cli.js; Codex's own login, no per-image payment): the command, the orchestrating model (null = the user's Codex config), the aspect ratio said in the brief, timeout in ms, reasoning effort, sandbox, and the prompt template ({refs} = legend of attached images, {brief} = the card prompt). card: attempts = how many generations of one card one `card make` run may spend at most; maxSpendUsd = the spend cap of one run in USD, checked before every paid call. tuneProcessing = after each generation search the post-processing settings per card (core/card/tune.js, bounds in styles/<style>/processing.json); false = apply the starting settings as they are. processing: post-processing settings per model (core/image/adjust.js settings object; the key is the OpenRouter model id, or \"codex-cli\"), only to override the style's own starting settings (styles/<style>/processing.json → start). hero (core/card/hero.js): finding the hero's outline for the checks when no agent or person gives its box — vision models asked through provider.openrouter (its endpoint and key) in order, each with the answer format its family was trained on (a key of FORMATS in hero.js); the outline is cut in the first model's box and trusted only when the first two models' boxes overlap at least agreeIou (intersection over union); maxTokens and timeoutMs per call; prompt.template with {width} {height} {hero} {answer}, and the hero's words for an object card or a scene ({what} = the order's subject, object or scene).",
+  "_about": "Factory settings: the one place for their values (core/settings.js reads them). This file holds the shared defaults and is tracked by Git. Personal changes go to settings/local.json next to it (ignored by Git; the editor will write it): the same structure, only the keys that change; objects merge key by key, other values replace. An empty object here is an open map: any keys may be added under it. The API key is never here. provider.use: which image provider generates, \"openrouter\" or \"codex-cli\". provider.openrouter (core/providers/openrouter.js): OpenRouter-compatible endpoint, model id, fallbackModel = the model tried in the same attempt when the main one fails (an error, a refusal, an answer without an image; null = none), aspect ratio and resolution sent with every request, keyEnvVar = the environment variable (or the line of .env in the project root) that holds the key, params = any other request fields passed as is, timeout per call in ms, retries on HTTP 429/5xx and the backoff before the first retry in ms. provider.codexCli (core/providers/codex-cli.js; Codex's own login, no per-image payment): the command, the orchestrating model (null = the user's Codex config), the aspect ratio said in the brief, timeout in ms, reasoning effort, sandbox, and the prompt template ({refs} = legend of attached images, {brief} = the card prompt). card: attempts = how many generations of one card one `card make` run may spend at most; maxSpendUsd = the spend cap of one run in USD, checked before every paid call. editPrompt = the whole prompt of `card edit` ({wish}), sent with the card's model image as the input image; editLegend = how Codex is told what the attached image is. tuneProcessing = after each generation search the post-processing settings per card (core/card/tune.js, bounds in styles/<style>/processing.json); false = apply the starting settings as they are. processing: post-processing settings per model (core/image/adjust.js settings object; the key is the OpenRouter model id, or \"codex-cli\"), only to override the style's own starting settings (styles/<style>/processing.json → start). vision: the vision model that looks at finished cards, asked through provider.openrouter (its endpoint and key): model id, format = the answer convention of its family (a key of FORMATS in core/card/hero.js), reasoning = the request's reasoning field as is (null = not sent; this model refuses reasoning turned off), timeout per call in ms. hero (core/card/hero.js): finding the hero's outline for the checks when no agent or person gives its box — the vision model gives the box and the outline is cut inside it; mirrorCheck = ask also on the mirror image of the card and trust the outline only when the two boxes overlap at least agreeIou (intersection over union); maxTokens per answer; prompt.template with {width} {height} {hero} {answer}, and the hero's words for an object card or a scene ({what} = the order's subject, object or scene). set (core/set): parallel = cards of one set made at the same time; maxSpendUsd = the spend cap of one set's cards in USD (each card also keeps card.maxSpendUsd). set.plan: the text model that writes set plans when no agent does (the editor's path), asked through provider.openrouter (its endpoint and key): model id, repairs = how many times the plan's rule errors are sent back to the model for a fix, maxTokens and temperature per answer, reasoning = the request's reasoning field as is (null = not sent), timeout per call in ms, maxSpendUsd = the spend cap of one planning run (a set with its variants, or a whole collection) in USD. editor (editor/server.mjs): port = the local port the editor listens on (when taken, a free one is used); openBrowser = open the browser when the editor starts.",
   "provider": {
     "use": "openrouter",
     "openrouter": {
@@ -27,21 +27,42 @@
   "card": {
     "attempts": 3,
     "maxSpendUsd": 0.2,
-    "tuneProcessing": true
+    "tuneProcessing": true,
+    "editPrompt": "Edit the attached image: {wish} Keep everything this does not ask to change exactly as it is: the subject, the composition, the backdrop, the colours and the rendering style. Return the whole edited image.",
+    "editLegend": "The attached image is the card to edit; change only what the brief asks."
   },
   "processing": {},
+  "vision": {
+    "model": "google/gemini-3.5-flash-lite",
+    "format": "gemini",
+    "reasoning": { "effort": "minimal" },
+    "timeoutMs": 60000
+  },
   "hero": {
-    "models": [
-      { "id": "google/gemini-3.1-flash-lite", "format": "gemini" },
-      { "id": "qwen/qwen3-vl-30b-a3b-instruct", "format": "qwen" }
-    ],
+    "mirrorCheck": true,
     "agreeIou": 0.8,
     "maxTokens": 400,
-    "timeoutMs": 60000,
     "prompt": {
       "template": "This is a {width} x {height} px card illustration. Find {hero}. Give the tightest box around all of it: include every thin part (tips, antennas, handles, rings, things sticking out of it or held by it). Exclude the backdrop, any glow or light halo behind it, its cast shadow, and the floor, table, ground or surface patch it stands on. {answer}",
       "object": "the hero object «{what}»",
       "scene": "the characters together with the props they hold or act with (the hero of this scene: «{what}»)"
     }
+  },
+  "set": {
+    "parallel": 4,
+    "maxSpendUsd": 2,
+    "plan": {
+      "model": "google/gemini-3.5-flash-lite",
+      "repairs": 3,
+      "maxTokens": 16000,
+      "temperature": 0.7,
+      "reasoning": null,
+      "timeoutMs": 180000,
+      "maxSpendUsd": 0.2
+    }
+  },
+  "editor": {
+    "port": 4870,
+    "openBrowser": true
   }
 }

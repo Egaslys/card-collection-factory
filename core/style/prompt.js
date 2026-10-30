@@ -3,7 +3,7 @@
 // English words; `promptExtra` is appended, `promptOverride` replaces the assembled text.
 import { assemble } from './assembly.js';
 import { checkOrder } from './card-order.js';
-import { pickReferences, referenceNote } from './references.js';
+import { pickAnchors, pickReferences, referenceNote } from './references.js';
 import { loadStyle, styleDirOf } from './style.js';
 
 /** @typedef {import('./card-order.js').CardOrder} CardOrder */
@@ -24,8 +24,9 @@ export class OrderError extends Error {
  * @property {string} prompt  the text for the image model
  * @property {UsedFragment[]} fragments  the bible fragments in it, in order: id and `FILE.md:line`
  *   (labelled items as `id[label]`; glue templates as id "template"); empty with promptOverride
- * @property {{path: string, ref: number}[]} references  reference cards to attach, absolute paths, in the
- *   order the prompt numbers them (Image 1, Image 2, …)
+ * @property {{path: string, ref?: number, anchor?: string}[]} references  images to attach, absolute paths, in the
+ *   order the prompt numbers them (Image 1, Image 2, …): first the characters' anchor portraits of a scene
+ *   (`anchor` = the character), then the style reference cards (`ref` = the card number)
  * @property {{name: string, text: string}[]} sections  the prompt by sections: the rules' sections
  *   (format, subject, staging, cast, backdrop, composition, colour, rendering), then references and extra
  */
@@ -42,7 +43,7 @@ export async function buildPrompt(order, { styleDir } = {}) {
   const errors = checkOrder(order, style);
   if (errors.length) throw new OrderError(errors);
   const cards = pickReferences(order, style);
-  const references = cards.map(c => ({ path: c.path, ref: c.ref }));
+  const references = [...pickAnchors(order, style).map(a => ({ path: a.path, anchor: a.name })), ...cards.map(c => ({ path: c.path, ref: c.ref }))];
   if (order.promptOverride) return { prompt: order.promptOverride.trim(), fragments: [], references, sections: [] };
 
   const { sections } = assemble(order, style);

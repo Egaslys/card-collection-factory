@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-/** What an id may look like: it becomes a folder name (the same rule as core/card/card-file.js). */
+/** What an id may look like: it becomes a folder name (the one rule; core/card takes its folders from the store). */
 const ID_RE = /^[\w][\w.-]*$/;
 const MAX_SLUG = 40;
 

@@ -122,15 +122,25 @@ const nm = (id, why) => make(id, 'NOT_MEASURED', null, null, why);
 
 // a FAIL that rests on an unconfirmed mask may be the mask's fault (it can take a shadow, a stand or the floor)
 const maskBased = /^(COLOUR\.(7|8|9|10|11|12)|RENDERING\.(4|6|11)|BACKGROUNDS\.(6c|6d|7a|9)|COMPOSITION\.)/;
-/** True when result r of a card with hero info `hero` is a FAIL that rests on a mask nobody has confirmed. */
-export const restsOnUnconfirmedMask = (r, hero) => r.status === 'FAIL' && hero?.mask_status === 'proposal' && maskBased.test(r.id)
-  && !(r.id.startsWith('COMPOSITION') && hero.box_source === 'spec');
+/** True when result r of a card with hero info `hero` is a FAIL that rests on a mask nobody has confirmed. An outline
+ * found automatically ("auto", core/card/hero.js) counts as unconfirmed too: it is accurate, but on the reference cards
+ * whose outline the bible could not measure, the outline-based checks FAIL on 26 of 38 abstract-backdrop cards (helper
+ * report 2026-10-30, CHANGELOG) — the bible's norms were measured on the 51 cards with a confirmed outline only. */
+export const restsOnUnconfirmedMask = (r, hero) => r.status === 'FAIL' && ['proposal', 'auto'].includes(hero?.mask_status) && maskBased.test(r.id)
+  && !(r.id.startsWith('COMPOSITION') && hero.box_source === 'spec') && !(hero.box_source === 'given' && boxOnly.test(r.id));
+// checks that read only the hero box: with a trusted box given with the outline they rest on the box, as with a box by eye
+const boxOnly = /^(COMPOSITION\.(2|3|4a|4b|5b)|BACKGROUNDS\.(6c|6d|7a|9))$/;
+
+/** Whether a hero outline cut in a box can be measured on for this staging: on an abstract backdrop. In scenes and
+ * environments it takes sky and water between the characters (measured on trial round 2); use only its box there. */
+export const outlineFits = staging => staging?.backdrop === 'field' || staging?.backdrop === 'wall';
 
 // ---------- one card ----------
 // card: one spec entry (see --help); baseDir: the folder card.file is relative to; overlaysDir: where to write
-// <id>.mask.png (optional); outline: the hero outline found outside the checker ({fg, confidence} of
-// core/card/hero.js findHero): it replaces the proposer's mask and the spec's hero_box (it was cut inside that box);
-// confidence "high" gives the mask status "auto" (FAILs resting on it are blocking), "low" gives "proposal".
+// <id>.mask.png (optional); outline: the hero outline found outside the checker ({fg, box, confidence, boxConfidence}
+// of core/card/hero.js findHero): it replaces the proposer's mask and the spec's hero_box (it was cut inside that box);
+// confidence "high" gives the mask status "auto", "low" gives "proposal" — both unconfirmed (restsOnUnconfirmedMask);
+// with boxConfidence "high" the checks that read only the box rest on outline.box, as on a box by eye.
 // Returns { id, file, staging, hero, measures, results, visual }.
 export async function checkCard(card, { baseDir, overlaysDir, outline } = {}) {
   const file = resolve(baseDir || '.', card.file);
@@ -164,8 +174,10 @@ export async function checkCard(card, { baseDir, overlaysDir, outline } = {}) {
   const maskStatus = !mask.ok ? 'not found' : card.mask === 'rejected' ? 'rejected' : card.mask === 'confirmed' ? 'confirmed' : given && outline.confidence === 'high' ? 'auto' : 'proposal';
   if (maskStatus === 'rejected') { mask.ok = false; mask.reason = 'the mask was rejected by a person (spec "mask": "rejected")'; }
   const specBox = given ? null : card.hero_box;
-  const box = specBox || (mask.ok ? mask.box : null);
-  const hero = { mask_status: maskStatus, mask_ok: mask.ok,mask_reason: mask.reason, mask_box: mask.box, mask_diagnostics: mask.diagnostics, box, box_source: specBox ? 'spec' : mask.ok ? 'mask' : null, ...(given ? { mask_source: outline.source ?? 'given', mask_confidence: outline.confidence ?? null } : {}) };
+  // with the outline: the box it was cut in, when that box is trusted (composition then rests on it as on a box by eye)
+  const givenBox = given && mask.ok && outline.boxConfidence === 'high' && outline.box ? outline.box : null;
+  const box = specBox || givenBox || (mask.ok ? mask.box : null);
+  const hero = { mask_status: maskStatus, mask_ok: mask.ok,mask_reason: mask.reason, mask_box: mask.box, mask_diagnostics: mask.diagnostics, box, box_source: specBox ? 'spec' : givenBox ? 'given' : mask.ok ? 'mask' : null, ...(given ? { mask_source: outline.source ?? 'given', mask_confidence: outline.confidence ?? null } : {}) };
   const noHero = `hero not found by the mask proposer (${mask.reason}); give hero_box in the spec or check by eye`;
 
   // ---------- COLOUR, whole card ----------

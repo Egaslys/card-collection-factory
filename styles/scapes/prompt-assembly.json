@@ -228,6 +228,16 @@
     "exclude": [14, 23, 47, 56, 71, 83, 97, 137],
     "weights": { "category": 3, "backdrop": 3, "placement": 3, "pattern": 2, "support": 2, "camera": 1, "time": 1, "sky_top": 1, "characters": 2, "cast": 4 },
     "note_style": "Reference images: {images} are style references from the same card series. Copy only their rendering style: materials, soft lighting, colour treatment, backdrop treatment and level of detail. Do not copy their objects, layout or backdrop content.",
-    "note_cast": "Reference images: {images} show {who} of this card series. Keep them exactly as drawn there (faces, proportions, colours) and copy the rendering style of those images. Do not copy their poses, costumes, props or backgrounds."
+    "note_cast": "Reference images: {images} show {who} of this card series. Keep them exactly as drawn there (faces, proportions, colours) and copy the rendering style of those images. Do not copy their poses, costumes, props or backgrounds.",
+    "anchors": {
+      "_about": "Character anchor portraits (CHARACTERS.md «Опорные портреты»; files styles/scapes/characters/<name>.png): a scene order (the `when` condition) attaches one anchor per scene character BEFORE the style reference cards, so the images are numbered anchors first. `max_images` is the provider limit: Codex takes at most 5 `-i` images (core/providers/codex-cli.js); the style cards are cut down so that anchors + style cards stay within it (with two characters and `count` 2 that is 4 images). `intro` + `note_anchor` (one sentence per anchor: {n} its image number, {who} the character's name from its bible description) + `note_style` ({images} the style cards' numbers) are the note the prompt ends with; with no style cards the style sentence is left out. The anchors show the character plain (the pig without clothes, the man in a neutral blue outfit): the scene gives the costume, pose and props.",
+      "dir": "characters",
+      "file": "{name}.png",
+      "when": { "category": [5] },
+      "max_images": 5,
+      "intro": "Reference images:",
+      "note_anchor": "Image {n} is the canonical look of {who}: copy its design exactly (face, build, proportions, colours, distinguishing features), but take the pose, costume, props and backdrop from the scene description, not from this image.",
+      "note_style": "{images} are style references from the same card series. Copy only their rendering style: materials, soft lighting, colour treatment, backdrop treatment and level of detail. Do not copy their objects, poses, layout or backdrop content; the characters' design comes from the character images."
+    }
   }
 }

@@ -1,0 +1,92 @@
+{
+  "_about": "The set and collection rules of the Scapes style as data, for core/set (planning, validation, generation). Every value here comes from the bible: SETS.md (and BASE_RULES.md, BACKGROUNDS.md), the section is named in `source` next to it; the bible is the authority, this file only makes its checkable rules readable by the program. windows: the window layouts of SETS.md 4.2–4.3 — stars per slot (`stars`, exact) or the order rule for a small window's own ladder (`stars_order`: non-decreasing | free) with the reference ladders as `examples`; `scenes`: allowed numbers of character scenes, always the tail of the window; `gold`: scenes = gold exactly on the scenes, none, items = gold only on cards without characters; `frame`: the frame of non-gold slots. abstract_when: the condition (prompt-assembly.json `when` syntax) for an abstract backdrop (SETS.md 3.7: a field or a wall with a pattern or gradient, not a wall of real material). stagings: the rows of BACKGROUNDS.md «Какую постановку выбрать», first match wins; `when` classifies an order's staging, `preset` is the staging a plan may start from (`{\"preset\": id, …fields}`), `fill` the fields the planner adds, `category` the categories the row gives (BACKGROUNDS.md «Категория как следствие постановки»: the first entry whose `when` matches, or any of the entries without `when`). collection: SETS.md 1.4 and 6.2 — 16 sets, the grand set last, the reference curve of scenes and the reference windows by position (the recommended sample). prompt: the text model's prompt for planning — `fragments` are the ids of the marked fragments of SETS.md «10. Для промпта (англ.)», `glue` is the program's own text around them (the JSON answer format and the collection split, which SETS.md has no fragment for).",
+  "set_size": 10,
+  "grid": { "columns": 5, "rows": 2, "source": "SETS.md 3.1: окно 2 × 5, слоты 1–5 — верхний ряд, 6–10 — нижний" },
+  "max_characters": 2,
+  "categories": { "regular": [1, 2, 3, 4], "min_each": 1, "max_each_preferred": 3, "source": "SETS.md 3.5, 9.2; BASE_RULES.md 3" },
+  "abstract_share": { "small": [4, 8], "large": [3, 5], "source": "SETS.md 3.7, 9.8" },
+  "patterns": { "distinct": [3, 6], "max_same": 3, "source": "SETS.md 3.7, 9.9" },
+  "abstract_when": [
+    { "backdrop": ["field"] },
+    { "backdrop": ["wall"], "not": { "wall": ["planks", "brick", "plaster", "curtain"], "pattern": ["brick", "other", "n/a"] } }
+  ],
+  "captions": { "words": [1, 2], "chars": [3, 15], "grand_words": [1, 1], "language": "English", "source": "SETS.md 5.3; гранд — 5.1, 6.4.5" },
+  "variants": { "max_shared_kinds": 5, "source": "SETS.md 4.5, 9.14–15" },
+  "frames": ["silver", "gold", "crystal"],
+  "windows": {
+    "large": { "family": "large", "stars": [1, 1, 2, 2, 3, 3, 4, 4, 5, 5], "scenes": [2, 3, 4], "gold": "scenes", "frame": "silver", "source": "SETS.md 4.2 «Большое окно», 4.3: отдельный набор по умолчанию" },
+    "small-all-one": { "family": "small", "stars": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1], "scenes": [0], "gold": "none", "frame": "silver", "source": "SETS.md 4.2 «Малое: всё по одной звезде» (Sports, Finals)" },
+    "small-tail": { "family": "small", "stars_order": "non-decreasing", "scenes": [0], "gold": "none", "frame": "silver", "examples": [[1, 1, 1, 1, 1, 1, 1, 1, 2, 3], [1, 1, 1, 1, 1, 1, 1, 2, 3, 4], [1, 1, 1, 1, 1, 1, 1, 1, 5, 5]], "source": "SETS.md 4.2 «Малое: хвост без золота» (Coolness, Countrystead, Gardens)" },
+    "small-gold-characters": { "family": "small", "stars_order": "non-decreasing", "scenes": [1, 2], "gold": "scenes", "frame": "silver", "examples": [[1, 1, 1, 1, 1, 1, 1, 2, 3, 5], [1, 1, 1, 1, 1, 1, 2, 3, 5, 5]], "source": "SETS.md 4.2 «Малое: золото на персонажах» (Seafaring, Boyscoute, Vacation)" },
+    "small-gold-items": { "family": "small", "stars_order": "non-decreasing", "scenes": [0], "gold": "items", "frame": "silver", "examples": [[1, 1, 1, 1, 1, 1, 2, 5, 5, 5]], "gold_examples": [[8, 9, 10]], "source": "SETS.md 4.2 «Малое: золото на предметах» (Amusement)" },
+    "small-characters-silver": { "family": "small", "stars_order": "free", "scenes": [1, 2], "gold": "none", "frame": "silver", "examples": [[4, 1, 1, 1, 2, 2, 2, 3, 4, 4]], "source": "SETS.md 4.2 «Малое: персонажи в серебре» (Music Fest)" },
+    "grand": { "family": "grand", "stars": [5, 5, 5, 5, 5, 5, 5, 5, 5, 5], "scenes": [10], "gold": "none", "frame": "crystal", "source": "SETS.md 2, 4.3: гранд-окно, 10 × 5 звёзд, кристальные рамки" }
+  },
+  "small_scene_slots": [9, 10],
+  "stagings": [
+    { "id": "scene", "title": "Персонажи в обстановке", "when": { "characters": [1, 2] },
+      "preset": { "category": 5, "backdrop": "environment", "pattern": "n/a", "placement": "resting", "support": "ground", "camera": "eye_level" },
+      "fill": ["characters", "time", "sky_top"], "category": [{ "category": 5 }] },
+    { "id": "full-frame", "title": "Лежит на поверхности во весь кадр, задника нет", "when": { "backdrop": ["none"] },
+      "preset": { "category": 4, "backdrop": "none", "pattern": "n/a", "placement": "lying_top_down", "support": "fills_frame", "camera": "high", "characters": 0, "time": "day", "sky_top": false },
+      "fill": ["surface", "material"], "category": [{ "category": 4 }] },
+    { "id": "wall", "title": "Висит на стене", "when": { "placement": ["wall_mounted"] },
+      "preset": { "backdrop": "wall", "placement": "wall_mounted", "support": "wall_fixed", "camera": "eye_level", "characters": 0, "time": "n/a", "sky_top": false },
+      "fill": ["category", "wall", "pattern", "material"], "category": [{ "when": { "wall": ["planks", "brick", "plaster", "curtain"] }, "category": 3 }, { "category": 2 }] },
+    { "id": "native", "title": "Висит в небе или в воде", "when": { "placement": ["floating_native"] },
+      "preset": { "category": 1, "backdrop": "environment", "pattern": "n/a", "placement": "floating_native", "support": "none", "camera": "eye_level", "characters": 0 },
+      "fill": ["medium", "time", "sky_top", "material"], "category": [{ "category": 1 }, { "category": 4 }] },
+    { "id": "field", "title": "Висит на поле", "when": { "backdrop": ["field"], "placement": ["floating_field", "hung_from_above"] },
+      "preset": { "category": 1, "backdrop": "field", "placement": "floating_field", "support": "none", "camera": "eye_level", "characters": 0, "time": "n/a", "sky_top": false },
+      "fill": ["pattern", "material"], "category": [{ "category": 1 }] },
+    { "id": "environment", "title": "Предмет вписан в обстановку или стоит в ней", "when": { "backdrop": ["environment"] },
+      "preset": { "category": 4, "backdrop": "environment", "pattern": "n/a", "placement": "resting", "support": "ground", "camera": "eye_level", "characters": 0, "time": "day", "sky_top": true },
+      "fill": ["setting", "material"], "category": [{ "category": 4 }] },
+    { "id": "floor-or-furniture", "title": "Стоит на полу у стены или на мебели перед абстрактным фоном", "when": [{ "support": ["furniture"] }, { "backdrop": ["wall"], "placement": ["resting"], "support": ["ground"] }],
+      "preset": { "category": 3, "backdrop": "wall", "placement": "resting", "support": "ground", "camera": "eye_level", "characters": 0, "time": "n/a", "sky_top": false },
+      "fill": ["wall", "floor", "pattern", "material"], "category": [{ "category": 3 }] },
+    { "id": "surface-patch", "title": "Стоит на куске настоящей поверхности перед полем или стеной", "when": { "support": ["fragment"] },
+      "preset": { "category": 3, "backdrop": "field", "placement": "resting", "support": "fragment", "camera": "eye_level", "characters": 0, "time": "n/a", "sky_top": false },
+      "fill": ["surface", "pattern", "material"], "category": [{ "category": 3 }] },
+    { "id": "smooth-floor", "title": "Стоит на гладкой плоскости перед полем или стеной", "when": { "support": ["ephemeral"] },
+      "preset": { "category": 2, "backdrop": "field", "placement": "resting", "support": "ephemeral", "camera": "eye_level", "characters": 0, "time": "n/a", "sky_top": false },
+      "fill": ["pattern", "material"], "category": [{ "category": 2 }] }
+  ],
+  "collection": {
+    "sets": 16,
+    "growth_window": 5,
+    "theme_kinds": ["place", "activity", "trip", "event", "feeling"],
+    "reference_positions": [
+      { "window": "small-tail", "scenes": 0 },
+      { "window": "small-all-one", "scenes": 0 },
+      { "window": "small-all-one", "scenes": 0 },
+      { "window": "small-gold-items", "scenes": 0 },
+      { "window": "small-tail", "scenes": 0 },
+      { "window": "small-tail", "scenes": 0 },
+      { "window": "small-gold-characters", "scenes": 1 },
+      { "window": "small-gold-characters", "scenes": 1 },
+      { "window": "small-gold-characters", "scenes": 2 },
+      { "window": "large", "scenes": 2 },
+      { "window": "small-characters-silver", "scenes": 2 },
+      { "window": "large", "scenes": 2 },
+      { "window": "large", "scenes": 3 },
+      { "window": "large", "scenes": 3 },
+      { "window": "large", "scenes": 4 },
+      { "window": "grand", "scenes": 10 }
+    ],
+    "source": "SETS.md 1.4 (таблица эталона, рекомендация: кривая сцен эталона как образец), 6.2"
+  },
+  "standalone": { "window": "large", "source": "SETS.md 4.3: отдельный набор по умолчанию — в большом окне" },
+  "prompt": {
+    "fragments": { "plan": "set.plan", "variant": "set.variant", "staging": "set.staging-plan", "scenes": "set.scene-plan", "grand": "set.grand", "captions": "set.captions" },
+    "glue": {
+      "system": "You plan sets of collectible card illustrations for an image pipeline. Answer with one JSON object only, no prose.",
+      "wishes": "The producer's wishes, which override any rule above: {wishes}",
+      "slots": "The window is fixed: {slots}. Fill every slot in this order; the cards with characters are the last {scenes} slots.",
+      "answer": "Answer as JSON: {\"title\": set name in one or two words, \"angle\": one line, \"cards\": [one object per slot, in slot order]}. A card object: \"slot\" (number), \"kind\" (the item kind in lower-case English, e.g. \"fishing rod\"; for a scene, the situation), \"facet\", \"subkind\", \"caption\", \"object\" (short English name of the hero, for a scene omit), \"subject\" (one English sentence describing the hero's look: shape, colours, parts; for a scene omit), \"staging\" ({\"preset\": one of the staging ids below, plus its fields}), \"hue\" and \"palette\" only for an item card on an abstract backdrop (presets field, smooth-floor, surface-patch, floor-or-furniture, wall): hue = the backdrop colour word, palette = \"a <hero colours> object on <hue>\"; neighbouring slots get different hues, \"place\" and \"environment\" (short English place and one sentence describing it; needed for presets environment, native and scene), \"motif\" (small icon for pattern motif_repeat). A scene card also has \"props\" (item kinds visible in the scene) and \"scene\": {\"theme\", \"time\" (words, e.g. \"at sunset\"), \"action\", \"item\", \"joke\", \"reactor\", \"jokeObject\", \"crop\" (hips | waist | knees), \"characters\": [{\"name\": man | pig | cow | sheep | rooster, \"costume\": one English sentence}]}.",
+      "stagings": "Staging ids and the fields each needs: {stagings}. Allowed values: {values}.",
+      "repair": "Your plan broke these rules; answer with the whole corrected JSON plan: {errors}",
+      "collection": "Split the collection theme \"{collection theme}\" into {count} set themes: places, activities, trips, events, feelings, mixed. Each set theme gets its kind, a one-line angle and 5 to 6 example item kinds. Close themes are told apart by their angle (who owns the place, which environment, which stage of a trip) and share no item kinds. The last theme is the grand set: one celebration that sums up the collection, in one place. Order the sets so that kinds alternate and close themes stand apart. Answer as JSON: {\"sets\": [{\"title\", \"kind\", \"angle\", \"examples\": [item kinds]}]} with {count} entries, the grand set last."
+    }
+  }
+}

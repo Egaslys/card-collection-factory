@@ -14,36 +14,119 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { cli, usageError } from './tools/cli-args.mjs';
 import { loadSettings } from './core/settings.js';
+import { SLOT_COUNT } from './core/store/layout.js';
+import { setCommands } from './core/set/cli.js';
 import { getCredits, listImageModels, loadApiKey } from './core/providers/openrouter.js';
 
 const NAME = 'ccf.mjs';
 const JSON_OPTION = { type: 'boolean', help: 'print the result as JSON (for an agent)' };
+const RUN_OPTIONS = {
+  provider: { type: 'string', value: 'NAME', help: 'openrouter | codex-cli: the image provider of this run (default: settings provider.use)' },
+  attempts: { type: 'string', value: 'N', help: 'attempt limit of this run (default: make — settings card.attempts; a request — 1)' },
+  'max-spend': { type: 'string', value: 'USD', help: 'spend cap of this run in USD (default: settings card.maxSpendUsd)' },
+};
+const PLACE_OPTIONS = {
+  set: { type: 'string', value: 'ID', help: 'put the card into this set of the collection (with --slot)' },
+  slot: { type: 'string', value: 'N', help: `the slot of the set, 1–${SLOT_COUNT} in window order` },
+};
+const WISH_OPTION = { type: 'string', value: 'TEXT', help: "the person's wish, in their words (required)" };
+const ATTEMPT_OPTION = { type: 'string', value: 'N', help: 'this attempt (default: the chosen one)' };
+
+/** @param {any} v */
+const runError = v => v.attempts !== undefined && !(Number.isInteger(+v.attempts) && +v.attempts > 0) ? '--attempts must be a whole number above 0'
+  : v['max-spend'] !== undefined && !(+v['max-spend'] >= 0) ? '--max-spend must be a number of USD, 0 or more'
+  : v.provider !== undefined && !['openrouter', 'codex-cli'].includes(v.provider) ? '--provider must be openrouter or codex-cli' : null;
+/** @param {any} v */
+const placeError = v => (v.set === undefined) !== (v.slot === undefined) ? '--set and --slot go together'
+  : v.slot !== undefined && !(Number.isInteger(+v.slot) && +v.slot >= 1 && +v.slot <= SLOT_COUNT) ? `--slot must be a whole number from 1 to ${SLOT_COUNT}` : null;
+/** @param {any} v */
+const wishError = v => !v.wish?.trim() ? '--wish is required: what to change, in words' : null;
+/** @param {any} v */
+const attemptError = v => v.attempt !== undefined && !(Number.isInteger(+v.attempt) && +v.attempt > 0) ? '--attempt must be a whole number above 0' : null;
 
 const COMMANDS = {
   'card make': {
-    usage: [`${NAME} card make ORDER.json --collection NAME --set NAME [--provider NAME] [--attempts N] [--max-spend USD] [--json]`],
+    usage: [`${NAME} card make ORDER.json --collection ID [--card ID] [--set ID --slot N] [--provider NAME] [--attempts N] [--max-spend USD] [--json]`],
     about: `Makes one card from an order (a JSON CardOrder: core/style/card-order.js): the prompt is assembled from the
 style's phrases, the image is generated, cropped to the card, post-processed and checked by the style's automatic
 checks. While a check FAILs, the card is generated again, up to the attempt limit and the spend cap (settings/,
 or the options below). A FAIL that rests on an unconfirmed hero outline does not cause a regeneration: look at
-attempts/<n>/card.mask.png and run "card check". The card folder is
-collections/<collection>/sets/<set>/cards/<order id>/; running again appends attempts to it.
+attempts/<n>/card.mask.png and run "card check".
+The card is new in the collection's pool (collections/<collection>/cards/<card>/, the id from the order's id);
+--card continues an existing card of the collection instead (the order replaces its order, attempts are appended).
+--set and --slot put the card into a set's slot (1–${SLOT_COUNT}, window order; a card already there goes back to the pool
+or swaps places).
 An order of kind "character-sheet" (an anchor portrait, core/style/README.md) keeps the model's frame, skips the
 pixel checks and stops after one attempt: run it again for another; the checks for eyes are printed.`,
     options: {
-      collection: { type: 'string', value: 'NAME', help: 'collection folder name (required)' },
-      set: { type: 'string', value: 'NAME', help: 'set folder name (required)' },
-      attempts: { type: 'string', value: 'N', help: 'attempt limit of this run (default: settings card.attempts)' },
-      'max-spend': { type: 'string', value: 'USD', help: 'spend cap of this run in USD (default: settings card.maxSpendUsd)' },
-      provider: { type: 'string', value: 'NAME', help: 'openrouter | codex-cli: the image provider of this run (default: settings provider.use)' },
+      collection: { type: 'string', value: 'ID', help: 'the collection id (required)' },
+      card: { type: 'string', value: 'ID', help: 'an existing card of the collection to continue' },
+      ...PLACE_OPTIONS,
+      ...RUN_OPTIONS,
       json: JSON_OPTION,
     },
     positionals: { min: 1, max: 1, label: 'ORDER.json' },
-    check: (/** @type {any} */ v) => !v.collection || !v.set ? '--collection and --set are required'
-      : v.attempts !== undefined && !(Number.isInteger(+v.attempts) && +v.attempts > 0) ? '--attempts must be a whole number above 0'
-      : v['max-spend'] !== undefined && !(+v['max-spend'] >= 0) ? '--max-spend must be a number of USD, 0 or more'
-      : v.provider !== undefined && !['openrouter', 'codex-cli'].includes(v.provider) ? '--provider must be openrouter or codex-cli' : null,
+    check: (/** @type {any} */ v) => !v.collection ? '--collection is required' : placeError(v) ?? runError(v),
     run: cardMake,
+  },
+  'card regenerate': {
+    usage: [`${NAME} card regenerate CARD_DIR --wish TEXT [--provider NAME] [--attempts N] [--max-spend USD] [--json]`],
+    about: `Generates the card again from its order with the person's wish added to the prompt as it is (the order's
+promptExtra, or its promptOverride when it has one). One attempt unless --attempts says more; the new attempt
+becomes the card even when an earlier one passes more checks (the person's word outranks the rules).`,
+    options: { wish: WISH_OPTION, ...RUN_OPTIONS, json: JSON_OPTION },
+    positionals: { min: 1, max: 1, label: 'CARD_DIR' },
+    check: (/** @type {any} */ v) => wishError(v) ?? runError(v),
+    run: cardRegenerate,
+  },
+  'card edit': {
+    usage: [`${NAME} card edit CARD_DIR --wish TEXT [--attempt N] [--provider NAME] [--attempts N] [--max-spend USD] [--json]`],
+    about: `Edits the card's image: the model image of the chosen attempt (or --attempt N) is sent to the provider as the
+input image with the wish (settings card.editPrompt). The answer is cropped, post-processed and checked as a new
+attempt, which becomes the card. One attempt unless --attempts says more.`,
+    options: { wish: WISH_OPTION, attempt: ATTEMPT_OPTION, ...RUN_OPTIONS, json: JSON_OPTION },
+    positionals: { min: 1, max: 1, label: 'CARD_DIR' },
+    check: (/** @type {any} */ v) => wishError(v) ?? attemptError(v) ?? runError(v),
+    run: cardEdit,
+  },
+  'card adjust': {
+    usage: [`${NAME} card adjust CARD_DIR [--attempt N] [--saturation X] [--brightness Y] [--sharpen A] [--json]`],
+    about: `Sets the post-processing of the chosen attempt (or --attempt N) by hand: the card is drawn again from
+prepared.png with the given values (the others stay), the values are kept as set by hand (never tuned again) and
+the checks run again. The chosen attempt stays chosen. Nothing is generated or paid.`,
+    options: {
+      attempt: ATTEMPT_OPTION,
+      saturation: { type: 'string', value: 'X', help: 'saturation multiplier, 1 = unchanged' },
+      brightness: { type: 'string', value: 'Y', help: 'levels added to brightness (0..255 scale), 0 = unchanged' },
+      sharpen: { type: 'string', value: 'A', help: 'sharpening amount, 0 = none' },
+      json: JSON_OPTION,
+    },
+    positionals: { min: 1, max: 1, label: 'CARD_DIR' },
+    check: (/** @type {any} */ v) => attemptError(v)
+      ?? (v.saturation === undefined && v.brightness === undefined && v.sharpen === undefined ? 'give at least one of --saturation, --brightness, --sharpen' : null)
+      ?? (v.saturation !== undefined && !(+v.saturation >= 0) ? '--saturation must be a number, 0 or more' : null)
+      ?? (v.brightness !== undefined && !Number.isFinite(+v.brightness) ? '--brightness must be a number' : null)
+      ?? (v.sharpen !== undefined && !(+v.sharpen >= 0) ? '--sharpen must be a number, 0 or more' : null),
+    run: cardAdjust,
+  },
+  'card import': {
+    usage: [`${NAME} card import CARD_DIR IMAGE [--json]`, `${NAME} card import ORDER.json IMAGE --collection ID [--set ID --slot N] [--json]`],
+    about: `Takes in an image an agent drew with its own tool (its built-in image generation): as a new attempt of a
+card (CARD_DIR), or as a new card of the collection made from an order (ORDER.json). The image is cropped,
+post-processed and checked like a generated one; the attempt's model is "agent", its cost 0. It becomes the card.`,
+    options: { collection: { type: 'string', value: 'ID', help: 'with ORDER.json: the collection id' }, ...PLACE_OPTIONS, json: JSON_OPTION },
+    positionals: { min: 2, max: 2, label: 'CARD_DIR|ORDER.json IMAGE' },
+    check: (/** @type {any} */ v) => placeError(v) ?? (v.set && !v.collection ? '--set needs --collection (an order)' : null),
+    run: cardImport,
+  },
+  'card prompt': {
+    usage: [`${NAME} card prompt ORDER.json [--json]`],
+    about: `For an agent that draws with its own image tool: prints the prompt the program assembles for the order,
+the style reference images to attach, the frame, and the next step (draw, then "card import"). Nothing is generated
+or paid.`,
+    options: { json: JSON_OPTION },
+    positionals: { min: 1, max: 1, label: 'ORDER.json' },
+    run: cardPrompt,
   },
   'card check': {
     usage: [`${NAME} card check CARD_DIR [--attempt N [--mask confirmed|rejected] [--hero-box X0,Y0,X1,Y1]] [--json]`],
@@ -76,23 +159,79 @@ it is not (then give --hero-box, the hero's box in card pixels).`,
     options: { json: JSON_OPTION },
     run: credits,
   },
+  ...setCommands,
 };
 
 // ---------- commands ----------
 
-/** @param {any} v @param {string[]} p */
-async function cardMake(v, [orderFile]) {
-  const order = JSON.parse(fs.readFileSync(path.resolve(orderFile), 'utf8'));
-  const settings = loadSettings();
-  const { makeCard, providerFrom } = await import('./core/card/make.js');
-  const report = await makeCard({
-    order, collection: v.collection, set: v.set, settings,
+/** @param {string} file */
+const readOrder = file => JSON.parse(fs.readFileSync(path.resolve(file), 'utf8'));
+/** @param {any} v the set slot of the command line (1-based) as the store's place (0-based) */
+const placeOf = v => (v.set ? { setId: v.set, slot: +v.slot - 1 } : undefined);
+/** @param {any} v @param {import('./core/settings.js').Settings} settings */
+async function runOf(v, settings) {
+  const { providerFrom } = await import('./core/card/make.js');
+  return {
+    settings,
     provider: providerFrom({ ...settings.provider, use: v.provider ?? settings.provider.use }),
     limits: { attempts: v.attempts && +v.attempts, maxSpendUsd: v['max-spend'] !== undefined ? +v['max-spend'] : undefined },
-  });
+  };
+}
+/** @param {any} v @param {import('./core/card/make.js').CardReport} report @param {boolean} [paid] */
+function finish(v, report, paid = true) {
   if (v.json) console.log(JSON.stringify(report, null, 2));
   else printReport(report);
-  return report.chosenCheck?.blocking === 0 && report.stop !== 'provider-error' ? 0 : 1;
+  return report.chosenCheck?.blocking === 0 && (!paid || report.stop !== 'provider-error') ? 0 : 1;
+}
+
+/** @param {any} v @param {string[]} p */
+async function cardMake(v, [orderFile]) {
+  const order = readOrder(orderFile);
+  const { makeCard } = await import('./core/card/make.js');
+  return finish(v, await makeCard({ order, collection: v.collection, card: v.card, place: placeOf(v), ...await runOf(v, loadSettings()) }));
+}
+
+/** @param {any} v @param {string[]} p */
+async function cardRegenerate(v, [dir]) {
+  const { regenerateCard } = await import('./core/card/make.js');
+  return finish(v, await regenerateCard({ dir: path.resolve(dir), wish: v.wish, ...await runOf(v, loadSettings()) }));
+}
+
+/** @param {any} v @param {string[]} p */
+async function cardEdit(v, [dir]) {
+  const { editCard } = await import('./core/card/make.js');
+  return finish(v, await editCard({ dir: path.resolve(dir), wish: v.wish, n: v.attempt && +v.attempt, ...await runOf(v, loadSettings()) }));
+}
+
+/** @param {any} v @param {string[]} p */
+async function cardAdjust(v, [dir]) {
+  const { adjustCard } = await import('./core/card/make.js');
+  /** @param {string|undefined} x */
+  const num = x => (x === undefined ? undefined : +x);
+  return finish(v, await adjustCard({ dir: path.resolve(dir), n: v.attempt && +v.attempt, saturation: num(v.saturation), brightness: num(v.brightness), sharpen: num(v.sharpen) }), false);
+}
+
+/** @param {any} v @param {string[]} p */
+async function cardImport(v, [target, image]) {
+  const { importImage } = await import('./core/card/make.js');
+  const isCard = fs.statSync(path.resolve(target)).isDirectory();
+  if (isCard && (v.collection || v.set)) throw new Error('--collection, --set и --slot нужны только с заказом (ORDER.json), не с папкой карточки.');
+  if (!isCard && !v.collection) throw new Error('С заказом нужна коллекция: --collection ID.');
+  const where = isCard ? { dir: path.resolve(target) } : { order: readOrder(target), collection: v.collection, place: placeOf(v) };
+  return finish(v, await importImage({ image: path.resolve(image), ...where, settings: loadSettings() }), false);
+}
+
+/** @param {any} v @param {string[]} p */
+async function cardPrompt(v, [orderFile]) {
+  const { orderPrompt } = await import('./core/card/make.js');
+  const r = await orderPrompt({ order: readOrder(orderFile), settings: loadSettings() });
+  if (v.json) console.log(JSON.stringify(r, null, 2));
+  else {
+    console.log(`Запрос (prompt):\n${r.prompt}\n\nПропорция: ${r.aspectRatio}`);
+    if (r.references.length) console.log(`Приложить образцы, в этом порядке:\n${r.references.map(f => '  ' + f).join('\n')}`);
+    console.log(`\nДальше: ${r.next}`);
+  }
+  return 0;
 }
 
 /** @param {any} v @param {string[]} p */
@@ -137,6 +276,7 @@ const STOP_TEXT = {
   budget: 'следующий вызов мог бы превысить потолок расходов',
   'provider-error': 'ошибка провайдера (записана в попытке)',
   'cost-unknown': 'провайдер не сообщил цену — потолок расходов не соблюсти, генерация остановлена',
+  cancelled: 'запуск отменён',
 };
 
 /** @param {unknown} v */

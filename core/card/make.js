@@ -1,7 +1,14 @@
 // The production loop of one card: order → prompt → generation → preparation → post-processing → checks, repeated
 // while the style's automatic checks fail, within the attempt limit and the spend cap; then the best attempt
 // becomes the card. Files: card-file.js. The loop never decides on art: the agent looks at the chosen attempt,
-// edits the order (staging, subject, promptExtra / promptOverride) and runs it again; new attempts are appended.
+// edits the order (staging, subject, promptExtra / promptOverride) and runs it again on the same card; new attempts
+// are appended. A new card is made in the collection's pool (core/store); `place` puts it into a set's slot.
+//
+// A person's (or an agent's) requests on a made card, the editor's buttons: regenerate with a wish (the order plus
+// their words), edit (the card's model image goes to the provider as the input image with their words), adjust
+// (post-processing set by hand), import (an image the agent drew with its own tool). They make one attempt unless told
+// otherwise, and their result becomes the card even when an earlier attempt passes more checks: the person's word
+// outranks the rules (VISION.md «Слово человека — главное»).
 //
 // Outline policy. Many checks need the hero separated from the backdrop, and the outline the checks propose is
 // unreliable on generated cards until someone confirms it (styles/scapes/checks/README.md). A FAIL that rests on
@@ -20,10 +27,11 @@ import { encodePng, prepareCard } from '../image/prepare.js';
 import * as codexCli from '../providers/codex-cli.js';
 import * as openrouter from '../providers/openrouter.js';
 import { ROOT } from '../settings.js';
-import { orderOutput } from '../style/card-order.js';
-import { buildPrompt as styleBuildPrompt } from '../style/prompt.js';
+import { orderOutput, validateOrder } from '../style/card-order.js';
+import { OrderError, buildPrompt as styleBuildPrompt } from '../style/prompt.js';
 import { loadStyle, styleDirOf } from '../style/style.js';
-import { ATTEMPT_FILES, FINAL_IMAGE, attemptDir, cardDir, readCardFile, writeCardFile } from './card-file.js';
+import * as factoryStore from '../store/index.js';
+import { ATTEMPT_FILES, FINAL_IMAGE, attemptDir, readCardFile, writeCardFile } from './card-file.js';
 import { checkAttempt, styleChecker, styleDir } from './check.js';
 import { tuneProcessing } from './tune.js';
 
@@ -38,16 +46,26 @@ import { tuneProcessing } from './tune.js';
  * free: the provider takes no payment per image (its cost is recorded as 0); generate: one image for the prompt,
  * answering like core/providers/openrouter.js generateImage.
  * aspectRatio: the order kind's own frame, else the provider settings'. fallback: the provider to try, in the same
- * attempt, when this one fails (an error, a refusal, an answer without an image).
- * @typedef {{model: string, free?: boolean, fallback?: Provider, generate: (req: {prompt: string, references: {path: string}[], aspectRatio?: string}) => Promise<{bytes: Uint8Array, mime?: string, cost: number|null}>}} Provider
+ * attempt, when this one fails (an error, a refusal, an answer without an image). legend: what the attached images
+ * are, for a provider that says it in words (Codex); default: style references.
+ * @typedef {{model: string, free?: boolean, fallback?: Provider, generate: (req: {prompt: string, references: {path: string}[], aspectRatio?: string, legend?: string}) => Promise<{bytes: Uint8Array, mime?: string, cost: number|null}>}} Provider
  */
 
 /**
  * Why a run stopped: passed = no blocking FAIL; attempts = the attempt limit; budget = the next call could pass
  * the spend cap; provider-error = the provider failed (recorded in the attempt); cost-unknown = the provider did
- * not report the price, so the cap cannot be kept.
- * @typedef {'passed'|'attempts'|'budget'|'provider-error'|'cost-unknown'} StopReason
+ * not report the price, so the cap cannot be kept; cancelled = the caller's signal was aborted (checked before every
+ * call: a call already sent is not interrupted).
+ * @typedef {'passed'|'attempts'|'budget'|'provider-error'|'cost-unknown'|'cancelled'} StopReason
  */
+
+/**
+ * A run's progress for the caller (the editor's queue): stage of attempt `n`, attempts finished (`done`) of at most `of`,
+ * USD `spent` so far.
+ * @typedef {{stage: 'generate'|'process'|'done', n: number|null, done: number, of: number, spent: number}} Progress
+ */
+
+/** @typedef {{signal?: AbortSignal, onProgress?: (e: Progress) => void}} RunControl  cancel and watch a run */
 
 /**
  * @typedef {object} AttemptReport
@@ -64,7 +82,7 @@ import { tuneProcessing } from './tune.js';
 /**
  * @typedef {object} CardReport
  * @property {string} dir
- * @property {string} id
+ * @property {string} id  the card's id: its folder in the collection's pool
  * @property {number|null} chosen
  * @property {string|null} image  the final card.png
  * @property {import('./card-file.js').CheckSummary|null} chosenCheck  the checks of the chosen attempt (it may be from an earlier run)
@@ -77,6 +95,9 @@ import { tuneProcessing } from './tune.js';
  */
 
 const EXT_BY_MIME = /** @type {Record<string, string>} */ ({ 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp' });
+const MIME_BY_EXT = /** @type {Record<string, string>} */ ({ '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' });
+/** The model recorded for an image an agent made with its own tool (`importImage`); the style's processing start has an entry for it. */
+export const AGENT_MODEL = 'agent';
 const EPSILON_USD = 1e-9;
 
 /**
@@ -145,21 +166,23 @@ async function readPixels(file) {
 
 /**
  * The provider chosen in the settings (provider.use); for OpenRouter with `fallbackModel` set, that model is the
- * fallback of the main one. The OpenRouter key is read from the environment or .env, never printed.
+ * fallback of the main one. The OpenRouter key is read from the environment or .env, never printed, unless the caller
+ * holds it (a running editor's temporary key).
  * @param {import('../settings.js').ProviderSettings} settings
+ * @param {{apiKey?: string}} [o]
  * @returns {Provider}
  */
-export function providerFrom(settings) {
+export function providerFrom(settings, { apiKey: held } = {}) {
   if (settings.use === 'codex-cli') {
     const c = settings.codexCli;
     return {
       model: 'codex-cli' + (c.model ? `/${c.model}` : ''), free: true,
-      generate: ({ prompt, references, aspectRatio }) => codexCli.generateImage({ settings: c, prompt, references, aspectRatio: aspectRatio ?? c.aspectRatio }),
+      generate: ({ prompt, references, aspectRatio, legend }) => codexCli.generateImage({ settings: c, prompt, references, aspectRatio: aspectRatio ?? c.aspectRatio, legend }),
     };
   }
   if (settings.use !== 'openrouter') throw new Error(`Настройки: неизвестный провайдер provider.use = «${settings.use}» (есть openrouter и codex-cli).`);
   const o = settings.openrouter;
-  const apiKey = openrouter.loadApiKey({ envVar: o.keyEnvVar });
+  const apiKey = held ?? openrouter.loadApiKey({ envVar: o.keyEnvVar });
   const net = { timeoutMs: o.timeoutMs, retries: o.retries, backoffMs: o.backoffMs };
   /** @param {string} model @returns {Provider} */
   const on = model => ({
@@ -212,11 +235,21 @@ async function processAttempt({ order, attempt, dir, bytes, mime, processing, ou
 }
 
 /**
- * Sets `chosen` to the best attempt and copies its card to the card folder.
- * @param {string} dir @param {CardFile} card
+ * Chooses the card's attempt and copies its card to the card folder. by 'checks': the best checked attempt of the
+ * card; by 'request': the best of `ns` (the attempts a person's or an agent's explicit request just made: their
+ * word outranks the checks), the choice kept unchanged when none of them reached the checks.
+ * @param {string} dir @param {CardFile} card @param {'checks'|'request'} by @param {number[]} [ns]
  */
-function choose(dir, card) {
-  card.chosen = pickBest(card.attempts);
+function choose(dir, card, by, ns = []) {
+  const best = pickBest(by === 'checks' ? card.attempts : card.attempts.filter(a => ns.includes(a.n)));
+  if (by === 'request' && best == null) return;
+  card.chosen = best;
+  card.chosenBy = by;
+  copyChosen(dir, card);
+}
+
+/** @param {string} dir @param {CardFile} card */
+function copyChosen(dir, card) {
   if (card.chosen != null) fs.copyFileSync(path.join(attemptDir(dir, card.chosen), ATTEMPT_FILES.card), path.join(dir, FINAL_IMAGE));
 }
 
@@ -240,38 +273,32 @@ export function cardReport(dir, card, ns) {
   });
   const chosen = card.attempts.find(a => a.n === card.chosen);
   return {
-    dir, id: card.order.id, chosen: card.chosen, image: chosen ? path.join(dir, FINAL_IMAGE) : null,
+    dir, id: path.basename(dir), chosen: card.chosen, image: chosen ? path.join(dir, FINAL_IMAGE) : null,
     chosenCheck: chosen?.check ?? null, chosenVisual: (chosen && visualOf(chosen.n)) ?? [], attempts, warnings: [],
   };
 }
 
 /**
- * Makes one card: appends attempts to the card folder until one has no blocking FAIL or a limit is reached.
+ * Appends attempts to a card until one has no blocking FAIL or a limit is reached; writes card.json after each.
  * @param {object} o
- * @param {CardOrder} o.order
- * @param {string} o.collection
- * @param {string} o.set
- * @param {import('../settings.js').Settings} o.settings  card limits and post-processing
+ * @param {string} o.dir  the card folder
+ * @param {CardFile} o.card
+ * @param {{prompt: string, references: {path: string}[], legend?: string}} o.request  what every attempt sends
+ * @param {Partial<Attempt>} [o.mark]  recorded in every attempt of the run (the person's wish, the attempt edited)
  * @param {Provider} o.provider
- * @param {(order: CardOrder) => Promise<{prompt: string, references: {path: string}[]}>} [o.buildPrompt]  default: the
- *   style's assembly (core/style/prompt.js); it throws OrderError on an invalid order, before anything is paid
- * @param {{attempts?: number, maxSpendUsd?: number}} [o.limits]  this run's overrides of settings.card
- * @param {string} [o.root]  the collections folder (tests)
- * @returns {Promise<CardReport>}
+ * @param {import('../settings.js').Settings} o.settings
+ * @param {{attempts: number, maxSpendUsd: number}} o.limits
+ * @param {RunControl} [o.control]
+ * @returns {Promise<{ns: number[], spent: number, stop: StopReason, warnings: string[]}>}
  */
-export async function makeCard({ order, collection, set, settings, provider, buildPrompt = o => styleBuildPrompt(o), limits = {}, root }) {
-  const dir = cardDir({ collection, set, id: order.id, root });
-  const { prompt, references } = await buildPrompt(order);
+async function runAttempts({ dir, card, request, mark = {}, provider, settings, limits, control = {} }) {
+  const { order } = card;
   const output = outputOf(order);
-  /** @type {CardFile} */
-  const card = readCardFile(dir) ?? { order, attempts: [], chosen: null };
-  card.order = order;
-  const lim = { attempts: limits.attempts ?? settings.card.attempts, maxSpendUsd: limits.maxSpendUsd ?? settings.card.maxSpendUsd };
   /** @type {Set<string>} */
   const warnings = new Set();
   /** @param {string} model the highest known price of one call with the model in this card (0 = none known) */
   const priceHint = model => Math.max(0, ...card.attempts.filter(a => a.model === model && typeof a.cost === 'number').map(a => /** @type {number} */ (a.cost)));
-  const request = { prompt, references: references.map(r => ({ path: r.path })), ...(output.aspectRatio ? { aspectRatio: output.aspectRatio } : {}) };
+  const req = { ...request, references: request.references.map(r => ({ path: r.path })), ...(output.aspectRatio ? { aspectRatio: output.aspectRatio } : {}) };
   /** @param {any} e */
   const failure = e => ({ message: String(e?.message ?? e), ...(e?.status ? { status: e.status } : {}) });
   /** @type {number[]} */
@@ -279,49 +306,294 @@ export async function makeCard({ order, collection, set, settings, provider, bui
   let spent = 0;
   /** @type {StopReason|undefined} */
   let stop;
+  /** @param {Progress['stage']} stage @param {number|null} n  the attempt under way (null: the run is over) */
+  const tell = (stage, n) => control.onProgress?.({ stage, n, done: ns.length - (n == null ? 0 : 1), of: limits.attempts, spent });
   for (;;) {
-    const limit = nextStep({ done: ns.length, spent, limits: lim, priceHint: priceHint(provider.model) });
+    const limit = control.signal?.aborted ? 'cancelled' : nextStep({ done: ns.length, spent, limits, priceHint: priceHint(provider.model) });
     if (limit) { stop = limit; break; }
     const n = Math.max(0, ...card.attempts.map(a => a.n)) + 1;
     /** @type {Attempt} */
-    const attempt = { n, at: new Date().toISOString(), model: provider.model, prompt, references: references.map(r => path.relative(ROOT, r.path)), cost: null };
+    const attempt = { n, at: new Date().toISOString(), model: provider.model, ...mark, prompt: request.prompt, references: request.references.map(r => path.relative(ROOT, r.path)), cost: null };
     card.attempts.push(attempt);
     ns.push(n);
+    tell('generate', n);
     const adir = attemptDir(dir, n);
     fs.mkdirSync(adir, { recursive: true });
     let answer, used = provider;
     try {
-      answer = await provider.generate(request);
+      answer = await provider.generate(req);
     } catch (/** @type {any} */ e) {
       const fallback = provider.fallback;
-      if (!fallback) { attempt.error = { stage: 'generate', ...failure(e) }; stop = 'provider-error'; }
-      else if (spent + priceHint(fallback.model) > lim.maxSpendUsd + EPSILON_USD) { attempt.error = { stage: 'generate', ...failure(e) }; stop = 'budget'; }
+      if (control.signal?.aborted) { attempt.error = { stage: 'generate', ...failure(e) }; stop = 'cancelled'; }
+      else if (!fallback) { attempt.error = { stage: 'generate', ...failure(e) }; stop = 'provider-error'; }
+      else if (spent + priceHint(fallback.model) > limits.maxSpendUsd + EPSILON_USD) { attempt.error = { stage: 'generate', ...failure(e) }; stop = 'budget'; }
       else {
         // the main model failed (error, refusal, no image): the fallback model makes this attempt
         attempt.fallbackFrom = { model: provider.model, error: failure(e) };
         attempt.model = fallback.model;
         used = fallback;
-        try { answer = await fallback.generate(request); } catch (/** @type {any} */ e2) { attempt.error = { stage: 'generate', ...failure(e2) }; stop = 'provider-error'; }
+        try { answer = await fallback.generate(req); } catch (/** @type {any} */ e2) { attempt.error = { stage: 'generate', ...failure(e2) }; stop = 'provider-error'; }
       }
       if (!answer) { writeCardFile(dir, card); break; }
     }
     attempt.cost = used.free ? 0 : answer.cost;
     spent += attempt.cost ?? 0;
-    const { processing, warning } = processingFor({ style: order.style, model: used.model, settings });
+    tell('process', n);
+    const warning = await processInto({ order, attempt, dir: adir, bytes: answer.bytes, mime: answer.mime, settings, output });
     if (warning) warnings.add(warning);
-    try {
-      await processAttempt({ order, attempt, dir: adir, bytes: answer.bytes, mime: answer.mime, processing, output, tune: settings.card.tuneProcessing });
-    } catch (/** @type {any} */ e) {
-      attempt.error = { stage: 'process', message: String(e?.message ?? e) };
-    }
     writeCardFile(dir, card);
     if (attempt.cost == null) { stop = 'cost-unknown'; break; }
     if (attempt.check && attempt.check.blocking === 0) { stop = 'passed'; break; }
   }
-  choose(dir, card);
+  tell('done', null);
+  return { ns, spent, stop: /** @type {StopReason} */ (stop), warnings: [...warnings] };
+}
+
+/**
+ * Prepares, post-processes and checks an image in its attempt; a failure is recorded in the attempt.
+ * @param {{order: CardOrder, attempt: Attempt, dir: string, bytes: Uint8Array, mime?: string, settings: import('../settings.js').Settings, output: OrderOutput}} o
+ * @returns {Promise<string|undefined>} a warning about the start of post-processing
+ */
+async function processInto({ order, attempt, dir, bytes, mime, settings, output }) {
+  const { processing, warning } = processingFor({ style: order.style, model: attempt.model, settings });
+  try {
+    await processAttempt({ order, attempt, dir, bytes, mime, processing, output, tune: settings.card.tuneProcessing });
+  } catch (/** @type {any} */ e) {
+    attempt.error = { stage: 'process', message: String(e?.message ?? e) };
+  }
+  return warning;
+}
+
+/** @typedef {Pick<typeof import('../store/index.js'), 'cardDir'|'newCardId'|'moveCard'>} CardStore  the Store API core/card uses */
+
+/**
+ * The card folder for a card made from an order: an existing card of the collection (`card`), else a new card of
+ * the collection's pool, its id taken from the order's id.
+ * @param {{store: CardStore, collection: string, card?: string, order: CardOrder}} o
+ */
+function cardFolder({ store, collection, card, order }) {
+  if (card == null) { const id = store.newCardId(collection, order.id); return { id, dir: store.cardDir(collection, id) }; }
+  const dir = store.cardDir(collection, card);
+  if (!readCardFile(dir)) throw new Error(`В коллекции «${collection}» нет карточки «${card}» (${dir}).`);
+  return { id: card, dir };
+}
+
+/**
+ * @param {string} dir @param {CardFile} card @param {number[]} ns
+ * @param {{stop: StopReason, spent: number, warnings: string[]}} run @param {{attempts: number, maxSpendUsd: number}} limits
+ * @returns {CardReport}
+ */
+const runReport = (dir, card, ns, run, limits) => ({ ...cardReport(dir, card, ns), stop: run.stop, spent: run.spent, limits, warnings: run.warnings });
+
+/** @param {string} dir @returns {CardFile} */
+function needCard(dir) {
+  const card = readCardFile(dir);
+  if (!card) throw new Error(`Нет карточки: ${dir} (нет card.json).`);
+  return card;
+}
+
+/**
+ * The attempt `n`, or the chosen one, with the file the operation needs.
+ * @param {string} dir @param {CardFile} card @param {number|undefined} n @param {string} file  a name in the attempt folder
+ * @returns {{attempt: Attempt, file: string}}
+ */
+function sourceAttempt(dir, card, n, file) {
+  const k = n ?? card.chosen;
+  if (k == null) throw new Error('У карточки нет выбранной попытки: укажите номер попытки.');
+  const attempt = card.attempts.find(a => a.n === k);
+  const name = file === ATTEMPT_FILES.original ? attempt?.original : file;
+  const full = name && path.join(attemptDir(dir, k), name);
+  if (!attempt || !full || !fs.existsSync(full)) throw new Error(`У карточки нет попытки ${k} с файлом ${file}.`);
+  return { attempt, file: full };
+}
+
+/** Attempts of one person's (or agent's) request when the run gives no limit: the request is done once. */
+const REQUEST_ATTEMPTS = 1;
+
+/**
+ * Makes one card of a collection: appends attempts to the card folder until one has no blocking FAIL or a limit is
+ * reached, chooses the best attempt and, with `place`, puts the card into a set's slot.
+ * @param {object} o
+ * @param {CardOrder} o.order
+ * @param {string} o.collection  the collection id (store)
+ * @param {string} [o.card]  an existing card of the collection to continue (the order replaces its order); default: a
+ *   new card in the collection's pool
+ * @param {{setId: string, slot: number}} [o.place]  the set and its 0-based slot to put the card into (store moveCard)
+ * @param {import('../settings.js').Settings} o.settings  card limits and post-processing
+ * @param {Provider} o.provider
+ * @param {(order: CardOrder) => Promise<{prompt: string, references: {path: string}[]}>} [o.buildPrompt]  default: the
+ *   style's assembly (core/style/prompt.js); it throws OrderError on an invalid order, before anything is paid
+ * @param {{attempts?: number, maxSpendUsd?: number}} [o.limits]  this run's overrides of settings.card
+ * @param {CardStore} [o.store]  default: the factory's collections/ (tests pass createStore({root}))
+ * @param {AbortSignal} [o.signal]  @param {RunControl['onProgress']} [o.onProgress]
+ * @returns {Promise<CardReport>}
+ */
+export async function makeCard({ order, collection, card: cardId, place, settings, provider, buildPrompt = o => styleBuildPrompt(o), limits = {}, store = factoryStore, signal, onProgress }) {
+  const { prompt, references } = await buildPrompt(order);
+  const { id, dir } = cardFolder({ store, collection, card: cardId, order });
+  /** @type {CardFile} */
+  const card = readCardFile(dir) ?? { order, attempts: [], chosen: null };
+  card.order = order;
+  const lim = { attempts: limits.attempts ?? settings.card.attempts, maxSpendUsd: limits.maxSpendUsd ?? settings.card.maxSpendUsd };
+  const run = await runAttempts({ dir, card, request: { prompt, references }, provider, settings, limits: lim, control: { signal, onProgress } });
+  choose(dir, card, 'checks');
   writeCardFile(dir, card);
-  const report = cardReport(dir, card, ns);
-  return { ...report, stop: /** @type {StopReason} */ (stop), spent, limits: lim, warnings: [...warnings] };
+  if (place) await store.moveCard(collection, id, place);
+  return runReport(dir, card, run.ns, run, lim);
+}
+
+/**
+ * What an agent needs to draw a card with its own image tool (its built-in generation): the prompt the program
+ * assembles for the order, the style reference images to attach, the frame, and what to do with the result.
+ * Nothing is generated or paid.
+ * @param {{order: CardOrder, settings: import('../settings.js').Settings, buildPrompt?: (order: CardOrder) => Promise<{prompt: string, references: {path: string}[]}>}} o
+ * @returns {Promise<{prompt: string, references: string[], aspectRatio: string, next: string}>}  references: absolute paths, in the
+ *   order the prompt names them
+ */
+export async function orderPrompt({ order, settings, buildPrompt = o => styleBuildPrompt(o) }) {
+  const { prompt, references } = await buildPrompt(order);
+  const p = settings.provider;
+  const aspectRatio = outputOf(order).aspectRatio ?? (p.use === 'codex-cli' ? p.codexCli : p.openrouter).aspectRatio;
+  return {
+    prompt, references: references.map(r => r.path), aspectRatio,
+    next: 'Нарисуйте картинку своим инструментом по prompt, приложив references в этом порядке, в пропорции aspectRatio; '
+      + 'затем сдайте её: node ccf.mjs card import ORDER.json IMAGE --collection ID [--set ID --slot N] (новая карточка) или card import CARD_DIR IMAGE (новая попытка). '
+      + 'Программа обрежет её до карточки, подберёт обработку и проверит.',
+  };
+}
+
+/**
+ * Generates the card again from its order with the person's wish appended to the prompt (as `promptExtra`; added to
+ * `promptOverride` when the order has one), as new attempts. The best of them becomes the card.
+ * @param {object} o
+ * @param {string} o.dir  the card folder
+ * @param {string} o.wish  the person's words, sent as they are
+ * @param {import('../settings.js').Settings} o.settings
+ * @param {Provider} o.provider
+ * @param {(order: CardOrder) => Promise<{prompt: string, references: {path: string}[]}>} [o.buildPrompt]
+ * @param {{attempts?: number, maxSpendUsd?: number}} [o.limits]  default: one attempt, settings card.maxSpendUsd
+ * @param {AbortSignal} [o.signal]  @param {RunControl['onProgress']} [o.onProgress]
+ * @returns {Promise<CardReport>}
+ */
+export async function regenerateCard({ dir, wish, settings, provider, buildPrompt = o => styleBuildPrompt(o), limits = {}, signal, onProgress }) {
+  const text = needWish(wish);
+  const card = needCard(dir);
+  const { order } = card;
+  const key = order.promptOverride ? 'promptOverride' : 'promptExtra';
+  const { prompt, references } = await buildPrompt({ ...order, [key]: [order[key], text].filter(Boolean).join(' ') });
+  const lim = { attempts: limits.attempts ?? REQUEST_ATTEMPTS, maxSpendUsd: limits.maxSpendUsd ?? settings.card.maxSpendUsd };
+  const run = await runAttempts({ dir, card, request: { prompt, references }, mark: { wish: text }, provider, settings, limits: lim, control: { signal, onProgress } });
+  choose(dir, card, 'request', run.ns);
+  writeCardFile(dir, card);
+  return runReport(dir, card, run.ns, run, lim);
+}
+
+/**
+ * Edits the card's image: the model image of an attempt (default: the chosen one) goes to the provider as the input
+ * image with the person's instruction (settings card.editPrompt); the answer is prepared, tuned and checked as a new
+ * attempt, and the best of the new attempts becomes the card.
+ * @param {object} o
+ * @param {string} o.dir
+ * @param {string} o.wish  what to change, in the person's words
+ * @param {number} [o.n]  the attempt to edit
+ * @param {import('../settings.js').Settings} o.settings
+ * @param {Provider} o.provider
+ * @param {{attempts?: number, maxSpendUsd?: number}} [o.limits]  default: one attempt, settings card.maxSpendUsd
+ * @param {AbortSignal} [o.signal]  @param {RunControl['onProgress']} [o.onProgress]
+ * @returns {Promise<CardReport>}
+ */
+export async function editCard({ dir, wish, n, settings, provider, limits = {}, signal, onProgress }) {
+  const text = needWish(wish);
+  const card = needCard(dir);
+  const { attempt, file } = sourceAttempt(dir, card, n, ATTEMPT_FILES.original);
+  const request = { prompt: settings.card.editPrompt.replace('{wish}', () => text), references: [{ path: file }], legend: settings.card.editLegend };
+  const lim = { attempts: limits.attempts ?? REQUEST_ATTEMPTS, maxSpendUsd: limits.maxSpendUsd ?? settings.card.maxSpendUsd };
+  const run = await runAttempts({ dir, card, request, mark: { wish: text, editOf: attempt.n }, provider, settings, limits: lim, control: { signal, onProgress } });
+  choose(dir, card, 'request', run.ns);
+  writeCardFile(dir, card);
+  return runReport(dir, card, run.ns, run, lim);
+}
+
+/** @param {unknown} wish */
+function needWish(wish) {
+  const text = typeof wish === 'string' ? wish.trim() : '';
+  if (!text) throw new Error('Пожелание пустое: напишите, что изменить.');
+  return text;
+}
+
+/**
+ * Sets the post-processing of an attempt (default: the chosen one) by hand: card.png is drawn again from
+ * prepared.png with the given values (the others stay as they were), the values are kept as the person's
+ * (`processingFixed`: never tuned again), and the attempt is checked again. The chosen attempt stays chosen.
+ * @param {object} o
+ * @param {string} o.dir
+ * @param {number} [o.n]
+ * @param {number} [o.saturation]  multiplier, 1 = unchanged
+ * @param {number} [o.brightness]  levels added to luma, 0 = unchanged
+ * @param {number} [o.sharpen]  unsharp-mask amount, 0 = none (the radius stays)
+ * @returns {Promise<CardReport>}
+ */
+export async function adjustCard({ dir, n, saturation, brightness, sharpen }) {
+  const card = needCard(dir);
+  const { attempt: a, file } = sourceAttempt(dir, card, n, ATTEMPT_FILES.prepared);
+  if (saturation == null && brightness == null && sharpen == null) throw new Error('Не задано ни одного значения обработки (насыщенность, яркость, резкость).');
+  const base = a.processing ?? styleProcessing(card.order.style).neutral;
+  const processing = {
+    ...base, ...(saturation != null ? { saturation } : {}), ...(brightness != null ? { brightness } : {}),
+    ...(sharpen != null ? { sharpen: { ...base.sharpen, amount: sharpen } } : {}),
+  };
+  a.processing = processing;
+  a.processingFixed = true;
+  const adir = attemptDir(dir, a.n);
+  const pic = await readPixels(file);
+  fs.writeFileSync(path.join(adir, ATTEMPT_FILES.card), await encodePng(adjust(pic.pixels, pic.width, pic.height, processing), pic.width, pic.height));
+  a.check = await checkOrSkip({ order: card.order, dir: adir, review: a.review, output: outputOf(card.order) });
+  if (card.chosen === a.n) copyChosen(dir, card);
+  writeCardFile(dir, card);
+  return cardReport(dir, card, [a.n]);
+}
+
+/**
+ * Takes in an image an agent made with its own tool (its built-in image generation): as a new attempt of a card,
+ * or as the first attempt of a new card made from an order. The image is prepared, tuned and checked like a
+ * generated one; the attempt's model is "agent", its cost 0, its prompt empty (the program did not send it). The
+ * attempt becomes the card when it reached the checks.
+ * @param {object} o
+ * @param {string} o.image  the image file
+ * @param {string} [o.dir]  an existing card folder
+ * @param {CardOrder} [o.order]  instead of `dir`: a new card of `collection`
+ * @param {string} [o.collection]
+ * @param {{setId: string, slot: number}} [o.place]  with `order`: the set slot to put the new card into
+ * @param {import('../settings.js').Settings} o.settings
+ * @param {CardStore} [o.store]
+ * @returns {Promise<CardReport>}
+ */
+export async function importImage({ image, dir, order, collection, place, settings, store = factoryStore }) {
+  const mime = MIME_BY_EXT[path.extname(image).toLowerCase()];
+  if (!mime) throw new Error(`Картинка должна быть PNG, JPEG или WebP: ${image}`);
+  const bytes = fs.readFileSync(image);
+  let id;
+  /** @type {CardFile} */
+  let card;
+  if (dir) card = needCard(dir);
+  else {
+    if (!order || !collection) throw new Error('Нужна папка карточки или заказ с коллекцией.');
+    const errors = await validateOrder(order);
+    if (errors.length) throw new OrderError(errors);
+    ({ id, dir } = cardFolder({ store, collection, order }));
+    card = { order, attempts: [], chosen: null };
+  }
+  const n = Math.max(0, ...card.attempts.map(a => a.n)) + 1;
+  /** @type {Attempt} */
+  const attempt = { n, at: new Date().toISOString(), model: AGENT_MODEL, prompt: '', references: [], cost: 0 };
+  card.attempts.push(attempt);
+  const adir = attemptDir(dir, n);
+  fs.mkdirSync(adir, { recursive: true });
+  const warning = await processInto({ order: card.order, attempt, dir: adir, bytes, mime, settings, output: outputOf(card.order) });
+  choose(dir, card, 'request', [n]);
+  writeCardFile(dir, card);
+  if (place && id) await store.moveCard(/** @type {string} */ (collection), id, place);
+  return { ...cardReport(dir, card, [n]), warnings: warning ? [warning] : [] };
 }
 
 /**
@@ -340,15 +612,15 @@ async function retune(order, a, adir) {
 
 /**
  * Runs the checks again on attempts of a card (after the order's staging was edited, or with what a person or an
- * agent confirmed by eye), then chooses the best attempt again. An attempt whose hero outline has just been
- * confirmed is first tuned again with the backdrop's colour among the measures.
+ * agent confirmed by eye), then chooses the best attempt again, unless the choice came from a request (regenerate,
+ * edit, import): then it stays. An attempt whose hero outline has just been confirmed is first tuned again with the
+ * backdrop's colour among the measures, unless its processing was set by hand.
  * @param {{dir: string, n?: number, review?: import('./card-file.js').Review}} o
  *   n = only this attempt (required with review); otherwise every attempt that has a card image
  * @returns {Promise<CardReport>}
  */
 export async function recheckCard({ dir, n, review }) {
-  const card = readCardFile(dir);
-  if (!card) throw new Error(`Нет карточки: ${dir} (нет card.json).`);
+  const card = needCard(dir);
   if (review && n == null) throw new Error('Подтверждение контура или рамка героя относятся к одной попытке: укажите её номер.');
   const targets = card.attempts.filter(a => (n == null || a.n === n) && fs.existsSync(path.join(attemptDir(dir, a.n), ATTEMPT_FILES.card)));
   if (n != null && !targets.length) throw new Error(`У карточки нет попытки ${n} с картинкой.`);
@@ -356,10 +628,11 @@ export async function recheckCard({ dir, n, review }) {
   for (const a of targets) {
     if (review) a.review = { ...a.review, ...review };
     const adir = attemptDir(dir, a.n);
-    if (output.checks && a.tuning && a.review?.mask === 'confirmed' && a.tuning.basis === 'whole card') await retune(card.order, a, adir);
+    if (output.checks && a.tuning && !a.processingFixed && a.review?.mask === 'confirmed' && a.tuning.basis === 'whole card') await retune(card.order, a, adir);
     a.check = await checkOrSkip({ order: card.order, dir: adir, review: a.review, output });
   }
-  choose(dir, card);
+  if (card.chosenBy === 'request') copyChosen(dir, card);
+  else choose(dir, card, 'checks');
   writeCardFile(dir, card);
   return cardReport(dir, card, targets.map(a => a.n));
 }

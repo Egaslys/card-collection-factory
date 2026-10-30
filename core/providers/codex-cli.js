@@ -62,12 +62,14 @@ function run(spawnImpl, command, args, cwd, input, timeoutMs) {
  * @param {string} o.prompt
  * @param {{bytes?: Uint8Array, path?: string, mime?: string}[]} [o.references] attached as `-i` files (at most 5 work in Codex's image tool)
  * @param {string} [o.aspectRatio] e.g. "4:5": Codex's image tool has no size parameter, so it is only said in the brief
+ * @param {string} [o.legend] what the attached images are, said before the brief; default: style references whose
+ *   subjects are not copied (an edit says instead that the attached image is the one to change)
  * @param {string} [o.resolution] ignored
  * @param {Record<string, unknown>} [o.params] ignored
  * @param {CodexNet} [o.net]
  * @returns {Promise<{bytes: Buffer, mime: string|undefined, model: string, cost: null, usage: undefined, raw: {threadId: string, file: string}}>}
  */
-export async function generateImage({ settings: d, model, prompt, references = [], aspectRatio, net = {} }) {
+export async function generateImage({ settings: d, model, prompt, references = [], aspectRatio, legend: given, net = {} }) {
   const spawnImpl = net.spawnImpl ?? spawn;
   const codexHome = net.codexHome ?? process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex');
   const scratch = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'ccf-codex-'));
@@ -84,9 +86,9 @@ export async function generateImage({ settings: d, model, prompt, references = [
       if (file.includes(',')) throw new Error(`Codex делит значение -i по запятой: в пути образца не должно быть запятых (${file}).`);
       refPaths.push(file);
     }
-    const legend = refPaths.length
-      ? `\nThe ${refPaths.length} attached image(s) are style references, in order: match their rendering style, lighting, colour treatment and composition conventions, but do not copy their subjects.\n`
-      : '';
+    const legend = !refPaths.length ? ''
+      : given ? `\n${given.trim()}\n`
+      : `\nThe ${refPaths.length} attached image(s) are style references, in order: match their rendering style, lighting, colour treatment and composition conventions, but do not copy their subjects.\n`;
     const brief = aspectRatio ? `${prompt.trim()} Portrait image, aspect ratio ${aspectRatio}.` : prompt.trim();
     const text = d.promptTemplate.replace('{refs}', () => legend).replace('{brief}', () => brief);
     const m = model ?? d.model;

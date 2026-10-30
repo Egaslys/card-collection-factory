@@ -86,6 +86,15 @@ test('generateImage: без образцов и модели нет -i и -m, б
   assert.deepEqual(r.bytes, png);
 });
 
+test('generateImage: своя подпись к приложенной картинке (правка) заменяет подпись образцов стиля', async () => {
+  const codexHome = home();
+  const m = mock({ onSpawn: () => putImage(codexHome) });
+  await generateImage({ settings: CODEX, prompt: 'make it blue', references: [{ path: '/abs/model.png' }], legend: 'The attached image is the card to edit.', net: { spawnImpl: m.spawnImpl, codexHome } });
+  assert.match(m.calls[0].input, /The attached image is the card to edit\./);
+  assert.doesNotMatch(m.calls[0].input, /style references/);
+  assert.deepEqual(m.calls[0].args.flatMap((x, i, all) => (x === '-i' ? [all[i + 1]] : [])), ['/abs/model.png']);
+});
+
 test('generateImage: значения берутся из настроек вызывающего', async () => {
   const codexHome = home();
   const m = mock({ onSpawn: () => putImage(codexHome) });

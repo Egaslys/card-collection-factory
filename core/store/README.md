@@ -23,7 +23,7 @@ collections/                         ignored by Git
 
 A card belongs to the collection, not to a set. Which set a card sits in is recorded only in `set.json` → `slots`; `card.json` does not know it. Moving a card between sets or back to the pool rewrites only `set.json` files. A card is in at most one slot of one set: `setSlots`, `moveCard` and `updateSet({ slots })` take it out of any other place. A card in no set is in the pool.
 
-A folder under `collections/` without `collection.json` is not a collection (e.g. the early pilot runs, written as `<c>/sets/<s>/cards/<card>/`): `listCollections` skips it.
+A folder under `collections/` without `collection.json` is not a collection: `listCollections` skips it.
 
 ## Ids
 

@@ -11,6 +11,8 @@
 /dist/
 /coverage/
 /logs/
+# A running editor's address and access token for local agents (editor/server.mjs).
+/.ccf/
 
 # Claude Code: the whole .claude/ is shared (settings, hooks, status line, skills);
 # personal settings and session scratch stay local.

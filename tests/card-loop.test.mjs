@@ -45,17 +45,24 @@ test('ccf.mjs: справка, неизвестная команда и неиз
   const help = ccf('--help');
   assert.equal(help.status, 0);
   assert.match(help.stdout, /card make/);
-  for (const c of [['card', 'make'], ['card', 'check'], ['models'], ['credits']]) {
+  for (const c of [['card', 'make'], ['card', 'regenerate'], ['card', 'edit'], ['card', 'adjust'], ['card', 'import'], ['card', 'prompt'], ['card', 'check'], ['models'], ['credits']]) {
     assert.equal(ccf(...c, '--help').status, 0, c.join(' '));
     const bad = ccf(...c, ...(c[0] === 'card' ? ['x'] : []), '--no-such-option');
     assert.equal(bad.status, 2, c.join(' '));
     assert.match(bad.stderr, /Unknown option '--no-such-option'/);
   }
   assert.equal(ccf('nope').status, 2);
-  assert.equal(ccf('card', 'make', 'x.json', '--collection', 'c').status, 2, 'без --set');
-  assert.equal(ccf('card', 'make', 'x.json', '--collection', 'c', '--set', 's', '--attempts', '0').status, 2);
+  assert.equal(ccf('card', 'make', 'x.json').status, 2, 'без --collection');
+  assert.equal(ccf('card', 'make', 'x.json', '--collection', 'c', '--set', 's').status, 2, '--set без --slot');
+  assert.equal(ccf('card', 'make', 'x.json', '--collection', 'c', '--set', 's', '--slot', '11').status, 2, 'слот вне 1–10');
+  assert.equal(ccf('card', 'make', 'x.json', '--collection', 'c', '--attempts', '0').status, 2);
+  assert.equal(ccf('card', 'regenerate', 'x').status, 2, 'без --wish');
+  assert.equal(ccf('card', 'edit', 'x', '--wish', ' ').status, 2, 'пустое пожелание');
+  assert.equal(ccf('card', 'adjust', 'x').status, 2, 'без значений');
+  assert.equal(ccf('card', 'adjust', 'x', '--saturation', '-1').status, 2);
+  assert.equal(ccf('card', 'import', 'x').status, 2, 'без картинки');
   assert.equal(ccf('card', 'check', 'x', '--mask', 'confirmed').status, 2, '--mask без --attempt');
-  assert.equal(ccf('card', 'make', 'x.json', '--collection', 'c', '--set', 's', '--provider', 'dalle').status, 2, 'неизвестный провайдер');
+  assert.equal(ccf('card', 'make', 'x.json', '--collection', 'c', '--provider', 'dalle').status, 2, 'неизвестный провайдер');
   const missing = ccf('card', 'check', path.join(tmp(), 'none'));
   assert.equal(missing.status, 1);
   assert.match(missing.stderr, /Нет карточки/);
@@ -65,6 +72,9 @@ test('ccf.mjs: справка, неизвестная команда и неиз
 
 const loop = hasSharp ? await import('../core/card/make.js') : null;
 const sharp = hasSharp ? (await import('sharp')).default : null;
+const { createStore } = await import('../core/store/index.js');
+/** A store over a temporary folder with one collection: where a test's cards go. */
+const pool = async () => { const store = createStore({ root: tmp() }); return { store, collection: (await store.createCollection({ title: 'Тест' })).id }; };
 
 test('цикл: лимит попыток и потолок расходов', { skip: noSharp }, () => {
   const { nextStep } = /** @type {any} */ (loop);
@@ -103,9 +113,9 @@ const grey = async () => sharp({ create: { width: 800, height: 1000, channels: 3
 
 test('цикл: карточка, которая не проходит проверки, перегенерируется до потолка расходов; повторный запуск дописывает попытки', { skip: noSharp }, async () => {
   const { makeCard, recheckCard } = /** @type {any} */ (loop);
-  const root = tmp();
+  const at = await pool();
   const p = fakeProvider(await grey(), 0.08);
-  const r = await makeCard({ order: ORDER, collection: 'c1', set: 's1', settings: SETTINGS, provider: p, buildPrompt: fakePrompt, root });
+  const r = await makeCard({ order: ORDER, ...at, settings: SETTINGS, provider: p, buildPrompt: fakePrompt });
   assert.equal(r.stop, 'budget', '0.08 + 0.08 = 0.16, третий вызов превысил бы 0.20');
   assert.equal(p.calls.length, 2);
   assert.equal(p.calls[0].prompt, 'PROMPT');
@@ -117,8 +127,9 @@ test('цикл: карточка, которая не проходит пров�
     for (const k of ['original', 'prepared', 'card', 'check']) assert.ok(fs.existsSync(a.files[k]), k);
     assert.ok(a.visual.length > 0, 'список для глаз');
   }
-  const dir = path.join(root, 'c1/sets/s1/cards/test-card');
-  assert.equal(r.dir, dir);
+  const dir = at.store.cardDir(at.collection, 'test-card');
+  assert.equal(r.dir, dir, 'новая карточка — в хранилище коллекции, id из id заказа');
+  assert.equal(r.id, 'test-card');
   const meta = await sharp(path.join(dir, 'card.png')).metadata();
   assert.deepEqual([meta.width, meta.height], [430, 480]);
   const file = JSON.parse(fs.readFileSync(path.join(dir, 'card.json'), 'utf8'));
@@ -127,8 +138,9 @@ test('цикл: карточка, которая не проходит пров�
   assert.equal(file.attempts[0].references[0], 'styles/scapes/references/card-003.png');
   assert.deepEqual(file.attempts[0].processing, JSON.parse(fs.readFileSync(path.join(ROOT, 'styles/scapes/processing.json'), 'utf8')).start[MODEL]);
 
-  // second run: the known price limits it from the first call; attempts continue numbering
-  const again = await makeCard({ order: ORDER, collection: 'c1', set: 's1', settings: SETTINGS, provider: p, buildPrompt: fakePrompt, root, limits: { maxSpendUsd: 0.1 } });
+  // second run on the same card: the known price limits it from the first call; attempts continue numbering
+  const again = await makeCard({ order: ORDER, ...at, card: r.id, settings: SETTINGS, provider: p, buildPrompt: fakePrompt, limits: { maxSpendUsd: 0.1 } });
+  assert.equal(again.dir, dir);
   assert.equal(again.stop, 'budget');
   assert.deepEqual(again.attempts.map(a => a.n), [3]);
   assert.equal(p.calls.length, 3);
@@ -153,7 +165,7 @@ test('цикл: эталонная карточка как «ответ моде
   const { id, ref, file, set, mask, ...staging } = spec;
   const order = { ...ORDER, staging };
   const p = fakeProvider(fs.readFileSync(path.join(ROOT, 'styles/scapes/references/card-003.png')), 0.04);
-  const r = await makeCard({ order, collection: 'c', set: 's', settings: SETTINGS, provider: p, buildPrompt: fakePrompt, root: tmp(), limits: { attempts: 2 } });
+  const r = await makeCard({ order, ...await pool(), settings: SETTINGS, provider: p, buildPrompt: fakePrompt, limits: { attempts: 2 } });
   assert.ok(['passed', 'attempts'].includes(r.stop), r.stop);
   assert.ok(p.calls.length <= 2);
   if (r.stop === 'passed') assert.equal(r.attempts.at(-1).check.blocking, 0);
@@ -164,9 +176,9 @@ test('цикл: эталонная карточка как «ответ моде
 test('цикл: запрос собирает core/style; негодный заказ отклоняется до платного вызова', { skip: noSharp }, async () => {
   const { makeCard } = /** @type {any} */ (loop);
   const { buildPrompt, OrderError } = await import('../core/style/prompt.js');
-  const root = tmp();
+  const at = await pool();
   const p = fakeProvider(await grey(), 0.04);
-  const r = await makeCard({ order: ORDER, collection: 'c', set: 's', settings: SETTINGS, provider: p, root, limits: { attempts: 1 } });
+  const r = await makeCard({ order: ORDER, ...at, settings: SETTINGS, provider: p, limits: { attempts: 1 } });
   const built = await buildPrompt(ORDER);
   assert.equal(p.calls[0].prompt, built.prompt);
   assert.deepEqual(p.calls[0].references, built.references.map(x => ({ path: x.path })));
@@ -174,23 +186,24 @@ test('цикл: запрос собирает core/style; негодный за�
   assert.deepEqual(file.attempts[0].references, built.references.map(x => path.relative(ROOT, x.path)));
 
   const bad = { ...ORDER, staging: { ...ORDER.staging, pattern: 'plain_gradient' } };
-  await assert.rejects(makeCard({ order: bad, collection: 'c', set: 's', settings: SETTINGS, provider: p, root }), e => e instanceof OrderError && e.errors.length > 0);
+  await assert.rejects(makeCard({ order: bad, ...at, settings: SETTINGS, provider: p }), e => e instanceof OrderError && e.errors.length > 0);
   assert.equal(p.calls.length, 1, 'за негодный заказ не заплачено');
+  assert.deepEqual((await at.store.listCards(at.collection)).map(c => c.id), ['test-card'], 'и карточка под него не заведена');
 });
 
 test('цикл: ошибка провайдера и неизвестная цена записываются и останавливают запуск', { skip: noSharp }, async () => {
   const { makeCard } = /** @type {any} */ (loop);
   const { ProviderError } = await import('../core/providers/openrouter.js');
-  const root = tmp();
+  const at = await pool();
   const failing = async () => { throw new ProviderError('Провайдер вернул HTTP 402 (/images): нет средств', { status: 402 }); };
-  const r = await makeCard({ order: ORDER, collection: 'c', set: 's', settings: SETTINGS, provider: { model: MODEL, generate: failing }, buildPrompt: fakePrompt, root });
+  const r = await makeCard({ order: ORDER, ...at, settings: SETTINGS, provider: { model: MODEL, generate: failing }, buildPrompt: fakePrompt });
   assert.equal(r.stop, 'provider-error');
   assert.deepEqual(r.attempts[0].error, { stage: 'generate', message: 'Провайдер вернул HTTP 402 (/images): нет средств', status: 402 });
   assert.equal(r.chosen, null);
   assert.equal(r.image, null);
 
   const p = fakeProvider(await grey(), null);
-  const u = await makeCard({ order: ORDER, collection: 'c', set: 's', settings: SETTINGS, provider: p, buildPrompt: fakePrompt, root });
+  const u = await makeCard({ order: ORDER, ...at, card: r.id, settings: SETTINGS, provider: p, buildPrompt: fakePrompt });
   assert.equal(u.stop, 'cost-unknown');
   assert.equal(p.calls.length, 1);
   assert.deepEqual(u.attempts.map(a => a.n), [2]);
@@ -198,7 +211,8 @@ test('цикл: ошибка провайдера и неизвестная це
 
   // a provider without payment per image (Codex): cost 0, the cap does not stop it, the attempt limit does
   const free = fakeProvider(await grey(), null, { model: 'codex-cli', free: true });
-  const f = await makeCard({ order: ORDER, collection: 'c', set: 'free', settings: SETTINGS, provider: free, buildPrompt: fakePrompt, root, limits: { attempts: 2 } });
+  const f = await makeCard({ order: ORDER, ...at, settings: SETTINGS, provider: free, buildPrompt: fakePrompt, limits: { attempts: 2 } });
+  assert.equal(f.id, 'test-card-2', 'без --card — новая карточка с незанятым id');
   assert.equal(f.stop, 'attempts');
   assert.deepEqual(f.attempts.map(a => a.cost), [0, 0]);
   assert.deepEqual(f.warnings, [], 'у codex-cli свои начальные настройки обработки (нейтральные)');
@@ -211,7 +225,7 @@ test('цикл: опорный портрет персонажа — свой к
   const order = { kind: 'character-sheet', id: 'sheet-pig', style: 'scapes', character: 'pig' };
   const tall = await sharp({ create: { width: 600, height: 900, channels: 3, background: { r: 128, g: 128, b: 128 } } }).png().toBuffer();
   const p = fakeProvider(tall, 0.04);
-  const r = await makeCard({ order, collection: 'c', set: 's', settings: SETTINGS, provider: p, root: tmp() });
+  const r = await makeCard({ order, ...await pool(), settings: SETTINGS, provider: p });
   assert.equal(r.stop, 'passed', 'проверять нечего — повтор не нужен');
   assert.equal(p.calls.length, 1);
   assert.equal(p.calls[0].aspectRatio, rules.output.aspectRatio);
@@ -226,7 +240,7 @@ test('цикл: опорный портрет персонажа — свой к
 
   // an ordinary card asks for the provider settings' frame
   const card = fakeProvider(await grey(), 0.04);
-  await makeCard({ order: ORDER, collection: 'c', set: 's', settings: SETTINGS, provider: card, buildPrompt: fakePrompt, root: tmp(), limits: { attempts: 1 } });
+  await makeCard({ order: ORDER, ...await pool(), settings: SETTINGS, provider: card, buildPrompt: fakePrompt, limits: { attempts: 1 } });
   assert.ok(!('aspectRatio' in card.calls[0]));
 });
 
@@ -278,7 +292,7 @@ test('подбор обработки в цикле: настройки и ме�
   // a reference card darkened and greyed as a "model answer": the search has something to bring back
   const bytes = await sharp(path.join(ROOT, 'styles/scapes/references/card-003.png')).modulate({ brightness: 0.7, saturation: 0.6 }).png().toBuffer();
   const p = fakeProvider(bytes, 0.04);
-  const r = await makeCard({ order: ORDER, collection: 'c', set: 's', settings: { ...SETTINGS, card: { ...SETTINGS.card, tuneProcessing: true } }, provider: p, buildPrompt: fakePrompt, root: tmp(), limits: { attempts: 1 } });
+  const r = await makeCard({ order: ORDER, ...await pool(), settings: { ...SETTINGS, card: { ...SETTINGS.card, tuneProcessing: true } }, provider: p, buildPrompt: fakePrompt, limits: { attempts: 1 } });
   const a = JSON.parse(fs.readFileSync(path.join(r.dir, 'card.json'), 'utf8')).attempts[0];
   const own = JSON.parse(fs.readFileSync(path.join(ROOT, 'styles/scapes/processing.json'), 'utf8'));
   assert.deepEqual(a.tuning.start, own.start[MODEL]);
@@ -297,12 +311,14 @@ test('подбор обработки в цикле: настройки и ме�
 test('запасная модель: только когда основная не справилась; записана в попытке; потолок расходов проверяется и для неё', { skip: noSharp }, async () => {
   const { makeCard } = /** @type {any} */ (loop);
   const { ProviderError } = await import('../core/providers/openrouter.js');
-  const root = tmp();
+  const at = await pool();
   const FALLBACK = 'openai/gpt-image-2.5-flare';
   const refuse = async () => { throw new ProviderError('Провайдер ответил без картинки.', { status: 200 }); };
   const image = await grey();
   const backup = fakeProvider(image, 0.05, { model: FALLBACK });
-  const run = (provider, limits) => makeCard({ order: ORDER, collection: 'c', set: 'fb', settings: SETTINGS, provider, buildPrompt: fakePrompt, root, limits });
+  // every run continues one card: the fallback's price known from an earlier run is what keeps the cap
+  let card;
+  const run = async (provider, limits) => { const x = await makeCard({ order: ORDER, ...at, card, settings: SETTINGS, provider, buildPrompt: fakePrompt, limits }); card ??= x.id; return x; };
 
   // the main model answers: the fallback is not called
   const ok = await run({ ...fakeProvider(image, 0.04), fallback: backup }, { attempts: 1 });
@@ -349,3 +365,153 @@ test('запасная модель из настроек: fallbackModel у Open
   delete process.env.CCF_TEST_KEY;
 });
 
+// ---------- the collection's pool and a person's requests on a card ----------
+
+const REAL_CARD = loadSettings().card; // the edit prompt and legend as the factory sends them
+const OPS = { ...SETTINGS, card: { ...SETTINGS.card, editPrompt: REAL_CARD.editPrompt, editLegend: REAL_CARD.editLegend } };
+const reference = () => fs.readFileSync(path.join(ROOT, 'styles/scapes/references/card-003.png'));
+/** A prompt that shows what the order asked for: the wish must reach it. */
+const echoPrompt = async o => ({ prompt: ['PROMPT', o.promptOverride, o.promptExtra].filter(Boolean).join(' | '), references: [] });
+const cardOf = dir => JSON.parse(fs.readFileSync(path.join(dir, 'card.json'), 'utf8'));
+const SET = { title: 'Набор', brief: { theme: 'рыбалка', wishes: '', variants: 1 }, window: { kind: 'large', template: 'blue' } };
+
+test('хранилище: новая карточка ложится в слот набора; заказ на занятый id даёт новый id', { skip: noSharp }, async () => {
+  const { makeCard } = /** @type {any} */ (loop);
+  const at = await pool();
+  const set = await at.store.createSet(at.collection, SET);
+  const r = await makeCard({ order: ORDER, ...at, place: { setId: set.id, slot: 2 }, settings: SETTINGS, provider: fakeProvider(await grey(), 0.04), buildPrompt: fakePrompt, limits: { attempts: 1 } });
+  assert.equal((await at.store.getSet(at.collection, set.id)).slots[2], r.id);
+  const second = await makeCard({ order: ORDER, ...at, settings: SETTINGS, provider: fakeProvider(await grey(), 0.04), buildPrompt: fakePrompt, limits: { attempts: 1 } });
+  assert.equal(second.id, 'test-card-2');
+  assert.deepEqual((await at.store.listCards(at.collection, { pool: true })).map(c => c.id), ['test-card-2'], 'без места — в хранилище, вне наборов');
+  await assert.rejects(makeCard({ order: ORDER, ...at, card: 'no-such', settings: SETTINGS, provider: fakeProvider(await grey(), 0.04), buildPrompt: fakePrompt }), /нет карточки «no-such»/);
+});
+
+test('перегенерация с пожеланием: слова человека — в запросе, одна попытка, её результат становится карточкой и остаётся после перепроверки', { skip: noSharp }, async () => {
+  const { makeCard, regenerateCard, recheckCard } = /** @type {any} */ (loop);
+  const spec = JSON.parse(fs.readFileSync(path.join(ROOT, 'styles/scapes/checks/reference-spec.json'), 'utf8')).cards.find(c => c.id === 'ref-003');
+  const { id, ref, file, set, mask, ...staging } = spec;
+  const order = { ...ORDER, staging };
+  const made = await makeCard({ order, ...await pool(), settings: SETTINGS, provider: fakeProvider(reference(), 0.04), buildPrompt: echoPrompt, limits: { attempts: 1 } });
+  const before = made.chosenCheck;
+  const p = fakeProvider(await grey(), 0.04);
+  await assert.rejects(regenerateCard({ dir: made.dir, wish: '  ', settings: OPS, provider: p, buildPrompt: echoPrompt }), /Пожелание пустое/);
+  const r = await regenerateCard({ dir: made.dir, wish: 'поплавок синий', settings: OPS, provider: p, buildPrompt: echoPrompt });
+  assert.equal(p.calls.length, 1, 'одна попытка по умолчанию');
+  assert.equal(p.calls[0].prompt, 'PROMPT | поплавок синий');
+  assert.equal(r.limits.attempts, 1);
+  const c = cardOf(made.dir);
+  assert.equal(c.attempts[1].wish, 'поплавок синий');
+  assert.equal(c.order.promptExtra, undefined, 'заказ не меняется: пожелание — в попытке');
+  assert.ok(r.chosenCheck.blocking > before.blocking, 'серая попытка хуже эталонной по проверкам…');
+  assert.equal(r.chosen, 2, '…но её просил человек — она и есть карточка');
+  assert.equal(c.chosenBy, 'request');
+  assert.equal((await recheckCard({ dir: made.dir })).chosen, 2, 'перепроверка выбор человека не отменяет');
+
+  // an order with promptOverride: the wish is added to the override (promptExtra would be ignored)
+  const over = await makeCard({ order: { ...ORDER, promptOverride: 'MY PROMPT' }, ...await pool(), settings: SETTINGS, provider: fakeProvider(await grey(), 0.04), buildPrompt: echoPrompt, limits: { attempts: 1 } });
+  const q = fakeProvider(await grey(), 0.04);
+  await regenerateCard({ dir: over.dir, wish: 'ярче', settings: OPS, provider: q, buildPrompt: echoPrompt });
+  assert.equal(q.calls[0].prompt, 'PROMPT | MY PROMPT ярче');
+});
+
+test('правка картинки: картинка модели выбранной попытки уходит входной картинкой с пожеланием; новая попытка проходит обработку и проверки', { skip: noSharp }, async () => {
+  const { makeCard, editCard } = /** @type {any} */ (loop);
+  const made = await makeCard({ order: ORDER, ...await pool(), settings: SETTINGS, provider: fakeProvider(await grey(), 0.04), buildPrompt: fakePrompt, limits: { attempts: 1 } });
+  const p = fakeProvider(reference(), 0.05);
+  const r = await editCard({ dir: made.dir, wish: 'убери антенну', settings: OPS, provider: p });
+  assert.equal(p.calls.length, 1);
+  assert.equal(p.calls[0].prompt, REAL_CARD.editPrompt.replace('{wish}', 'убери антенну'));
+  assert.deepEqual(p.calls[0].references, [{ path: path.join(made.dir, 'attempts/1/model.png') }]);
+  assert.equal(p.calls[0].legend, REAL_CARD.editLegend);
+  const a = cardOf(made.dir).attempts[1];
+  assert.deepEqual([a.editOf, a.wish, a.cost, a.references], [1, 'убери антенну', 0.05, [path.relative(ROOT, path.join(made.dir, 'attempts/1/model.png'))]]);
+  assert.ok(a.check && a.processing);
+  assert.equal(r.chosen, 2);
+  await assert.rejects(editCard({ dir: made.dir, wish: 'x', n: 9, settings: OPS, provider: p }), /нет попытки 9/);
+});
+
+test('ручная обработка: card.png заново из prepared.png с заданными значениями, они помечены как ручные, выбор не меняется', { skip: noSharp }, async () => {
+  const { makeCard, adjustCard } = /** @type {any} */ (loop);
+  const { adjust } = await import('../core/image/adjust.js');
+  const made = await makeCard({ order: ORDER, ...await pool(), settings: SETTINGS, provider: fakeProvider(await grey(), 0.04), buildPrompt: fakePrompt, limits: { attempts: 2 } });
+  assert.equal(made.chosen, 1);
+  await assert.rejects(adjustCard({ dir: made.dir }), /Не задано/);
+  const r = await adjustCard({ dir: made.dir, n: 2, saturation: 1.1, sharpen: 0.2 });
+  const a = cardOf(made.dir).attempts[1];
+  const start = JSON.parse(fs.readFileSync(path.join(ROOT, 'styles/scapes/processing.json'), 'utf8')).start[MODEL];
+  assert.deepEqual(a.processing, { ...start, saturation: 1.1, sharpen: { ...start.sharpen, amount: 0.2 } });
+  assert.equal(a.processingFixed, true);
+  assert.equal(r.chosen, 1, 'правили не выбранную попытку — выбор прежний');
+  const prepared = await sharp(path.join(made.dir, 'attempts/2/prepared.png')).raw().toBuffer({ resolveWithObject: true });
+  assert.deepEqual(await sharp(path.join(made.dir, 'attempts/2/card.png')).raw().toBuffer(), Buffer.from(adjust(prepared.data, prepared.info.width, prepared.info.height, a.processing)));
+
+  // the chosen attempt: the card itself is drawn again; the same through the command line
+  const cli = ccf('card', 'adjust', made.dir, '--brightness', '4', '--json');
+  assert.equal(cli.status, 1, 'серая карточка — с блокирующими FAIL');
+  assert.equal(JSON.parse(cli.stdout).chosen, 1);
+  assert.equal(cardOf(made.dir).attempts[0].processing.brightness, 4);
+  assert.deepEqual(fs.readFileSync(path.join(made.dir, 'card.png')), fs.readFileSync(path.join(made.dir, 'attempts/1/card.png')));
+});
+
+test('картинка от агента: новая попытка карточки или новая карточка из заказа; модель agent, цена 0, нейтральный старт обработки', { skip: noSharp }, async () => {
+  const { makeCard, importImage } = /** @type {any} */ (loop);
+  const { OrderError } = await import('../core/style/prompt.js');
+  const at = await pool();
+  const image = path.join(tmp(), 'drawn.png');
+  fs.writeFileSync(image, reference());
+  const made = await makeCard({ order: ORDER, ...at, settings: SETTINGS, provider: fakeProvider(await grey(), 0.04), buildPrompt: fakePrompt, limits: { attempts: 1 } });
+  const r = await importImage({ dir: made.dir, image, settings: SETTINGS });
+  const a = cardOf(made.dir).attempts[1];
+  assert.deepEqual([a.model, a.cost, a.prompt, a.references], ['agent', 0, '', []]);
+  assert.deepEqual(a.processing, JSON.parse(fs.readFileSync(path.join(ROOT, 'styles/scapes/processing.json'), 'utf8')).neutral);
+  assert.deepEqual(r.warnings, []);
+  assert.equal(r.chosen, 2);
+  assert.match(fs.readdirSync(path.join(made.dir, 'attempts/2')).join(' '), /model\.png/);
+
+  const set = await at.store.createSet(at.collection, SET);
+  const fresh = await importImage({ order: { ...ORDER, id: 'drawn' }, collection: at.collection, place: { setId: set.id, slot: 0 }, image, settings: SETTINGS, store: at.store });
+  assert.equal(fresh.id, 'drawn');
+  assert.equal((await at.store.getSet(at.collection, set.id)).slots[0], 'drawn');
+  const bad = { ...ORDER, id: 'bad', staging: { ...ORDER.staging, pattern: 'plain_gradient' } };
+  await assert.rejects(importImage({ order: bad, collection: at.collection, image, settings: SETTINGS, store: at.store }), e => e instanceof OrderError);
+  assert.ok(!fs.existsSync(at.store.cardDir(at.collection, 'bad')), 'под негодный заказ карточка не заведена');
+  await assert.rejects(importImage({ dir: made.dir, image: path.join(ROOT, 'package.json'), settings: SETTINGS }), /PNG, JPEG или WebP/);
+
+  const cli = ccf('card', 'import', made.dir, image, '--json');
+  assert.equal(JSON.parse(cli.stdout).chosen, 3, cli.stderr);
+  assert.equal(ccf('card', 'import', made.dir, image, '--collection', 'x').status, 1, 'коллекция — только с заказом');
+});
+
+test('отмена и ход запуска: сигнал проверяется перед каждым вызовом, ход сообщается; ключ редактора вместо окружения', { skip: noSharp }, async () => {
+  const { makeCard, providerFrom } = /** @type {any} */ (loop);
+  const p = fakeProvider(await grey(), 0.04);
+  const stop = new AbortController();
+  const seen = [];
+  const onProgress = e => { seen.push(e); if (e.stage === 'process') stop.abort(); };
+  const r = await makeCard({ order: ORDER, ...await pool(), settings: SETTINGS, provider: p, buildPrompt: fakePrompt, signal: stop.signal, onProgress });
+  assert.equal(r.stop, 'cancelled');
+  assert.equal(p.calls.length, 1, 'после отмены не заплачено');
+  assert.deepEqual(seen.map(e => [e.stage, e.n, e.done, e.of]), [['generate', 1, 0, 3], ['process', 1, 0, 3], ['done', null, 1, 3]]);
+  assert.ok(Math.abs(seen.at(-1).spent - 0.04) < 1e-9);
+
+  const real = loadSettings().provider;
+  const held = providerFrom({ ...real, openrouter: { ...real.openrouter, keyEnvVar: 'CCF_NO_SUCH_KEY' } }, { apiKey: 'from-editor' });
+  assert.equal(held.model, real.openrouter.model, 'ключ из памяти редактора — окружение не нужно');
+});
+
+test('запрос для агента: собранный запрос, образцы, пропорция и следующий шаг; ничего не генерируется', { skip: noSharp }, async () => {
+  const { orderPrompt } = /** @type {any} */ (loop);
+  const { buildPrompt } = await import('../core/style/prompt.js');
+  const built = await buildPrompt(ORDER);
+  const r = await orderPrompt({ order: ORDER, settings: loadSettings() });
+  assert.equal(r.prompt, built.prompt);
+  assert.deepEqual(r.references, built.references.map(x => x.path));
+  assert.equal(r.aspectRatio, loadSettings().provider.openrouter.aspectRatio);
+  assert.match(r.next, /card import/);
+  const file = path.join(tmp(), 'order.json');
+  fs.writeFileSync(file, JSON.stringify(ORDER));
+  const cli = ccf('card', 'prompt', file, '--json');
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.equal(JSON.parse(cli.stdout).prompt, built.prompt);
+});

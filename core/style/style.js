@@ -41,6 +41,17 @@ export const ASSEMBLY_FILE = 'prompt-assembly.json';
  * @property {Record<string, number>} weights
  * @property {string} note_style
  * @property {string} note_cast
+ * @property {AnchorRules} [anchors]  the characters' anchor portraits attached to a scene
+ */
+/**
+ * @typedef {object} AnchorRules
+ * @property {string} dir  folder of the anchor images inside the style
+ * @property {string} file  file name, {name} = the cast key
+ * @property {Condition} when  the orders that get anchors
+ * @property {number} max_images  the provider's limit of attached images (anchors + style cards)
+ * @property {string} intro
+ * @property {string} note_anchor
+ * @property {string} note_style
  */
 /**
  * @typedef {object} Assembly

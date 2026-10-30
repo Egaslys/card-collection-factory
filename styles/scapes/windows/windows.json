@@ -1,0 +1,225 @@
+{
+  "_about": "Geometry of the big set window of the Scapes style (5 x 2 slots), the single source the editor reads to lay a set over the window templates in this folder. Units: pixels of the template images (all four share one geometry and one size); x, y is the top-left corner. The images are the game window cropped to its outline and scaled by 0.8, so a 430 x 480 card is drawn at 344 x 384. Draw order: card images at slots[].card, then the template on top (its picture openings are transparent and its frame covers the card edges), then the texts. Text boxes are where lettering goes: height = the measured height of the original capitals with their outline, width = the free space; centre the text in the box and shrink it to fit the width. color = letter fill, stroke = letter outline; outlines that change with the window colour are in templates.<colour>. The plaque under each card is part of the template; the window colour labels are the style bible's names.",
+  "kind": "large",
+  "size": {
+    "width": 2920,
+    "height": 1976
+  },
+  "templates": {
+    "blue": {
+      "file": "blue.png",
+      "label": "синий",
+      "swatch": "#147bec",
+      "progressStroke": "#25274a",
+      "captionStroke": "#25386e"
+    },
+    "violet": {
+      "file": "violet.png",
+      "label": "фиолетовый",
+      "swatch": "#8a28f9",
+      "progressStroke": "#311a4b",
+      "captionStroke": "#47246d"
+    },
+    "crimson": {
+      "file": "crimson.png",
+      "label": "малиновый",
+      "swatch": "#ba0b90",
+      "progressStroke": "#3a1a42",
+      "captionStroke": "#521c52"
+    },
+    "orange": {
+      "file": "orange.png",
+      "label": "оранжевый",
+      "swatch": "#ea6d00",
+      "progressStroke": "#391f30",
+      "captionStroke": "#5c2d2f"
+    }
+  },
+  "title": {
+    "x": 489,
+    "y": 80,
+    "width": 1942,
+    "height": 142,
+    "color": "#ffde24",
+    "stroke": "#672106"
+  },
+  "number": {
+    "x": 1219,
+    "y": 1794,
+    "width": 482,
+    "height": 62,
+    "color": "#954c31"
+  },
+  "progress": {
+    "x": 1341,
+    "y": 394,
+    "width": 320,
+    "height": 66,
+    "color": "#ffffff"
+  },
+  "caption": {
+    "color": "#ffffff"
+  },
+  "slots": [
+    {
+      "n": 1,
+      "stars": 1,
+      "card": {
+        "x": 388,
+        "y": 588,
+        "width": 344,
+        "height": 384
+      },
+      "caption": {
+        "x": 424,
+        "y": 997,
+        "width": 272,
+        "height": 38
+      }
+    },
+    {
+      "n": 2,
+      "stars": 1,
+      "card": {
+        "x": 838.4,
+        "y": 588,
+        "width": 344,
+        "height": 384
+      },
+      "caption": {
+        "x": 874,
+        "y": 997,
+        "width": 272,
+        "height": 38
+      }
+    },
+    {
+      "n": 3,
+      "stars": 2,
+      "card": {
+        "x": 1287.2,
+        "y": 588,
+        "width": 344,
+        "height": 384
+      },
+      "caption": {
+        "x": 1323,
+        "y": 997,
+        "width": 272,
+        "height": 38
+      }
+    },
+    {
+      "n": 4,
+      "stars": 2,
+      "card": {
+        "x": 1736.8,
+        "y": 588,
+        "width": 344,
+        "height": 384
+      },
+      "caption": {
+        "x": 1773,
+        "y": 997,
+        "width": 272,
+        "height": 38
+      }
+    },
+    {
+      "n": 5,
+      "stars": 3,
+      "card": {
+        "x": 2185.6,
+        "y": 588,
+        "width": 344,
+        "height": 384
+      },
+      "caption": {
+        "x": 2222,
+        "y": 997,
+        "width": 272,
+        "height": 38
+      }
+    },
+    {
+      "n": 6,
+      "stars": 3,
+      "card": {
+        "x": 388,
+        "y": 1209.6,
+        "width": 344,
+        "height": 384
+      },
+      "caption": {
+        "x": 424,
+        "y": 1618,
+        "width": 272,
+        "height": 38
+      }
+    },
+    {
+      "n": 7,
+      "stars": 4,
+      "card": {
+        "x": 838.4,
+        "y": 1209.6,
+        "width": 344,
+        "height": 384
+      },
+      "caption": {
+        "x": 874,
+        "y": 1618,
+        "width": 272,
+        "height": 38
+      }
+    },
+    {
+      "n": 8,
+      "stars": 4,
+      "card": {
+        "x": 1287.2,
+        "y": 1209.6,
+        "width": 344,
+        "height": 384
+      },
+      "caption": {
+        "x": 1323,
+        "y": 1618,
+        "width": 272,
+        "height": 38
+      }
+    },
+    {
+      "n": 9,
+      "stars": 5,
+      "card": {
+        "x": 1736.8,
+        "y": 1209.6,
+        "width": 344,
+        "height": 384
+      },
+      "caption": {
+        "x": 1773,
+        "y": 1618,
+        "width": 272,
+        "height": 38
+      }
+    },
+    {
+      "n": 10,
+      "stars": 5,
+      "card": {
+        "x": 2184,
+        "y": 1209.6,
+        "width": 344,
+        "height": 384
+      },
+      "caption": {
+        "x": 2220,
+        "y": 1618,
+        "width": 272,
+        "height": 38
+      }
+    }
+  ]
+}
