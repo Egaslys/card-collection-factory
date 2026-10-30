@@ -1,4 +1,65 @@
 {
   "version": 1,
-  "files": {}
+  "files": {
+    ".claude/skills/ccf-core/SKILL.md": {
+      "source": "agents/skills/ccf-core/SKILL.md",
+      "sha256": "3e01cd7be53b1c0eab980f4037384489024deb2e25f5aba1e108cb7d05e6b237",
+      "text": true
+    },
+    ".claude/skills/ccf-editor/SKILL.md": {
+      "source": "agents/skills/ccf-editor/SKILL.md",
+      "sha256": "cb63980633086d4fa6ce89b0d2e3dc785d22f92a524f4e90d5fe18962da487ec",
+      "text": true
+    },
+    ".claude/skills/ccf-make-cards/SKILL.md": {
+      "source": "agents/skills/ccf-make-cards/SKILL.md",
+      "sha256": "3a0ce7e8030ea49c7a5b4e36255e6718c22addb138256f1b48f709d64db79422",
+      "text": true
+    },
+    ".claude/skills/ccf-make-sets/SKILL.md": {
+      "source": "agents/skills/ccf-make-sets/SKILL.md",
+      "sha256": "e360a89da24e8d4f1ff8188d7109e1cf5133442f07061440c75b53b4c2c54328",
+      "text": true
+    },
+    ".claude/skills/ccf-review-cards/SKILL.md": {
+      "source": "agents/skills/ccf-review-cards/SKILL.md",
+      "sha256": "4291071b613d894cfe1eb26bf81d384717db712d93f840780a944015222e2b23",
+      "text": true
+    },
+    ".claude/skills/ccf-style/SKILL.md": {
+      "source": "agents/skills/ccf-style/SKILL.md",
+      "sha256": "ad5f1994a6c20f456825650e742b49c07a97d5aa76f75fe607cdab7922b97075",
+      "text": true
+    },
+    ".agents/skills/ccf-core/SKILL.md": {
+      "source": "agents/skills/ccf-core/SKILL.md",
+      "sha256": "3e01cd7be53b1c0eab980f4037384489024deb2e25f5aba1e108cb7d05e6b237",
+      "text": true
+    },
+    ".agents/skills/ccf-editor/SKILL.md": {
+      "source": "agents/skills/ccf-editor/SKILL.md",
+      "sha256": "cb63980633086d4fa6ce89b0d2e3dc785d22f92a524f4e90d5fe18962da487ec",
+      "text": true
+    },
+    ".agents/skills/ccf-make-cards/SKILL.md": {
+      "source": "agents/skills/ccf-make-cards/SKILL.md",
+      "sha256": "3a0ce7e8030ea49c7a5b4e36255e6718c22addb138256f1b48f709d64db79422",
+      "text": true
+    },
+    ".agents/skills/ccf-make-sets/SKILL.md": {
+      "source": "agents/skills/ccf-make-sets/SKILL.md",
+      "sha256": "e360a89da24e8d4f1ff8188d7109e1cf5133442f07061440c75b53b4c2c54328",
+      "text": true
+    },
+    ".agents/skills/ccf-review-cards/SKILL.md": {
+      "source": "agents/skills/ccf-review-cards/SKILL.md",
+      "sha256": "4291071b613d894cfe1eb26bf81d384717db712d93f840780a944015222e2b23",
+      "text": true
+    },
+    ".agents/skills/ccf-style/SKILL.md": {
+      "source": "agents/skills/ccf-style/SKILL.md",
+      "sha256": "ad5f1994a6c20f456825650e742b49c07a97d5aa76f75fe607cdab7922b97075",
+      "text": true
+    }
+  }
 }

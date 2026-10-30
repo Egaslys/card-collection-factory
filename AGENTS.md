@@ -19,7 +19,12 @@ Project skills hold the conventions of a subsystem so that an agent does not stu
 
 | Task | Skill |
 |---|---|
-| (no project skills yet) | — |
+| Using the factory: make cards («20 cards about X»), also from another folder | `agents/skills/ccf-make-cards/SKILL.md` |
+| Using the factory: make a set, set variants or a collection | `agents/skills/ccf-make-sets/SKILL.md` |
+| Using the factory: review and fix made cards | `agents/skills/ccf-review-cards/SKILL.md` |
+| Developing `core/`, `ccf.mjs`, `settings/` | `agents/skills/ccf-core/SKILL.md` |
+| Developing a style and its bible: `styles/`, `core/style/` | `agents/skills/ccf-style/SKILL.md` |
+| Developing the editor: `editor/` | `agents/skills/ccf-editor/SKILL.md` |
 
 A new skill: create `agents/skills/ccf-<name>/SKILL.md` with `name: ccf-<name>` and a `description` in its front matter, add a row to this table, then run `node tools/sync-agents.mjs --write` and `node tools/check.mjs`. Details: [agents/README.md](agents/README.md).
 
