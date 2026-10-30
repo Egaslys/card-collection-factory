@@ -10,7 +10,9 @@
 //       prepared.png       cropped and scaled to the card size, before post-processing
 //       card.png           after post-processing: the card that was checked
 //       check.json         the full result of the style's checks (measures, results, visual checklist)
-//       card.mask.png      the proposed hero outline over the card, when the checks found one
+//       card.mask.png      the hero outline the checks used, drawn over the card, when there is one
+//       card.hero.png      the hero outline found in a box (core/card/hero.js): white = hero
+//       look.json          what the vision model saw (core/card/look.js): its answers, as given
 //
 // An order whose output is not a card (kind "character-sheet", core/style/README.md) keeps the model's frame:
 // prepared.png and card.png have the model image's size, not the card size, and check.json holds only the list of
@@ -27,7 +29,7 @@ import path from 'node:path';
 export const CARD_FILE = 'card.json';
 export const FINAL_IMAGE = 'card.png';
 /** File names inside attempts/<n>/ (the model original is `model` + the extension of its format). */
-export const ATTEMPT_FILES = { original: 'model', prepared: 'prepared.png', card: 'card.png', check: 'check.json', mask: 'card.mask.png' };
+export const ATTEMPT_FILES = { original: 'model', prepared: 'prepared.png', card: 'card.png', check: 'check.json', mask: 'card.mask.png', hero: 'card.hero.png', look: 'look.json' };
 
 /**
  * @typedef {object} CheckFail  an unexpected FAIL of the style's checks
@@ -41,10 +43,15 @@ export const ATTEMPT_FILES = { original: 'model', prepared: 'prepared.png', card
 
 /**
  * @typedef {object} CheckSummary
- * @property {string} maskStatus  proposal | confirmed | rejected | not found | not checked (an order kind without pixel checks)
- * @property {number} blocking  FAILs that do not rest on an unconfirmed outline: they make the loop regenerate
+ * @property {string} maskStatus  proposal | auto (a trusted outline cut in a box) | confirmed | rejected | not found |
+ *   not checked (an order kind without pixel checks)
+ * @property {number} blocking  FAILs that do not rest on an unconfirmed outline, plus the blocking problems the vision
+ *   model saw (`look`): they make the loop regenerate
+ * @property {number} [needsEyes]  FAILs that rest on an unconfirmed outline (absent in card.json files written before
+ *   the vision model's look: there it is fails.length - blocking)
  * @property {number} warns
  * @property {CheckFail[]} fails
+ * @property {{verdict: 'ok'|'fix'|'unknown', issues: LookIssue[]}} [look]  what the vision model saw (the attempt's `look`)
  */
 
 /**
@@ -52,6 +59,41 @@ export const ATTEMPT_FILES = { original: 'model', prepared: 'prepared.png', card
  * @property {'confirmed'|'rejected'} [mask]  the proposed hero outline (card.mask.png) is / is not the hero
  * @property {number[]} [hero_box]  [x0, y0, x1, y1] px of the hero, drawn by eye
  */
+
+/**
+ * @typedef {object} HeroRecord  how the hero outline of an attempt was found (core/card/hero.js Hero, without the pixels)
+ * @property {'box'|'vision'|null} source  the box came from an agent or a person (`review.hero_box`), or from the vision model
+ * @property {number[]|null} box  [x0, y0, x1, y1] px the outline was cut in
+ * @property {'high'|'low'} confidence  high = the outline is trusted: the checks measure on it (mask status "auto")
+ * @property {'high'|'low'} boxConfidence  high = the box is trusted: composition is measured on it
+ * @property {string[]} reasons  why a confidence is low
+ * @property {number|null} [agreement]  IoU of the vision model's boxes on the card and on its mirror image
+ * @property {number} cost  USD of the vision calls (0 for a given box)
+ */
+
+/**
+ * @typedef {object} LookIssue  one problem the vision model saw
+ * @property {string} kind  an order question (subject, staging, additions, costume) or "checklist" (the style's list for eyes)
+ * @property {string} [id]  checklist: the check id, e.g. "RENDERING.12-14"
+ * @property {string} what  the model's words
+ * @property {boolean} blocking  the kind is in settings → look.blocking: the loop regenerates
+ */
+
+/**
+ * @typedef {object} LookRecord  the vision model's look at an attempt (core/card/look.js)
+ * @property {string} model
+ * @property {'ok'|'fix'|'unknown'} verdict  ok = no problem seen; fix = a problem; unknown = no usable answer (`error`)
+ * @property {LookIssue[]} issues
+ * @property {string} [seen]  how the model names the main subject it sees
+ * @property {number} cost  USD (0 when the provider did not report it)
+ * @property {string} [error]
+ */
+
+/**
+ * USD an attempt spent: the image (when its price is known) and the vision model's calls for its hero and its look.
+ * @param {Attempt} a
+ */
+export const attemptCost = a => (a.cost ?? 0) + (a.hero?.cost ?? 0) + (a.look?.cost ?? 0);
 
 /**
  * @typedef {object} Attempt
@@ -70,6 +112,8 @@ export const ATTEMPT_FILES = { original: 'model', prepared: 'prepared.png', card
  * @property {boolean} [processingFixed]  `processing` was set by hand (`card adjust`): never tuned again
  * @property {import('./tune.js').Tuning} [tuning]  how `processing` was found: start, measures before and after, basis
  * @property {Review} [review]
+ * @property {HeroRecord} [hero]  the hero outline the checks used, when one was cut in a box (card.hero.png)
+ * @property {LookRecord} [look]  the vision model's look at the card (look.json)
  * @property {CheckSummary} [check]
  * @property {{stage: 'generate'|'process', message: string, status?: number}} [error]
  */

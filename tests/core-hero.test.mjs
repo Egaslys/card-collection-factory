@@ -161,7 +161,7 @@ test('контур: запись в PNG и чтение обратно', { skip:
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('проверки Scapes с контуром из рамки: статус «auto», цветовые проверки героя измерены, но не гонят перегенерацию', { skip: noSharp }, async () => {
+test('проверки Scapes с контуром из рамки: статус «auto», цветовые проверки героя измерены и, как на подтверждённом контуре, гонят перегенерацию', { skip: noSharp }, async () => {
   const { findHero, readPixels } = await hero();
   const { checkCard } = await import('../styles/scapes/checks/check-card.mjs');
   const spec = JSON.parse(fs.readFileSync(path.join(ROOT, 'styles/scapes/checks/reference-spec.json'), 'utf8'));
@@ -182,10 +182,13 @@ test('проверки Scapes с контуром из рамки: статус 
   assert.equal(low.hero.mask_status, 'proposal');
   const { restsOnUnconfirmedMask, outlineFits } = await import('../styles/scapes/checks/check-card.mjs');
   const fail = id => ({ id, status: 'FAIL' });
-  assert.equal(restsOnUnconfirmedMask(fail('COLOUR.7'), withOutline.hero), true, 'an automatic outline is not confirmed: colour FAILs go to eyes');
-  assert.equal(restsOnUnconfirmedMask(fail('COMPOSITION.11'), withOutline.hero), true, 'the main mass comes from the outline');
-  assert.equal(restsOnUnconfirmedMask(fail('BACKGROUNDS.9'), withOutline.hero), false, 'the floor check reads only the trusted box');
-  assert.equal(restsOnUnconfirmedMask(fail('COMPOSITION.4a'), withOutline.hero), false);
-  assert.equal(restsOnUnconfirmedMask(fail('COMPOSITION.4a'), { ...withOutline.hero, box_source: 'mask' }), true);
+  // a trusted automatic outline counts as confirmed (the norms were re-measured with such outlines); a low one does not
+  assert.equal(restsOnUnconfirmedMask(fail('COLOUR.7'), withOutline.hero), false, 'a trusted outline: colour FAILs are blocking');
+  assert.equal(restsOnUnconfirmedMask(fail('COMPOSITION.11'), withOutline.hero), false);
+  assert.equal(restsOnUnconfirmedMask(fail('COLOUR.7'), low.hero), true, 'an outline not trusted: colour FAILs go to eyes');
+  assert.equal(restsOnUnconfirmedMask(fail('COMPOSITION.11'), low.hero), true, 'the main mass comes from the outline');
+  assert.equal(restsOnUnconfirmedMask(fail('BACKGROUNDS.9'), low.hero), false, 'the floor check reads only the trusted box');
+  assert.equal(restsOnUnconfirmedMask(fail('COMPOSITION.4a'), low.hero), false);
+  assert.equal(restsOnUnconfirmedMask(fail('COMPOSITION.4a'), { ...low.hero, box_source: 'mask' }), true);
   assert.equal(outlineFits({ backdrop: 'field' }), true); assert.equal(outlineFits({ backdrop: 'environment' }), false);
 });

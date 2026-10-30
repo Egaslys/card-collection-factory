@@ -1,9 +1,10 @@
 // Runs a style's automatic checks on one attempt and sums them up for the loop.
 // A style plugs in through styles/<style>/checks/check-card.mjs, which exports
-//   checkCard(spec entry, {baseDir, overlaysDir}) → {hero, results, visual, …},
+//   checkCard(spec entry, {baseDir, overlaysDir, outline}) → {hero, results, visual, …},
 //   restsOnUnconfirmedMask(result, hero) → boolean, CARD_SIZE {width, height},
 //   processingMeasures(rgb, {staging, ids, fg}) → [{id, value, aim}] and heroOutline(rgb) → mask or null
-//   (for the per-card processing search, make.js / tune.js).
+//   (for the per-card processing search, make.js / tune.js), and optionally outlineFits(staging) → boolean (where an
+//   outline cut in a box can be measured on; core/card/hero.js).
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -21,9 +22,9 @@ export function styleDir(style) {
 /**
  * The style's checker module.
  * @param {string} style
- * @returns {Promise<{checkCard: (card: object, o: {baseDir?: string, overlaysDir?: string}) => Promise<any>, restsOnUnconfirmedMask: (r: any, hero: any) => boolean, CARD_SIZE: {width: number, height: number},
+ * @returns {Promise<{checkCard: (card: object, o: {baseDir?: string, overlaysDir?: string, outline?: object}) => Promise<any>, restsOnUnconfirmedMask: (r: any, hero: any) => boolean, CARD_SIZE: {width: number, height: number},
  *   processingMeasures: (rgb: Uint8Array | Uint8ClampedArray, o: {staging: object, ids: string[], fg?: Uint8Array|null}) => import('./tune.js').Measure[],
- *   heroOutline: (rgb: Uint8Array) => Uint8Array|null}>}
+ *   heroOutline: (rgb: Uint8Array) => Uint8Array|null, outlineFits?: (staging: object) => boolean}>}
  */
 export async function styleChecker(style) {
   return import(pathToFileURL(path.join(styleDir(style), 'checks', 'check-card.mjs')).href);
@@ -36,12 +37,14 @@ export async function styleChecker(style) {
  * @param {import('../style/card-order.js').CardOrder} o.order
  * @param {string} o.dir  the attempt folder
  * @param {import('./card-file.js').Review} [o.review]
+ * @param {{fg: Uint8Array, box: number[]|null, source?: string|null, confidence: 'high'|'low', boxConfidence: 'high'|'low'}} [o.outline]
+ *   the hero outline cut in a box (core/card/hero.js findHero): it replaces the checker's own proposal
  * @returns {Promise<{summary: import('./card-file.js').CheckSummary, visual: {doc: string, check: number, what: string}[]}>}
  */
-export async function checkAttempt({ order, dir, review = {} }) {
+export async function checkAttempt({ order, dir, review = {}, outline }) {
   const checker = await styleChecker(order.style);
   // id "card" names the overlay card.mask.png (ATTEMPT_FILES.mask)
-  const result = await checker.checkCard({ ...order.staging, ...review, id: 'card', file: ATTEMPT_FILES.card }, { baseDir: dir, overlaysDir: dir });
+  const result = await checker.checkCard({ ...order.staging, ...review, id: 'card', file: ATTEMPT_FILES.card }, { baseDir: dir, overlaysDir: dir, ...(outline ? { outline } : {}) });
   fs.writeFileSync(path.join(dir, ATTEMPT_FILES.check), JSON.stringify(result, null, 1));
   return { summary: summarize(result, checker.restsOnUnconfirmedMask), visual: result.visual };
 }
@@ -55,10 +58,24 @@ export function summarize(result, restsOnUnconfirmedMask) {
   const fails = result.results.filter(r => r.status === 'FAIL' && !r.expected).map(r => ({
     id: r.id, title: r.title, value: r.value, threshold: r.threshold, note: r.note, needsMask: restsOnUnconfirmedMask(r, result.hero),
   }));
+  const needsEyes = fails.filter(f => f.needsMask).length;
   return {
     maskStatus: result.hero?.mask_status ?? 'not found',
-    blocking: fails.filter(f => !f.needsMask).length,
+    blocking: fails.length - needsEyes,
+    needsEyes,
     warns: result.results.filter(r => r.status === 'WARN').length,
     fails,
   };
+}
+
+/**
+ * The summary with what the vision model saw (core/card/look.js): its blocking problems count as blocking.
+ * @param {import('./card-file.js').CheckSummary} summary @param {import('./card-file.js').LookRecord|undefined} look
+ * @returns {import('./card-file.js').CheckSummary}
+ */
+export function withLook(summary, look) {
+  if (!look) return summary;
+  const { look: _old, ...base } = summary;
+  const blocking = base.fails.filter(f => !f.needsMask).length + look.issues.filter(i => i.blocking).length;
+  return { ...base, blocking, look: { verdict: look.verdict, issues: look.issues } };
 }

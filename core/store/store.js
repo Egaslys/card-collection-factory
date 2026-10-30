@@ -5,7 +5,7 @@
 import { spawn as nodeSpawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { readCardFile } from '../card/card-file.js';
+import { attemptCost, readCardFile } from '../card/card-file.js';
 import { exists, readJson, subdirs, writeJsonAtomic } from './files.js';
 import { checkId, reserveId, slugify } from './ids.js';
 import {
@@ -61,7 +61,7 @@ import { writeZip } from './zip.js';
  * @property {'new'|'made'|'failed'} status  new: no attempt yet; made: card.png chosen; failed: attempts, none usable
  * @property {{blocking: number, warns: number, needsEyes: number, maskStatus: string}|null} checks  the chosen attempt's
  * @property {number} attempts
- * @property {number} cost  USD, sum of the attempts whose cost is known
+ * @property {number} cost  USD, sum of the known costs of the attempts: images and the vision model's calls (card-file.js attemptCost)
  * @property {number} costUnknown  attempts whose cost the provider did not report
  * @property {string|null} setId  the set the card sits in; null = in the pool
  * @property {number|null} slot  0-based index into that set's slots
@@ -229,14 +229,14 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
     if (!card) return out;
     out.title = card.order?.title || card.order?.object || k;
     out.attempts = card.attempts.length;
-    for (const a of card.attempts) { if (a.cost == null) out.costUnknown++; else out.cost += a.cost; }
+    for (const a of card.attempts) { if (a.cost == null) out.costUnknown++; out.cost += attemptCost(a); }
     out.cost = Math.round(out.cost * 1e6) / 1e6;
     const chosen = card.attempts.find(a => a.n === card.chosen);
     if (chosen && exists(png)) {
       out.status = 'made';
       out.image = png;
       const ch = chosen.check;
-      if (ch) out.checks = { blocking: ch.blocking, warns: ch.warns, needsEyes: ch.fails.length - ch.blocking, maskStatus: ch.maskStatus };
+      if (ch) out.checks = { blocking: ch.blocking, warns: ch.warns, needsEyes: ch.needsEyes ?? ch.fails.length - ch.blocking, maskStatus: ch.maskStatus };
     } else if (card.attempts.length) out.status = 'failed';
     return out;
   }

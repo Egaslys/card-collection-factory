@@ -13,18 +13,18 @@ The agent checks its own result and follows the style's bible strictly — until
 
 ## 2. Settle the hero outline
 
-When a FAIL has `needsMask: true`, or `maskStatus` is `proposal` or `not found` while outline checks apply, open `attempts/<n>/card.mask.png` (the proposed outline drawn over the card) and record what you see:
+`maskStatus` `auto`: the outline was cut in a box (the vision model's, or one you gave) and is trusted — its FAILs are blocking; still glance at `card.mask.png`, since an outline can take a glow plate behind the hero. When a FAIL has `needsMask: true`, or `maskStatus` is `proposal` or `not found` while outline checks apply, open `attempts/<n>/card.mask.png` (the outline drawn over the card) and record what you see:
 
 ```sh
 node FACTORY/ccf.mjs card check CARD_DIR --attempt N --mask confirmed                      # the outline is the hero
 node FACTORY/ccf.mjs card check CARD_DIR --attempt N --mask rejected --hero-box X0,Y0,X1,Y1  # it is not: the hero's box
 ```
 
-The box is in card pixels (the card size: `styles/<style>/README.md`), drawn by eye around all of the hero, without glow, shadow or the surface under it. Without an outline give the box alone. A confirmed outline re-tunes the processing and the checks run again; a FAIL that remains after this is real. Why outlines need eyes: `styles/<style>/checks/README.md`, «The hero outline: confirm before trusting».
+The box is in card pixels (the card size: `styles/<style>/README.md`), drawn by eye around all of the hero, without glow, shadow or the surface under it. A box cuts a new outline in it (free; `card.hero.png`) and replaces the earlier verdict, so `--mask rejected` may be left out. Without an outline give the box alone. A confirmed outline re-tunes the processing and the checks run again; a FAIL that remains after this is real. Why outlines need eyes: `styles/<style>/checks/README.md`, «The hero outline: confirm before trusting».
 
 ## 3. Look at the card
 
-Open `card.png` and answer every item with pass or fail and a reason:
+With a key the vision model has already looked (`check.look`, the full answer in `attempts/<n>/look.json`): take its issues as leads, not as the review — on the trial set it caught a wrong backdrop every time but a missing costume item only in about half of the runs and no fine texture at all. Open `card.png` and answer every item with pass or fail and a reason:
 
 - each entry of `chosenVisual` (document and check number): read that check in the document's checks section;
 - the card order of `styles/<style>/CHECKLIST.md`: format and category, staging and backdrop, composition, colour, rendering, characters;

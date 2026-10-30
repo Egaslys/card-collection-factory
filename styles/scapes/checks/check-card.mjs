@@ -13,6 +13,7 @@ import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cli } from '../../../tools/cli-args.mjs';
 import * as M from './measures.mjs';
+import { outlineInBox } from '../../../core/image/segment.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REFERENCE_SPEC = join(HERE, 'reference-spec.json');
@@ -51,6 +52,7 @@ The spec is JSON {"cards": [ {...}, ... ]}; one entry per card:
     quiet: { type: 'boolean', help: 'print only WARN and FAIL lines per card' },
     'no-visual': { type: 'boolean', help: 'do not print the visual checklist per card' },
     overlays: { type: 'string', value: 'DIR', help: 'write <id>.mask.png per card: the proposed hero mask over the card, to confirm or reject it' },
+    outlines: { type: 'boolean', help: 'as the card loop measures: on an abstract backdrop, a card with hero_box gets the outline cut in that box (GrabCut, core/image/segment.js) as a trusted automatic outline' },
   },
 };
 const CFG = JSON.parse(readFileSync(join(HERE, 'thresholds.json'), 'utf8'));
@@ -122,11 +124,11 @@ const nm = (id, why) => make(id, 'NOT_MEASURED', null, null, why);
 
 // a FAIL that rests on an unconfirmed mask may be the mask's fault (it can take a shadow, a stand or the floor)
 const maskBased = /^(COLOUR\.(7|8|9|10|11|12)|RENDERING\.(4|6|11)|BACKGROUNDS\.(6c|6d|7a|9)|COMPOSITION\.)/;
-/** True when result r of a card with hero info `hero` is a FAIL that rests on a mask nobody has confirmed. An outline
- * found automatically ("auto", core/card/hero.js) counts as unconfirmed too: it is accurate, but on the reference cards
- * whose outline the bible could not measure, the outline-based checks FAIL on 26 of 38 abstract-backdrop cards (helper
- * report 2026-10-30, CHANGELOG) — the bible's norms were measured on the 51 cards with a confirmed outline only. */
-export const restsOnUnconfirmedMask = (r, hero) => r.status === 'FAIL' && ['proposal', 'auto'].includes(hero?.mask_status) && maskBased.test(r.id)
+/** True when result r of a card with hero info `hero` is a FAIL that rests on a mask nobody has confirmed. A trusted
+ * automatic outline ("auto": cut by core/card/hero.js in a box an agent gave or the vision model found twice) counts as
+ * confirmed: the outline-based norms were re-measured with such outlines on all 81 abstract-backdrop references
+ * (thresholds.json method, 2026-10-30) and the control run passes with them. */
+export const restsOnUnconfirmedMask = (r, hero) => r.status === 'FAIL' && hero?.mask_status === 'proposal' && maskBased.test(r.id)
   && !(r.id.startsWith('COMPOSITION') && hero.box_source === 'spec') && !(hero.box_source === 'given' && boxOnly.test(r.id));
 // checks that read only the hero box: with a trusted box given with the outline they rest on the box, as with a box by eye
 const boxOnly = /^(COMPOSITION\.(2|3|4a|4b|5b)|BACKGROUNDS\.(6c|6d|7a|9))$/;
@@ -139,8 +141,8 @@ export const outlineFits = staging => staging?.backdrop === 'field' || staging?.
 // card: one spec entry (see --help); baseDir: the folder card.file is relative to; overlaysDir: where to write
 // <id>.mask.png (optional); outline: the hero outline found outside the checker ({fg, box, confidence, boxConfidence}
 // of core/card/hero.js findHero): it replaces the proposer's mask and the spec's hero_box (it was cut inside that box);
-// confidence "high" gives the mask status "auto", "low" gives "proposal" — both unconfirmed (restsOnUnconfirmedMask);
-// with boxConfidence "high" the checks that read only the box rest on outline.box, as on a box by eye.
+// confidence "high" gives the mask status "auto" (trusted, like a confirmed outline), "low" gives "proposal"
+// (unconfirmed: restsOnUnconfirmedMask); with boxConfidence "high" the checks that read only the box rest on outline.box, as on a box by eye.
 // Returns { id, file, staging, hero, measures, results, visual }.
 export async function checkCard(card, { baseDir, overlaysDir, outline } = {}) {
   const file = resolve(baseDir || '.', card.file);
@@ -196,22 +198,23 @@ export async function checkCard(card, { baseDir, overlaysDir, outline } = {}) {
   let hb = null;
   if (mask.ok) { hb = M.heroBackdrop(P, mask.fg); meas.hero_backdrop = hb; }
   if (abstract && hb) {
+    // a floor, a support or a wall around the hero enters the backdrop measures: past a limit is then for the eye
+    const byEye = METHOD.backdrop_colour_strict_placements.includes(s.placement) ? {} : { soft: true, note: 'the floor, support or wall around the hero is in the backdrop measure: check by eye' };
     const t7 = T['COLOUR.7'], h = hb.hero?.dominant, b = hb.bg?.dominant;
     if (h && b) {
       const achrom = h.C < t7.achromatic_hero_C_max;
       const hueOk = hb.hero_chromatic && hb.bg_chromatic && hb.hue_diff >= t7.hue_diff_min;
       const ok = achrom || hueOk || Math.abs(hb.dL) >= t7.dL_min;
       res.push(make('COLOUR.7', ok ? 'PASS' : 'FAIL', `hero ${h.hex} vs backdrop ${b.hex}: hue diff ${hb.hue_diff}°, dL ${hb.dL}, hero C* ${h.C}`, `hue diff ≥ ${t7.hue_diff_min}° or |dL| ≥ ${t7.dL_min}; hero C* < ${t7.achromatic_hero_C_max} passes`, ok ? null : t7.note));
-      res.push(range('COLOUR.8a', VALUE_OF['COLOUR.8a']({ bg: b }))); res.push(range('COLOUR.8b', VALUE_OF['COLOUR.8b']({ bg: b }))); res.push(range('COLOUR.8c', VALUE_OF['COLOUR.8c']({ bg: b })));
+      res.push(range('COLOUR.8a', VALUE_OF['COLOUR.8a']({ bg: b }), byEye)); res.push(range('COLOUR.8b', VALUE_OF['COLOUR.8b']({ bg: b }))); res.push(range('COLOUR.8c', VALUE_OF['COLOUR.8c']({ bg: b })));
       res.push(range('COLOUR.8d', hb.bg.L_p90 - hb.bg.L_p10));
     } else for (const id of ['COLOUR.7', 'COLOUR.8a', 'COLOUR.8b', 'COLOUR.8c', 'COLOUR.8d']) res.push(nm(id, 'hero or backdrop region too small'));
     if (hb.bg_near && hb.bg_corners) {
-      const support = ['fragment', 'ground', 'furniture'].includes(s.support);
-      res.push(range('COLOUR.9a', M.r1(hb.bg_near.L - hb.bg_corners.L), { soft: support, note: support ? 'support under the hero: exception allowed — check by eye' : undefined }));
+      res.push(range('COLOUR.9a', M.r1(hb.bg_near.L - hb.bg_corners.L), byEye));
       res.push(range('COLOUR.9b', M.r1(hb.bg_near.C - hb.bg_corners.C)));
-      res.push(hb.bg_near.s > 0.15 ? range('COLOUR.9c', Math.abs(M.hueDiff(hb.bg_corners.hue, hb.bg_near.hue))) : na('COLOUR.9c', 'backdrop near the hero almost colourless'));
+      res.push(hb.bg_near.s > 0.15 ? range('COLOUR.9c', Math.abs(M.hueDiff(hb.bg_corners.hue, hb.bg_near.hue)), byEye) : na('COLOUR.9c', 'backdrop near the hero almost colourless'));
     }
-    res.push(range('COLOUR.10', hb.bg_mid?.C ? M.r2(hb.bg_dark.C / hb.bg_mid.C) : null));
+    res.push(range('COLOUR.10', hb.bg_mid?.C ? M.r2(hb.bg_dark.C / hb.bg_mid.C) : null, byEye));
   } else {
     const why = !abstract ? 'not an abstract backdrop' : noHero;
     for (const id of ['COLOUR.7', 'COLOUR.8a', 'COLOUR.8b', 'COLOUR.8c', 'COLOUR.8d', 'COLOUR.9a', 'COLOUR.9b', 'COLOUR.9c', 'COLOUR.10']) res.push(abstract ? nm(id, why) : na(id, why));
@@ -296,7 +299,8 @@ export async function checkCard(card, { baseDir, overlaysDir, outline } = {}) {
 
   // ---------- COMPOSITION ----------
   if (box) {
-    const comp = M.composition(specBox ? null : mask.fg, box, { openR: METHOD.main_mass_open_px, safe: T['COMPOSITION.11'] }); meas.composition = comp;
+    const safe = { ...T['COMPOSITION.11'], top_band: T['COMPOSITION.11'].top_band - METHOD.safe_zone_top_depth_px };
+    const comp = M.composition(specBox ? null : mask.fg, box, { openR: METHOD.main_mass_open_px, safe }); meas.composition = comp;
     const objAbstract = abstract && !chars;
     res.push(range('COMPOSITION.2', Math.abs(comp.centre_dx_px), { note: `offset ${comp.centre_dx_px} px; ${T['COMPOSITION.2'].note}` }));
     const g3 = chars ? 'characters' : s.backdrop, t3 = T['COMPOSITION.3'].groups[g3];
@@ -316,7 +320,7 @@ export async function checkCard(card, { baseDir, overlaysDir, outline } = {}) {
       const t11 = T['COMPOSITION.11'], tol = METHOD.safe_zone_tolerance_px;
       const hard = comp.main_in_top_band_px + comp.main_beyond_corner_arc_px, sq = comp.main_in_top_corners_px;
       const st = hard > tol ? 'FAIL' : sq > tol ? 'WARN' : 'PASS';
-      res.push(make('COMPOSITION.11', st, `main mass px: top ${t11.top_band} px ${comp.main_in_top_band_px}, beyond the rounded corners ${comp.main_beyond_corner_arc_px}, inside the 80 x 80 corner squares ${sq}; outside x ${t11.rect[0]}–${t11.rect[2]}, y ${t11.rect[1]}–${t11.rect[3]}: ${comp.main_outside_safe_px} (for the eye)`, `top ${t11.top_band} px and rounded ${t11.corner} px corners free (≤ ${tol} px); corner squares: WARN`,
+      res.push(make('COMPOSITION.11', st, `main mass px: top ${safe.top_band} px ${comp.main_in_top_band_px},beyond the rounded corners ${comp.main_beyond_corner_arc_px}, inside the 80 x 80 corner squares ${sq}; outside x ${t11.rect[0]}–${t11.rect[2]}, y ${t11.rect[1]}–${t11.rect[3]}: ${comp.main_outside_safe_px} (for the eye)`, `top ${t11.top_band} px and rounded ${t11.corner} px corners free (≤ ${tol} px); corner squares: WARN`,
         st === 'FAIL' ? 'main mass in the top band or the rounded corners — or the mask took a shadow or support: check by eye' : st === 'WARN' ? 'main mass inside an 80 x 80 corner square but not beyond the rounded corner: check by eye' : null));
     } else res.push(nm('COMPOSITION.11', 'hero box from the spec: main mass not separated'));
   } else for (const id of ['COMPOSITION.2', 'COMPOSITION.3', 'COMPOSITION.4a', 'COMPOSITION.4b', 'COMPOSITION.5a', 'COMPOSITION.5b', 'COMPOSITION.5c', 'COMPOSITION.11']) res.push(nm(id, noHero));
@@ -370,7 +374,14 @@ if (import.meta.main) {
   const cards = SPEC.cards.filter(c => !only || only.has(String(c.id)));
   if (only && cards.length !== only.size) { console.error(`unknown id in --only: ${[...only].filter(i => !SPEC.cards.some(c => String(c.id) === i)).join(', ')}`); process.exit(2); }
   for (const card of cards) {
-    const r = await checkCard(card, { baseDir: dirname(specFile), overlaysDir: opts.overlays }); out.push(r);
+    let entry = card, outline;
+    if (opts.outlines && card.hero_box && outlineFits(card)) {
+      const { hero_box: box, mask, ...rest } = card;
+      const dec = await M.decode(resolve(dirname(specFile), card.file));
+      outline = { fg: outlineInBox(dec.rgb, dec.width, dec.height, box), box, source: 'box', confidence: 'high', boxConfidence: 'high' };
+      entry = rest;
+    }
+    const r = await checkCard(entry, { baseDir: dirname(specFile), overlaysDir: opts.overlays, outline }); out.push(r);
     const s = r.staging;
     console.log(`\n== ${r.id}  (cat ${s.category}, ${s.backdrop}/${s.pattern}, ${s.placement} on ${s.support}, camera ${s.camera}, characters ${s.characters}, time ${s.time})`);
     console.log(r.hero ? `   hero: ${r.hero.box ? `${r.hero.box_source} box [${r.hero.box.join(', ')}], mask ${r.hero.mask_status}` : `not found — ${r.hero.mask_reason}`}` : '');

@@ -121,7 +121,11 @@
       "hue_diff_min": 60,
       "dL_min": 13,
       "achromatic_hero_C_max": 8,
-      "note": "if the measure took the backdrop seen through the hero or dark inserts as the hero's main colour, check by eye (#77, #115)"
+      "note": "if the measure took the backdrop seen through the hero or dark inserts as the hero's main colour, check by eye (#77, #115)",
+      "exceptions": [
+        38
+      ],
+      "exceptions_source": "COLOUR.md check 7: the neon sign #38 (cyan cream on a green wall, hue diff 28°, dL 10) is set off by its glowing pink and yellow tubes, not by its main colour"
     },
     "COLOUR.8a": {
       "doc": "COLOUR.md",
@@ -525,9 +529,12 @@
       "top_band": 40,
       "note": "the bible checks the main mass only against the top 40 px and the rounded top corners (beyond the 80 px arc: FAIL; inside the 80 x 80 square: look by eye); the rect x 25–405, y 45–465 is for faces, eyes and text, by eye — at the sides and bottom the main mass follows checks 5 and 6",
       "exceptions": [
+        32,
+        38,
+        45,
         132
       ],
-      "exceptions_source": "COMPOSITION.md check 5: the umbrella tip of #132 is a named thin tip allowed above the margin"
+      "exceptions_source": "COMPOSITION.md check 5 (the same cards as COMPOSITION.5a): thin tips allowed above the margin (#45 straw, #132 umbrella, #38 top of the neon sign) and the cut thin tail of #32"
     },
     "RENDERING.2": {
       "doc": "RENDERING.md",
@@ -839,6 +846,17 @@
       "value": 0,
       "source": "script: main-mass pixels allowed outside the safe zone"
     },
+    "safe_zone_top_depth_px": {
+      "value": 2,
+      "source": "measured (2026-10-30, outlines cut in the boxes by eye on the 81 abstract-backdrop references): the main mass of #25, #35, #36 and #45 starts at y 38–39 px — the 38 px top margin of COMPOSITION.md check 5 — so the 40 px band of check 11 is counted from this many px above its edge"
+    },
+    "backdrop_colour_strict_placements": {
+      "value": [
+        "floating_field",
+        "hung_from_above"
+      ],
+      "source": "measured (2026-10-30, outlines cut in the boxes by eye on the 81 abstract-backdrop references): COLOUR 8a, 9a, 9c and 10 hold for every hero alone on the backdrop (these placements); with a floor, a support or a wall the hero stands on or hangs on, the floor and the wall enter the backdrop measures and 22 references go past a limit (8a #32 #66 #85 #154; 9a #28 #38 #45 #46 #53 #55 #103 #142; 9c #20 #25 #34 #53 #64 #123 #135; 10 #6 #14 #26 #38 #85 #114 #123), so there a breach is a WARN to check by eye"
+    },
     "stripe_angle_tolerance_deg": {
       "value": 10,
       "source": "script: how far a measured stripe angle may be from 40°, 74° or 90°"
@@ -920,9 +938,12 @@
           20,
           44,
           121
+        ],
+        "COLOUR.7": [
+          54
         ]
       },
-      "source": "the bible's analysis: reference cards whose automatic ray / ring / stripe centre or period (and the step of #85) was checked by eye and found wrong when the bible was written; the bible gives eye estimates for them"
+      "source": "the bible's analysis: reference cards whose automatic ray / ring / stripe centre or period (and the step of #85) was checked by eye and found wrong when the bible was written; the bible gives eye estimates for them. COLOUR.7 #54 (checked by eye 2026-10-30): the outline cut in its box takes the cyan glow plate behind the lawnmower as the hero, so hero and backdrop measure as one colour"
     }
   }
 }

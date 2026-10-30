@@ -41,6 +41,7 @@
   "forbid": [
     { "when": { "placement": ["floating_field"], "pattern": ["plain_gradient"] }, "message": "висящий предмет на ровном градиенте без узора — то, чего избегать (BASE_RULES.md «Чего избегать»)" },
     { "when": { "characters": [1, 2], "backdrop": ["field"] }, "message": "персонаж на абстрактном поле — то, чего избегать (BASE_RULES.md «Чего избегать»)" },
+    { "when": { "wall": ["stripes", "planks", "brick", "curtain", "plaster"], "pattern": ["plain_gradient"] }, "message": "стена из обоев, досок, кирпича, занавеса или штукатурки — не ровный градиент: staging.pattern описывает стену (как в эталоне: полосатые обои — stripes_straight №20, кирпич — brick №46, доски, занавес, штукатурка — other №67, №23, №55); plain_gradient — только ровная стена, wall: plain (№25)" },
     { "when": { "category": [5], "characters": [0] }, "message": "категория 5 — сцена с персонажами: staging.characters должно быть 1 или 2" },
     { "when": { "category": [1, 2, 3, 4], "characters": [1, 2] }, "message": "персонажи — только в категории 5 (BACKGROUNDS.md «Категория как следствие постановки»)" }
   ],
@@ -163,7 +164,7 @@
       { "fragment": "bg.checker", "when": [{ "backdrop": ["field"], "pattern": ["checker"] }, { "backdrop": ["wall"], "placement": ["resting"], "support": ["ephemeral", "fragment"], "pattern": ["checker"] }] },
       { "fragment": "bg.motifs", "when": [{ "backdrop": ["field"], "pattern": ["motif_repeat"] }, { "backdrop": ["wall"], "placement": ["resting"], "support": ["ephemeral", "fragment"], "pattern": ["motif_repeat"] }] },
       { "fragment": "bg.brick", "when": { "backdrop": ["wall"], "pattern": ["brick"] } },
-      { "fragment": "bg.plain-gradient", "when": { "backdrop": ["field", "wall"], "pattern": ["plain_gradient"], "placement": ["resting"] } },
+      { "fragment": "bg.plain-gradient", "when": { "backdrop": ["field", "wall"], "pattern": ["plain_gradient"], "placement": ["resting"], "support": ["ephemeral", "fragment", "furniture"] } },
       { "fragment": "bg.floating", "when": { "backdrop": ["field"], "placement": ["floating_field"] } },
       { "fragment": "bg.smooth-floor", "when": { "category": [2], "backdrop": ["field", "wall"], "placement": ["resting"] } },
       { "fragment": "bg.surface-patch", "when": { "category": [3], "backdrop": ["field", "wall"], "placement": ["resting", "embedded"], "support": ["fragment"] },

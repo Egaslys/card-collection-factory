@@ -67,7 +67,7 @@ The `--json` result is a `CardReport` (typedef in `FACTORY/core/card/make.js`; t
 | `cost-unknown` | the provider gave no price, so the cap cannot be kept: stop and tell the person |
 | `cancelled` | stopped by the caller |
 
-`chosenCheck.fails[].needsMask` = the FAIL rests on an unconfirmed hero outline: it never triggers a paid regeneration and needs a hero box or a confirmation (ccf-review-cards). `chosenVisual` = the checks left for eyes. `spent` = USD of this run.
+`chosenCheck.fails[].needsMask` = the FAIL rests on an unconfirmed hero outline: it never triggers a paid regeneration and needs a hero box or a confirmation (ccf-review-cards). `chosenCheck.maskStatus` `auto` = the outline was cut in a box the vision model found (or you gave) and is trusted: its FAILs are blocking. `chosenCheck.look` = what the vision model saw against the order (with an OpenRouter key; settings → `look`): `verdict`, `issues` — the `blocking` ones are counted in `blocking` and made the loop regenerate. `chosenVisual` = the checks left for eyes. `spent` = USD of this run, the vision model's calls included. Without a key, `warnings` says nothing looked.
 
 ## 6. Review
 

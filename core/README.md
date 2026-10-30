@@ -9,7 +9,7 @@ For agents. The product's vision: `docs/plans/VISION.md` («Устройство
 | `providers/` | image generation: OpenRouter-compatible endpoint, Codex CLI | `openrouter.js`, `codex-cli.js` |
 | `image/` | model image → card pixels (`prepare.js`), post-processing shared with the browser (`adjust.js`, no imports) | |
 | `style/` | card orders, prompt assembly from the bible's fragments, reference picking | `style/README.md` |
-| `card/` | one card: generate → prepare → tune → check → regenerate (`make.js`); a person's requests: regenerate with a wish, edit, adjust by hand, import an agent's image; recheck, hero outline (`hero.js`) | `card/card-file.js` |
+| `card/` | one card: generate → prepare → hero outline (`hero.js`) → tune → check → the vision model's look (`look.js`) → regenerate (`make.js`); a person's requests: regenerate with a wish, edit, adjust by hand, import an agent's image; recheck | `card/card-file.js` |
 | `store/` | collections, sets, the card pool, moves, export, live events | `store/README.md` |
 | `set/` | planning a set and a collection by the style's rules, generating them | `set/README.md` |
 | `settings.js` | `settings/defaults.json` + `settings/local.json`; the key is never in settings | |

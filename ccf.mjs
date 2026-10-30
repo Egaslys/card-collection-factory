@@ -51,8 +51,10 @@ const COMMANDS = {
     about: `Makes one card from an order (a JSON CardOrder: core/style/card-order.js): the prompt is assembled from the
 style's phrases, the image is generated, cropped to the card, post-processed and checked by the style's automatic
 checks. While a check FAILs, the card is generated again, up to the attempt limit and the spend cap (settings/,
-or the options below). A FAIL that rests on an unconfirmed hero outline does not cause a regeneration: look at
-attempts/<n>/card.mask.png and run "card check".
+or the options below). With an OpenRouter key, the vision model of the settings finds the hero's box (the outline is
+cut in it: attempts/<n>/card.hero.png, trusted when its two looks agree) and looks at the card against the order
+(attempts/<n>/look.json); its blocking problems also cause a regeneration. A FAIL that rests on an outline nobody
+trusts does not: look at attempts/<n>/card.mask.png and run "card check".
 The card is new in the collection's pool (collections/<collection>/cards/<card>/, the id from the order's id);
 --card continues an existing card of the collection instead (the order replaces its order, attempts are appended).
 --set and --slot put the card into a set's slot (1–${SLOT_COUNT}, window order; a card already there goes back to the pool
@@ -134,7 +136,8 @@ or paid.`,
     about: `Runs the style's checks again on a card's attempts (for example after the staging in card.json was
 corrected) and chooses the best attempt again. With --attempt, only that attempt; --mask and --hero-box record
 what a person or an agent saw on attempts/<n>/card.mask.png: confirmed = the outline is the hero, rejected =
-it is not (then give --hero-box, the hero's box in card pixels).`,
+it is not (then give --hero-box, the hero's box in card pixels). A --hero-box cuts a new outline in that box (free)
+and replaces the earlier verdict on the outline. The vision model is not asked again.`,
     options: {
       attempt: { type: 'string', value: 'N', help: 'only this attempt' },
       mask: { type: 'string', value: 'confirmed|rejected', help: 'the proposed hero outline of the attempt is / is not the hero' },

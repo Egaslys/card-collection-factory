@@ -149,7 +149,8 @@ test('цикл: карточка, которая не проходит пров�
   await assert.rejects(recheckCard({ dir, review: { mask: 'rejected' } }), /номер/);
   const re = await recheckCard({ dir, n: 2, review: { mask: 'rejected', hero_box: [100, 100, 300, 400] } });
   assert.deepEqual(re.attempts.map(a => a.n), [2]);
-  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'card.json'), 'utf8')).attempts[1].review, { mask: 'rejected', hero_box: [100, 100, 300, 400] });
+  // a new box replaces the verdict on the outline shown before it: the outline is now the one cut in the box
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'card.json'), 'utf8')).attempts[1].review, { hero_box: [100, 100, 300, 400] });
 
   // the same through the command line: the report for a person and JSON for an agent; blocking FAILs → exit 1
   const human = ccf('card', 'check', dir);
@@ -215,7 +216,7 @@ test('цикл: ошибка провайдера и неизвестная це
   assert.equal(f.id, 'test-card-2', 'без --card — новая карточка с незанятым id');
   assert.equal(f.stop, 'attempts');
   assert.deepEqual(f.attempts.map(a => a.cost), [0, 0]);
-  assert.deepEqual(f.warnings, [], 'у codex-cli свои начальные настройки обработки (нейтральные)');
+  assert.deepEqual(f.warnings.filter(w => !/Смотрящая модель не спрошена/.test(w)), [], 'у codex-cli свои начальные настройки обработки (нейтральные)');
 });
 
 test('цикл: опорный портрет персонажа — свой кадр, без обрезки до карточки, без пиксельных проверок, список для глаз', { skip: noSharp }, async () => {
@@ -232,7 +233,7 @@ test('цикл: опорный портрет персонажа — свой к
   assert.deepEqual(p.calls[0].references.map(x => path.basename(x.path)), assembly.cast.pig.anchor_frames.map(n => `card-${String(n).padStart(3, '0')}.png`), 'эталоны — опорные кадры');
   const meta = await sharp(r.image).metadata();
   assert.deepEqual([meta.width, meta.height], [600, 900], 'кадр модели не обрезан');
-  assert.deepEqual(r.chosenCheck, { maskStatus: 'not checked', blocking: 0, warns: 0, fails: [] });
+  assert.deepEqual(r.chosenCheck, { maskStatus: 'not checked', blocking: 0, needsEyes: 0, warns: 0, fails: [] });
   assert.deepEqual(r.chosenVisual, rules.output.visual);
   assert.deepEqual(JSON.parse(fs.readFileSync(r.attempts[0].files.check, 'utf8')).results, []);
   const re = await recheckCard({ dir: r.dir });
@@ -514,4 +515,84 @@ test('запрос для агента: собранный запрос, обр�
   const cli = ccf('card', 'prompt', file, '--json');
   assert.equal(cli.status, 0, cli.stderr);
   assert.equal(JSON.parse(cli.stdout).prompt, built.prompt);
+});
+
+// ---------- the vision model in the loop: the hero's box and the look ----------
+
+test('смотрящая модель: вопросы взгляда из заказа и списка для глаз; ответ разбирается в проблемы, блокирующие — по настройкам', () => {
+  return import('../core/card/look.js').then(({ lookPrompt, issuesOf, parseAnswer }) => {
+    const look = loadSettings().look;
+    const visual = [{ id: 'RENDERING.12-14', what: 'no fine texture' }, { id: 'COMPOSITION.1', what: 'one hero object' }];
+    const p = lookPrompt({ title: 'Rowboat', order: 'Subject: a wooden rowing boat.', visual, settings: look });
+    for (const t of ['«Rowboat»', 'Subject: a wooden rowing boat.', 'RENDERING.12-14: no fine texture', ...Object.keys(look.prompt.questions).map(k => `${k}: `)]) assert.ok(p.includes(t), t);
+    assert.ok(!/\{(title|order|questions|checklist|answer|json)\}/.test(p), 'все слоты заполнены');
+    const kinds = Object.keys(look.prompt.questions);
+    const ok = { seen: 'a lantern', subject: { ok: true }, caption: { ok: true }, staging: { ok: true }, additions: { ok: true }, checklist: [] };
+    assert.deepEqual(issuesOf(ok, visual, look), { verdict: 'ok', issues: [], seen: 'a lantern' }, 'вопрос без ответа (костюм без персонажей) — не проблема');
+    const bad = parseAnswer('```json\n' + JSON.stringify({ ...ok, subject: { ok: false, why: 'a candle, not a lantern' }, caption: { ok: false, why: 'reads as a candle' }, checklist: [{ id: 'RENDERING.12-14', why: 'mesh' }, { id: 'NOT.ON.LIST', why: 'x' }] }) + '\n```', kinds);
+    const r = issuesOf(bad, visual, look);
+    assert.equal(r.verdict, 'fix');
+    assert.deepEqual(r.issues, [
+      { kind: 'subject', what: 'a candle, not a lantern', blocking: true },
+      { kind: 'caption', what: 'reads as a candle', blocking: false },
+      { kind: 'checklist', id: 'RENDERING.12-14', what: 'mesh', blocking: false },
+    ]);
+    // the model was seen to drop a brace: the fields are then read one by one
+    const broken = '{"seen": "a thermos", "staging": {"ok": false, "why": "a plain blue wall, not planks"}, "subject": {"ok": true, "why": ""}, "checklist": [{"id": "BACKGROUNDS.2", "why": "no texture"}, "id": "RENDERING.12-14", "why": "x"}]}';
+    const b = issuesOf(parseAnswer(broken, kinds), visual, look);
+    assert.deepEqual(b.issues.map(i => [i.kind, i.id, i.blocking]), [['staging', undefined, true], ['checklist', 'RENDERING.12-14', false]]);
+    assert.equal(issuesOf(parseAnswer('no json here', kinds), visual, look).verdict, 'unknown');
+    assert.equal(issuesOf({ seen: 'x', checklist: [] }, visual, look).verdict, 'unknown', 'ни на один вопрос нет ответа');
+  });
+});
+
+test('смотрящая модель в цикле: рамка героя → доверенный контур, взгляд «не тот предмет» гонит перегенерацию, расходы учтены; перепроверка модель не спрашивает', { skip: noSharp }, async () => {
+  const { makeCard, recheckCard } = /** @type {any} */ (loop);
+  const real = loadSettings();
+  const settings = { ...real, card: { ...real.card, attempts: 2, tuneProcessing: false } };
+  const spec = JSON.parse(fs.readFileSync(path.join(ROOT, 'styles/scapes/checks/reference-spec.json'), 'utf8')).cards.find(c => c.id === 'ref-003');
+  const { id, ref, file, set, mask, ...staging } = spec;
+  const order = { ...ORDER, title: 'Lantern', subject: 'a glowing lantern', object: 'lantern', staging: { ...staging, material: 'metal' } };
+  const asked = [];
+  let looks = 0;
+  // the box is centred left to right, so it is the same on the card and on its mirror image: the two looks agree
+  const vision = async req => {
+    asked.push(req);
+    if (/box_2d/.test(req.prompt)) return { text: '{"box_2d": [60, 180, 940, 820]}', cost: 0.001 };
+    looks++;
+    const subject = looks === 1 ? { ok: false, why: 'a candle, not a lantern' } : { ok: true, why: '' };
+    return { text: JSON.stringify({ subject, staging: { ok: true }, additions: { ok: true }, costume: { ok: null }, checklist: [] }), cost: 0.002 };
+  };
+  const p = fakeProvider(fs.readFileSync(path.join(ROOT, 'styles/scapes/references/card-003.png')), 0.04, { vision });
+  const r = await makeCard({ order, ...await pool(), settings, provider: p, buildPrompt: fakePrompt });
+  assert.equal(p.calls.length, 2, 'первая попытка — «не тот предмет»: перегенерация');
+  assert.equal(asked[0].model, real.vision.model);
+  const card = JSON.parse(fs.readFileSync(path.join(r.dir, 'card.json'), 'utf8'));
+  const [a1, a2] = card.attempts;
+  assert.equal(a1.hero.source, 'vision');
+  assert.equal(a1.hero.confidence, 'high', a1.hero.reasons.join('; '));
+  assert.equal(a1.check.maskStatus, 'auto');
+  assert.ok(fs.existsSync(path.join(r.dir, 'attempts/1/card.hero.png')));
+  assert.equal(a1.look.verdict, 'fix');
+  assert.deepEqual(a1.check.look.issues, [{ kind: 'subject', what: 'a candle, not a lantern', blocking: true }]);
+  assert.equal(a1.check.blocking, a1.check.fails.filter(f => !f.needsMask).length + 1);
+  assert.equal(a2.look.verdict, 'ok');
+  const lookFile = JSON.parse(fs.readFileSync(path.join(r.dir, 'attempts/1/look.json'), 'utf8'));
+  assert.match(lookFile.prompt, /«Lantern»/);
+  assert.ok(Math.abs(r.spent - 2 * (0.04 + 0.001 * 2 + 0.002)) < 1e-9, `расходы ${r.spent}`);
+  const before = asked.length;
+  const re = await recheckCard({ dir: r.dir });
+  assert.equal(asked.length, before, 'перепроверка бесплатна: контур из card.hero.png, взгляд из попытки');
+  assert.deepEqual(re.attempts.find(a => a.n === 1).check.look, a1.check.look);
+  assert.equal(re.attempts.find(a => a.n === 1).check.maskStatus, 'auto');
+});
+
+test('запрос Codex: подпись к образцам из собранного запроса не повторяется и не заменяется общей', { skip: noSharp }, async () => {
+  const { makeCard } = /** @type {any} */ (loop);
+  const { buildPrompt } = await import('../core/style/prompt.js');
+  const built = await buildPrompt(ORDER);
+  assert.ok(built.legend && built.prompt.includes(built.legend), 'подпись — часть запроса');
+  const p = fakeProvider(await grey(), 0, { model: 'codex-cli', free: true });
+  await makeCard({ order: ORDER, ...await pool(), settings: SETTINGS, provider: p, limits: { attempts: 1 } });
+  assert.equal(p.calls[0].legend, built.legend, 'подпись передана провайдеру');
 });

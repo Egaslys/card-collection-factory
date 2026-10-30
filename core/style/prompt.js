@@ -29,6 +29,9 @@ export class OrderError extends Error {
  *   (`anchor` = the character), then the style reference cards (`ref` = the card number)
  * @property {{name: string, text: string}[]} sections  the prompt by sections: the rules' sections
  *   (format, subject, staging, cast, backdrop, composition, colour, rendering), then references and extra
+ * @property {string|null} legend  what the attached images are, as the prompt says it (its «references» section);
+ *   null when nothing is attached or the prompt is the order's own (promptOverride). The card loop hands it to a
+ *   provider that writes its own legend (Codex), so the provider does not contradict the prompt.
  */
 
 /**
@@ -44,7 +47,7 @@ export async function buildPrompt(order, { styleDir } = {}) {
   if (errors.length) throw new OrderError(errors);
   const cards = pickReferences(order, style);
   const references = [...pickAnchors(order, style).map(a => ({ path: a.path, anchor: a.name })), ...cards.map(c => ({ path: c.path, ref: c.ref }))];
-  if (order.promptOverride) return { prompt: order.promptOverride.trim(), fragments: [], references, sections: [] };
+  if (order.promptOverride) return { prompt: order.promptOverride.trim(), fragments: [], references, sections: [], legend: null };
 
   const { sections } = assemble(order, style);
   const out = sections.map(s => ({ name: s.name, text: s.text }));
@@ -56,5 +59,6 @@ export async function buildPrompt(order, { styleDir } = {}) {
     fragments: sections.flatMap(s => s.fragments),
     references,
     sections: out,
+    legend: note,
   };
 }

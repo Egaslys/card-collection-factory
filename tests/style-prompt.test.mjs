@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import { ROOT } from './root.mjs';
 import { PILOT_ORDERS } from './style-pilot-orders.mjs';
 import { fillSlots, findOption, parseFragments, slotsOf } from '../core/style/fragments.js';
+import { matches } from '../core/style/assembly.js';
 import { loadStyle } from '../core/style/style.js';
 import { checkOrder, unseenStaging, validateOrder } from '../core/style/card-order.js';
 import { buildPrompt, OrderError } from '../core/style/prompt.js';
@@ -289,7 +290,7 @@ test('валидатор: понятные ошибки на неверные и
   has(errorsOf('c5-gone-fishing', o => { o.scene.characters[0].name = 'dog'; }), /name = "dog" — нет такого персонажа/);
   has(errorsOf('c5-gone-fishing', o => { delete o.scene.joke; }), /слот \{twist\} — нужно поле scene\.joke/);
   has(errorsOf('c5-gone-fishing', o => { o.scene.crop = 'ankles'; }), /не найден среди вариантов|не выбран вариант/);
-  has(errorsOf('c2-tackle-box', o => { o.staging.placement = 'wall_mounted'; o.staging.backdrop = 'wall'; o.staging.support = 'wall_fixed'; o.staging.wall = 'curtain'; }), /bg\.on-wall.*не выбран вариант/);
+  has(errorsOf('c2-tackle-box', o => { o.staging.placement = 'wall_mounted'; o.staging.backdrop = 'wall'; o.staging.support = 'wall_fixed'; o.staging.wall = 'curtain'; o.staging.pattern = 'other'; }), /bg\.on-wall.*не выбран вариант/);
   has(errorsOf('c3-catch-bucket', o => { o.staging.support = 'furniture'; delete o.staging.surface; }), /нужно поле staging\.furniture/);
   has(errorsOf('c3-catch-bucket', o => { o.staging.placement = 'other'; o.staging.support = 'other'; delete o.staging.surface; o.humanRequest = 'lean it on a post'; }), /нет фрагмента раздела «staging»/);
   assert.deepEqual(errorsOf('c3-catch-bucket', o => { o.staging.placement = 'other'; o.staging.support = 'other'; delete o.staging.surface; o.humanRequest = 'lean it on a post'; o.promptExtra = 'The bucket leans against a post.'; }), []);
@@ -362,6 +363,44 @@ for (const c of NEW_STAGINGS) {
     assert.ok(!/[{}[\]]/.test(r.prompt.replace(/\(around #[0-9A-F]+( to #[0-9A-F]+)?\)/g, '')), 'в запросе остался незаполненный слот');
   });
 }
+
+// Every reference card's staging with every value of the prompt-only fields it requires: the prompt says each of
+// «Backdrop:», «Placement:», «Setting:», «Staging:», «Wall:» at most once (two backdrops contradict each other: the
+// set trial got a plank wall and a plain studio gradient in one prompt and the model drew the gradient).
+test('ни одна постановка эталона не получает два противоречащих раздела (два «Backdrop:» и т. п.)', async () => {
+  const PROMPT_ONLY = ['stripes', 'surface', 'medium', 'setting', 'wall', 'floor', 'furniture'];
+  const fields = style.assembly.fields;
+  let assembled = 0;
+  for (const card of style.references) {
+    const st = card.staging;
+    if (['category', 'placement', 'support', 'time'].some(k => ['other', 'unsure'].includes(st[k]))) continue;
+    const base = pilot(st.characters > 0 ? 'c5-gone-fishing' : 'c4-rowboat');
+    base.staging = { ...Object.fromEntries(SPEC_FIELDS.map(k => [k, st[k]])), ...(st.characters > 0 ? {} : { material: 'wood' }) };
+    if (st.characters > 0) base.scene.characters = base.scene.characters.slice(0, st.characters);
+    if (st.pattern === 'motif_repeat') base.motif = 'fish';
+    let orders = [base];
+    for (const k of PROMPT_ONLY) {
+      if (!(fields[k].required_when || []).some(c => matches(c, base, style))) continue;
+      orders = orders.flatMap(o => fields[k].values.map(v => ({ ...o, staging: { ...o.staging, [k]: v } })));
+    }
+    for (const order of orders) {
+      if (checkOrder(order, style).length) continue; // e.g. a wall the fragment has no words for, a forbidden pair
+      const { prompt } = await buildPrompt(order);
+      assembled++;
+      const heads = [...prompt.matchAll(/(?:^|\n|\. )(Backdrop|Placement|Setting|Staging|Wall):/g)].map(m => m[1]);
+      const twice = heads.filter((h, i) => heads.indexOf(h) !== i);
+      assert.deepEqual(twice, [], `эталон №${card.ref}, ${PROMPT_ONLY.filter(k => order.staging[k]).map(k => `${k} ${order.staging[k]}`).join(', ')}: дважды ${twice.join(', ')}`);
+    }
+  }
+  assert.ok(assembled > 400, `собрано только ${assembled} запросов`);
+});
+
+test('стена из досок, кирпича, обоев, занавеса или штукатурки с узором plain_gradient — ошибка заказа', () => {
+  const onFloor = o => { Object.assign(o.staging, { category: 3, backdrop: 'wall', pattern: 'plain_gradient', support: 'ground', wall: 'planks', floor: 'stage' }); delete o.staging.brand; delete o.staging.brand_finish; };
+  assert.ok(errorsOf('c2-tackle-box', onFloor).some(e => /не ровный градиент/.test(e)));
+  assert.deepEqual(errorsOf('c2-tackle-box', o => { onFloor(o); o.staging.wall = 'plain'; }), []);
+  assert.deepEqual(errorsOf('c2-tackle-box', o => { onFloor(o); o.staging.pattern = 'other'; }), []);
+});
 
 test('стены названы одними словами в «Стене» и «Предмете на стене»', () => {
   const opts = id => slotsOf(frag(id).text).find(s => s.options?.includes('brick')).options;

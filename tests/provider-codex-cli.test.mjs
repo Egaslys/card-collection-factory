@@ -95,6 +95,15 @@ test('generateImage: своя подпись к приложенной карт�
   assert.deepEqual(m.calls[0].args.flatMap((x, i, all) => (x === '-i' ? [all[i + 1]] : [])), ['/abs/model.png']);
 });
 
+test('generateImage: подпись, которую запрос уже говорит (портреты персонажей карточки), не повторяется и не заменяется общей', async () => {
+  const codexHome = home();
+  const m = mock({ onSpawn: () => putImage(codexHome) });
+  const legend = 'Image 1 is the canonical look of the Man: copy its design exactly. Images 2–3 are style references.';
+  await generateImage({ settings: CODEX, prompt: `A scene.\n\n${legend}`, references: [{ path: '/abs/man.png' }, { path: '/abs/a.png' }, { path: '/abs/b.png' }], legend, net: { spawnImpl: m.spawnImpl, codexHome } });
+  assert.equal(m.calls[0].input.split(legend).length - 1, 1, 'подпись сказана один раз');
+  assert.doesNotMatch(m.calls[0].input, /do not copy their subjects/);
+});
+
 test('generateImage: значения берутся из настроек вызывающего', async () => {
   const codexHome = home();
   const m = mock({ onSpawn: () => putImage(codexHome) });

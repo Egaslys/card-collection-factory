@@ -62,8 +62,9 @@ function run(spawnImpl, command, args, cwd, input, timeoutMs) {
  * @param {string} o.prompt
  * @param {{bytes?: Uint8Array, path?: string, mime?: string}[]} [o.references] attached as `-i` files (at most 5 work in Codex's image tool)
  * @param {string} [o.aspectRatio] e.g. "4:5": Codex's image tool has no size parameter, so it is only said in the brief
- * @param {string} [o.legend] what the attached images are, said before the brief; default: style references whose
- *   subjects are not copied (an edit says instead that the attached image is the one to change)
+ * @param {string} [o.legend] what the attached images are, said before the brief, or nothing when the prompt already
+ *   contains it; default: style references whose subjects are not copied (an edit says instead that the attached
+ *   image is the one to change; a card's prompt names its anchor portraits and style cards itself)
  * @param {string} [o.resolution] ignored
  * @param {Record<string, unknown>} [o.params] ignored
  * @param {CodexNet} [o.net]
@@ -86,7 +87,8 @@ export async function generateImage({ settings: d, model, prompt, references = [
       if (file.includes(',')) throw new Error(`Codex делит значение -i по запятой: в пути образца не должно быть запятых (${file}).`);
       refPaths.push(file);
     }
-    const legend = !refPaths.length ? ''
+    // the legend is said once: a prompt that already says what the images are (core/style buildPrompt) gets no second one
+    const legend = !refPaths.length || (given && prompt.includes(given.trim())) ? ''
       : given ? `\n${given.trim()}\n`
       : `\nThe ${refPaths.length} attached image(s) are style references, in order: match their rendering style, lighting, colour treatment and composition conventions, but do not copy their subjects.\n`;
     const brief = aspectRatio ? `${prompt.trim()} Portrait image, aspect ratio ${aspectRatio}.` : prompt.trim();
