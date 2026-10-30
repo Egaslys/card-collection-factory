@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const SETTINGS_DIR = path.join(ROOT, 'settings');
+/** The settings folder in use. CCF_SETTINGS_DIR replaces it and exists for tests only (a folder with defaults.json and,
+ * when a test needs one, its own local.json), so that the person's real settings/local.json never reaches a test. */
+const settingsDir = () => (process.env.CCF_SETTINGS_DIR ? path.resolve(process.env.CCF_SETTINGS_DIR) : SETTINGS_DIR);
 
 /**
  * @typedef {object} OpenRouterSettings
@@ -83,7 +86,7 @@ export function mergeSettings(defaults, local, where = '') {
  * @param {{dir?: string}} [o]
  * @returns {Settings}
  */
-export function loadSettings({ dir = SETTINGS_DIR } = {}) {
+export function loadSettings({ dir = settingsDir() } = {}) {
   /** @param {string} name */
   const read = name => JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'));
   const defaults = read('defaults.json');
@@ -96,7 +99,7 @@ export function loadSettings({ dir = SETTINGS_DIR } = {}) {
  * @param {{dir?: string}} [o]
  * @returns {Record<string, any>}
  */
-export function readLocalSettings({ dir = SETTINGS_DIR } = {}) {
+export function readLocalSettings({ dir = settingsDir() } = {}) {
   const file = path.join(dir, 'local.json');
   return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
 }
@@ -109,7 +112,7 @@ export function readLocalSettings({ dir = SETTINGS_DIR } = {}) {
  * @param {{dir?: string}} [o]
  * @returns {Settings} the merged settings after the write
  */
-export function saveLocalSettings(patch, { dir = SETTINGS_DIR } = {}) {
+export function saveLocalSettings(patch, { dir = settingsDir() } = {}) {
   const defaults = JSON.parse(fs.readFileSync(path.join(dir, 'defaults.json'), 'utf8'));
   /** @param {Record<string, any>} base @param {Record<string, any>} add @returns {Record<string, any>} */
   const deep = (base, add) => {

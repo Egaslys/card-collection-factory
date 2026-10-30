@@ -13,12 +13,12 @@
     },
     ".claude/skills/ccf-make-cards/SKILL.md": {
       "source": "agents/skills/ccf-make-cards/SKILL.md",
-      "sha256": "3a0ce7e8030ea49c7a5b4e36255e6718c22addb138256f1b48f709d64db79422",
+      "sha256": "e8df898b31f0011138fd3731e117bf39f9baefc21a105e368eadf613161e13ca",
       "text": true
     },
     ".claude/skills/ccf-make-sets/SKILL.md": {
       "source": "agents/skills/ccf-make-sets/SKILL.md",
-      "sha256": "e360a89da24e8d4f1ff8188d7109e1cf5133442f07061440c75b53b4c2c54328",
+      "sha256": "dc5dca057e9f3e3debf550d5b06260fd70fc283d1c6bef868958580cabfb56fa",
       "text": true
     },
     ".claude/skills/ccf-review-cards/SKILL.md": {
@@ -43,12 +43,12 @@
     },
     ".agents/skills/ccf-make-cards/SKILL.md": {
       "source": "agents/skills/ccf-make-cards/SKILL.md",
-      "sha256": "3a0ce7e8030ea49c7a5b4e36255e6718c22addb138256f1b48f709d64db79422",
+      "sha256": "e8df898b31f0011138fd3731e117bf39f9baefc21a105e368eadf613161e13ca",
       "text": true
     },
     ".agents/skills/ccf-make-sets/SKILL.md": {
       "source": "agents/skills/ccf-make-sets/SKILL.md",
-      "sha256": "e360a89da24e8d4f1ff8188d7109e1cf5133442f07061440c75b53b4c2c54328",
+      "sha256": "dc5dca057e9f3e3debf550d5b06260fd70fc283d1c6bef868958580cabfb56fa",
       "text": true
     },
     ".agents/skills/ccf-review-cards/SKILL.md": {

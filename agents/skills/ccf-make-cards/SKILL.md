@@ -19,11 +19,12 @@ description: Make cards with the card factory — from a request like "20 cards 
 
 ## 2. Collection
 
-Every card lives in a collection's card pool. `ccf.mjs` has no command to list or create one; call the Store API (`FACTORY/core/README.md`) from `FACTORY`:
+Every card lives in a collection's card pool.
 
 ```sh
-cd FACTORY && node --input-type=module -e "import { listCollections } from './core/store/index.js'; console.log(JSON.stringify(await listCollections(), null, 1))"
-cd FACTORY && node --input-type=module -e "import { createCollection } from './core/store/index.js'; console.log((await createCollection({ title: 'TITLE', description: 'what it is' })).id)"
+node FACTORY/ccf.mjs collection list --json
+node FACTORY/ccf.mjs collection create --title TITLE [--description "what it is"] --json   # → id
+node FACTORY/ccf.mjs collection show ID --json                                              # sets and the pool
 ```
 
 Use the collection the person named or the one the request clearly belongs to; otherwise create one titled after the request and say which you chose.
@@ -75,6 +76,6 @@ Review every card before showing it: ccf-review-cards.
 ## 7. Show
 
 - Editor, when `FACTORY/editor/server.mjs` exists: `node FACTORY/editor/server.mjs --open COLLECTION[/SET]` opens it in the browser (or opens the running one).
-- Files: `image` of each report is the card's `card.png`. A folder for the person: `exportItems({ collectionId, cardIds, format: 'png' | 'zip' })` of the Store API, called like step 2 → `path` under `collections/<collection>/export/` (layout: `core/store/README.md`, «Export»).
+- Files: `image` of each report is the card's `card.png`. A folder for the person: `node FACTORY/ccf.mjs export --collection ID --card ID,ID [--zip] [--open] --json` → `path` under `collections/<collection>/export/` (layout: `core/store/README.md`, «Export»).
 
 Done when every requested card has a reviewed `card.png`, and the person has the editor view or the export path, the total spent, and every problem left open.

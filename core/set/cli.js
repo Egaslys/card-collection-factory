@@ -112,6 +112,36 @@ async function setCheck(v, files) {
   return out.every(r => !r.errors.length) ? 0 : 1;
 }
 
+/** @param {any} v @param {string[]} files */
+async function setSave(v, [file]) {
+  const { saveSetPlan } = await import('./make.js');
+  const { set, warnings } = await saveSetPlan({ collection: v.collection, plan: JSON.parse(fs.readFileSync(path.resolve(file), 'utf8')) });
+  if (v.json) console.log(JSON.stringify({ set: set.id, number: set.number, title: set.title, warnings }, null, 2));
+  else {
+    console.log(`План сохранён набором ${set.id} (№${set.number}, «${set.title}») в коллекции ${v.collection}; карточек пока нет: "set make --set ${set.id}".`);
+    printVerdict({ errors: [], warnings });
+  }
+  return 0;
+}
+
+/** @param {any} v */
+async function collectionCheck(v) {
+  const store = await import('../store/index.js');
+  const { validateCollection } = await import('./plan.js');
+  const { sets } = await store.getCollection(v.collection);
+  const plans = /** @type {import('./plan.js').SetPlan[]} */ (sets.map(s => s.plan).filter(Boolean));
+  const noPlan = sets.filter(s => !s.plan).map(s => `набор «${s.title}» без плана: в проверку коллекции не вошёл`);
+  const r = validateCollection(plans, { complete: !v.partial });
+  const out = { collection: v.collection, plans: plans.length, errors: r.errors, warnings: [...noPlan, ...r.warnings], sets: r.sets };
+  if (v.json) console.log(JSON.stringify(out, null, 2));
+  else {
+    console.log(`Коллекция ${v.collection}: планов ${plans.length}${v.partial ? ' (неполная коллекция допустима)' : ''} — ${out.errors.length ? `ошибок ${out.errors.length}` : 'ошибок нет'}`);
+    printVerdict(out);
+    for (const s of r.sets) if (s.errors.length || s.warnings.length) { console.log(`  «${s.title}»:`); printVerdict(s, '    '); }
+  }
+  return out.errors.length ? 1 : 0;
+}
+
 /** @param {import('./make.js').SetReport} r */
 function printSet(r) {
   console.log(`Набор «${r.title}» (${r.set}): потрачено ${usd(r.spent)} из потолка $${r.maxSpendUsd}`);
@@ -217,6 +247,16 @@ ${PLAN_ABOUT}`,
     positionals: { min: 1, max: 32, label: 'PLAN.json' },
     run: setCheck,
   },
+  'set save': {
+    usage: ['ccf.mjs set save PLAN.json --collection ID [--json]'],
+    about: `Saves a set plan written by an agent as a new set of the collection, without making any card (cards: "set make
+--set ID"). The plan is checked as in "set check --collection" and is refused with its errors if it does not pass.
+${PLAN_ABOUT}`,
+    options: { collection: { type: 'string', value: 'ID', help: 'the collection id (required)' }, json: JSON_OPTION },
+    positionals: { min: 1, max: 1, label: 'PLAN.json' },
+    check: (/** @type {any} */ v) => !v.collection ? '--collection is required' : null,
+    run: setSave,
+  },
   'set make': {
     usage: ['ccf.mjs set make PLAN.json --collection ID [options]', 'ccf.mjs set make --collection ID --set ID [--slots 1,2,…] [--redo] [options]'],
     about: `Makes the cards of a set: with PLAN.json the plan is checked and saved as a new set of the collection; with --set
@@ -262,6 +302,20 @@ cards yet: "collection make"). Without --collection a new collection is created 
     },
     check: (/** @type {any} */ v) => !v.theme ? '--theme is required' : !whole(v.variants) ? '--variants must be a whole number above 0' : !listOk(v.only) ? '--only must be numbers separated by commas' : null,
     run: collectionPlan,
+  },
+  'collection check': {
+    usage: ['ccf.mjs collection check --collection ID [--partial] [--json]'],
+    about: `Checks the saved plans of a collection as a whole (the check "collection plan" runs at its end): each set against
+the others (registry, titles, captions), 16 sets with the grand set last, and more scenes in the last five regular sets
+than in the first five. With --partial a collection that is not complete yet is allowed (no "16 sets" error), for
+planning set by set.`,
+    options: {
+      collection: { type: 'string', value: 'ID', help: 'the collection id (required)' },
+      partial: { type: 'boolean', help: 'the collection is not complete yet: do not demand all 16 sets' },
+      json: JSON_OPTION,
+    },
+    check: (/** @type {any} */ v) => !v.collection ? '--collection is required' : null,
+    run: collectionCheck,
   },
   'collection make': {
     usage: ['ccf.mjs collection make --collection ID [--sets N,N] [options]'],

@@ -26,7 +26,7 @@ node FACTORY/ccf.mjs set check PLAN.json [VARIANT2.json …] --collection ID
 
 `--collection` checks against the collection's other sets (no repeated item kinds or captions). Variants: one file per variant with `variant: { n, group }` and the same window layout, all checked in one call. Then go through the items the program cannot check («Not checkable by the program» in `core/set/README.md`) yourself.
 
-Your own collection: write, check and make it set by set in collection order. `set check --collection` sees only plans already saved in the collection, and `set make PLAN.json` is what saves a plan, so each set is checked against the ones before it. The whole-collection check (16 sets, the grand set last, the scene curve) runs only inside `collection plan`; for your own plans go through the collection part of `SETS.md` §9 yourself.
+Your own collection: write, check and save it set by set in collection order. `set check --collection` sees only plans already saved in the collection, so save each plan (`set save PLAN.json --collection ID`, which checks it again and makes no cards) before checking the next, and each set is checked against the ones before it. The whole-collection check (16 sets, the grand set last, the scene curve) is `node FACTORY/ccf.mjs collection check --collection ID` over the saved plans (`--partial` while the collection is not complete); the rest of the collection part of `SETS.md` §9 you go through yourself.
 
 **The text model writes the plan (the editor's path; small paid call).** Use when the person asks for it:
 
@@ -40,6 +40,7 @@ Read the saved plans (`plan` in each `collections/<c>/sets/<set>/set.json`) the 
 ## 3. Make the cards
 
 ```sh
+node FACTORY/ccf.mjs set save PLAN.json --collection ID          # checks and saves as a new set; no cards, no money
 node FACTORY/ccf.mjs set make PLAN.json --collection ID          # checks, saves as a new set, makes its cards
 node FACTORY/ccf.mjs set make --collection ID --set SET_ID [--slots 1,2] [--redo]   # a saved plan
 node FACTORY/ccf.mjs collection make --collection ID [--sets N,N]
@@ -57,6 +58,6 @@ Progress: one stderr line per card event. Stop: one Ctrl+C — no new card start
 
 ## 5. Show
 
-Editor, when `FACTORY/editor/server.mjs` exists: `node FACTORY/editor/server.mjs --open COLLECTION/SET`. Export: Store API `exportItems({ collectionId, setIds?, format: 'png' | 'zip' })` (no `setIds` = every set), called as in ccf-make-cards step 2; layout in `core/store/README.md`, «Export».
+Editor, when `FACTORY/editor/server.mjs` exists: `node FACTORY/editor/server.mjs --open COLLECTION/SET`. Export: `node FACTORY/ccf.mjs export --collection ID [--set ID,ID] [--zip] [--open] --json` (no `--set` = every set); layout in `core/store/README.md`, «Export».
 
 Done when every slot holds a reviewed card, the set's sheet was looked at, and the person has the editor view or the export path, the total spent and every open problem.

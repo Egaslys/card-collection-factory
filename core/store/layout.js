@@ -5,8 +5,9 @@ import { ROOT } from '../settings.js';
 
 export { CARD_FILE, FINAL_IMAGE } from '../card/card-file.js';
 
-/** Where the factory keeps its collections (ignored by Git, VISION.md «Устройство и стек»). */
-export const COLLECTIONS_DIR = path.join(ROOT, 'collections');
+/** Where the factory keeps its collections (ignored by Git, VISION.md «Устройство и стек»). CCF_COLLECTIONS_DIR
+ * replaces it and exists for tests only (a command line run over a temporary store). */
+export const COLLECTIONS_DIR = process.env.CCF_COLLECTIONS_DIR ? path.resolve(process.env.CCF_COLLECTIONS_DIR) : path.join(ROOT, 'collections');
 export const COLLECTION_FILE = 'collection.json';
 export const SET_FILE = 'set.json';
 export const SETS_DIR = 'sets';

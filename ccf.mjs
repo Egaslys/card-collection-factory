@@ -16,6 +16,7 @@ import { cli, usageError } from './tools/cli-args.mjs';
 import { loadSettings } from './core/settings.js';
 import { SLOT_COUNT } from './core/store/layout.js';
 import { setCommands } from './core/set/cli.js';
+import { storeCommands } from './core/store/cli.js';
 import { getCredits, listImageModels, loadApiKey } from './core/providers/openrouter.js';
 
 const NAME = 'ccf.mjs';
@@ -160,6 +161,7 @@ it is not (then give --hero-box, the hero's box in card pixels).`,
     run: credits,
   },
   ...setCommands,
+  ...storeCommands,
 };
 
 // ---------- commands ----------
