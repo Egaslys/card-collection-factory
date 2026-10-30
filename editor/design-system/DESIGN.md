@@ -523,6 +523,15 @@ Pills sit only in pill shells or free.
 - **Variant comparison** — the variants side by side, each a column with its 10 thumbnails in window order
   (2 × 5), a summary of checks, and "Выбрать" (secondary); the chosen one gets the state ring. On phones the
   variants stack.
+- **Status chip** — a pill in the top bar (h 40, like a segment shell) with a dot and a short word: the key («Ключ»,
+  «Нет ключа» on the error tint in error ink) and the queue («Идёт: 2», working dot). A click opens what fixes or
+  explains it.
+- **Sheet** — what opens over a screen (settings, a card, export, creating): a surface panel from the right,
+  r 24, hairline edge, `float`, over a scrim of ink-1 at 28% (dark theme: background at 64%, so it darkens); head (title, close), scrolling body (p 24), foot with
+  the actions (the sheet's one primary on the right). Width 480, wide 1008; on phones it comes from the bottom,
+  full width. Escape and the scrim close it.
+- **Toast** — a short message at the bottom centre on thick glass, r 24, h ≥ 48; a dot says done or failed; an
+  optional text action («Подробности»). Gone by itself after 5 s (a failure after 9 s).
 - **States** — empty: what is missing and the one action that fixes it; loading: sunken skeletons of the real
   shapes, a slow shimmer (none with reduced motion); error: error ink headline, what happened in plain words,
   "Повторить".

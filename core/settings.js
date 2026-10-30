@@ -1,5 +1,5 @@
 // Factory settings: settings/defaults.json (tracked) merged with settings/local.json (personal, ignored by Git;
-// the editor will write it). What each value means is in the `_about` of defaults.json; the values live only there.
+// the editor's settings write it through saveLocalSettings). What each value means is in the `_about` of defaults.json; the values live only there.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,6 +49,7 @@ const settingsDir = () => (process.env.CCF_SETTINGS_DIR ? path.resolve(process.e
  * @property {Record<string, import('./image/adjust.js').AdjustSettings>} processing  per model id; overrides the style's start
  * @property {import('./card/hero.js').VisionSettings} vision  the vision model that looks at finished cards
  * @property {import('./card/hero.js').HeroSettings} hero  finding the hero's outline when nobody gives its box
+ * @property {import('./card/look.js').LookSettings} look  the vision model's look at every attempt: order and adequacy
  */
 
 /** @param {unknown} v @returns {v is Record<string, any>} */

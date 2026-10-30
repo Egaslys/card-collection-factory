@@ -224,6 +224,43 @@ textarea.input { height: auto; min-height: calc(var(--c-field-height) * 2.4); pa
   border-radius: var(--c-top-bar-radius); min-height: var(--c-top-bar-height); flex-wrap: wrap; }
 .selbar__count { flex: 1; min-width: 0; font-weight: 500; }
 
+/* ---------- status chip: a pill in the top bar that says a state and opens what fixes it (key, queue) ---------- */
+.chip { display: inline-flex; align-items: center; gap: var(--spacing-s2); height: var(--c-segment-shell-height); padding: 0 var(--spacing-s4) 0 var(--spacing-s3); flex: none;
+  border-radius: var(--rounded-full); background: var(--color-surface); color: var(--color-ink-2); box-shadow: inset 0 0 0 1px var(--color-line);
+  font: var(--type-button-sm-weight) var(--type-button-sm-size)/var(--type-button-sm-line) var(--type-button-sm-family); white-space: nowrap;
+  transition: background-color var(--motion-t1) var(--motion-ease); }
+.chip:hover { background: var(--color-surface-sunken); }
+.chip--fail { background: var(--color-error-tint); color: var(--color-error-ink); box-shadow: none; }
+.chip--fail:hover { background: var(--color-error-tint); }
+
+/* ---------- sheet: a panel over the screen (settings, a card, export), from the right; from the bottom on phones ---------- */
+.sheet-wrap { position: fixed; inset: 0; z-index: 50; }
+.scrim { position: fixed; inset: 0; background: rgb(var(--color-ink-1-rgb) / .28); animation: ds-fade var(--motion-t2) var(--motion-ease); }
+:root[data-theme="dark"] .scrim { background: rgb(var(--color-background-rgb) / .64); }
+.sheet { position: fixed; top: var(--spacing-s4); right: var(--spacing-s4); bottom: var(--spacing-s4); width: min(480px, 100vw - 2 * var(--spacing-s4)); display: flex; flex-direction: column;
+  background: var(--color-surface); color: var(--color-ink-1); border: 1px solid var(--color-line); border-radius: var(--rounded-lg); box-shadow: var(--shadow-float); outline: none;
+  animation: ds-sheet var(--motion-t3) var(--motion-ease); }
+.sheet--wide { width: min(1008px, 100vw - 2 * var(--spacing-s4)); }
+.sheet__head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-s3); padding: var(--spacing-s4) var(--spacing-s4) var(--spacing-s4) var(--spacing-s5); border-bottom: 1px solid var(--color-line); }
+.sheet__head h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet__body { flex: 1; overflow: auto; padding: var(--spacing-s5); overscroll-behavior: contain; }
+.sheet__foot { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--spacing-s2); padding: var(--spacing-s4); border-top: 1px solid var(--color-line); }
+@keyframes ds-fade { from { opacity: 0; } }
+@keyframes ds-sheet { from { opacity: 0; transform: translateX(var(--spacing-s5)); } }
+@media (max-width: 640px) {
+  .sheet, .sheet--wide { top: auto; left: 0; right: 0; bottom: 0; width: 100%; max-height: calc(100dvh - var(--spacing-s5)); border-radius: var(--rounded-lg) var(--rounded-lg) 0 0; border-bottom: 0; }
+  .sheet__body { padding: var(--spacing-s4); }
+  @keyframes ds-sheet { from { opacity: 0; transform: translateY(var(--spacing-s5)); } }
+}
+@media (prefers-reduced-motion: reduce) { .scrim, .sheet { animation: none; } }
+
+/* ---------- toast: a short message at the bottom (glass over the grid), with an optional text action ---------- */
+.toasts { position: fixed; left: 50%; bottom: var(--spacing-s5); transform: translateX(-50%); z-index: 60; display: grid; gap: var(--spacing-s2); justify-items: center; width: min(560px, 100vw - 2 * var(--spacing-s4)); pointer-events: none; }
+.toast { display: flex; align-items: center; gap: var(--spacing-s3); min-height: var(--c-top-bar-height); padding: var(--spacing-s2) var(--spacing-s3) var(--spacing-s2) var(--spacing-s4);
+  border-radius: var(--rounded-lg); pointer-events: auto; animation: ds-fade var(--motion-t2) var(--motion-ease); }
+.toast__text { flex: 1; min-width: 0; }
+.toast--fail .toast__text { color: var(--color-error-ink); }
+
 /* ---------- variants side by side ---------- */
 .variants { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: var(--spacing-s4); }
 .variant { display: grid; gap: var(--spacing-s3); align-content: start; }

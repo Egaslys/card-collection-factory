@@ -11,5 +11,6 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-node tools/setup.mjs "$@"
-# When the editor exists, its start goes here, after a successful setup.
+node tools/setup.mjs "$@" || exit $?
+# The editor: opens in the browser and runs until Ctrl+C (or the window is closed).
+node editor/server.mjs

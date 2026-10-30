@@ -18,7 +18,11 @@ if errorlevel 1 (
 
 node tools\setup.mjs %*
 set "RC=%ERRORLEVEL%"
-rem When the editor exists, its start goes here, after a successful setup.
+rem The editor: opens in the browser and runs until Ctrl+C (or the window is closed).
+if not "%RC%"=="0" goto done
+node editor\server.mjs
+set "RC=%ERRORLEVEL%"
+:done
 echo.
 pause
 exit /b %RC%

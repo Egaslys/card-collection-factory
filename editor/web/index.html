@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="ccf-token" content="%CCF_TOKEN%">
+<title>Фабрика карточек</title>
+<link rel="icon" href="data:,">
+<!-- every value comes from design-system/DESIGN.md through design-system/tokens.js; nothing loads from the network -->
+<link rel="stylesheet" href="/design-system/components.css">
+<link rel="stylesheet" href="/web/editor.css">
+<script>
+  // the theme before the first paint: the person's last choice, else the system's
+  try {
+    const t = localStorage.getItem('ccf-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.dataset.theme = t;
+  } catch { /* private mode */ }
+</script>
+</head>
+<body>
+<div id="app"></div>
+<div id="layer"></div>
+<script type="module" src="/web/app.js"></script>
+</body>
+</html>
