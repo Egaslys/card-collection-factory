@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 import { ROOT } from './root.mjs';
 import { pageUrl, startEditor, withUrls } from '../editor/server.mjs';
@@ -110,6 +110,24 @@ test('ccf.mjs editor: справка, неизвестный ключ и --stop 
   assert.equal(ccf('editor', '--no-such-option').status, 2);
   assert.equal(ccf('editor', '--stop', '--open', 'c').status, 2);
   assert.equal(ccf('editor', '--port', 'x').status, 2);
+});
+
+test('редактор без терминала: подсказывает --stop, а SIGHUP (закрытый терминал) останавливает его и убирает файл обнаружения', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccf-editor-hup-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const discovery = path.join(dir, 'editor.json');
+  const env = { ...process.env, CCF_EDITOR_FILE: discovery, CCF_COLLECTIONS_DIR: path.join(dir, 'collections') };
+  const child = spawn(process.execPath, [path.join(ROOT, 'editor', 'server.mjs'), '--no-browser', '--port', '0'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  t.after(() => { if (child.exitCode === null) child.kill('SIGKILL'); });
+  let out = '';
+  child.stdout.on('data', c => { out += c; });
+  const exited = new Promise(r => child.on('exit', (code, signal) => r({ code, signal })));
+  for (let i = 0; i < 100 && !(fs.existsSync(discovery) && out.includes('Остановить')); i++) await new Promise(r => setTimeout(r, 50));
+  assert.ok(fs.existsSync(discovery), 'редактор запустился');
+  assert.match(out, /Редактор работает в фоне\. Остановить: node ccf\.mjs editor --stop/);
+  child.kill('SIGHUP');
+  assert.deepEqual(await exited, { code: 0, signal: null }, 'выход своим кодом, а не гибель от сигнала');
+  assert.equal(fs.existsSync(discovery), false);
 });
 
 test('агент через редактор: операция-задача дожидается конца, журнал идёт строками, остановка отменяет задачу', async t => {

@@ -32,6 +32,8 @@ const BODY_LIMIT = 40 * 1024 * 1024;
 const KEEPALIVE_MS = 25000;
 /** The longest a /wait request holds the connection (below the usual HTTP client timeouts). */
 const WAIT_MS = 60000;
+/** How often an editor run from a terminal checks that the terminal's process is still its parent. */
+const ORPHAN_CHECK_MS = 2000;
 
 /** @type {Record<string, string>} */
 const MIME = {
@@ -310,7 +312,7 @@ export async function startEditor({ port, quiet = false, discovery = true } = {}
     fs.mkdirSync(path.dirname(DISCOVERY_FILE), { recursive: true });
     fs.writeFileSync(DISCOVERY_FILE, JSON.stringify({ url, port: actualPort, token, pid: process.pid, startedAt: new Date().toISOString() }, null, 2) + '\n', { mode: 0o600 });
   }
-  if (!quiet && actualPort !== want) console.log(`Порт ${want} занят — редактор открыт на порту ${actualPort}.`);
+  if (!quiet && want !== 0 && actualPort !== want) console.log(`Порт ${want} занят — редактор открыт на порту ${actualPort}.`);
 
   const removeDiscovery = () => {
     if (!discovery) return;
@@ -361,10 +363,22 @@ a free one is used.`,
     const key = keyStatus();
     console.log(`Редактор открыт: ${target}`);
     console.log(key.source === 'none' ? `Ключа нет (${key.envVar}): его можно ввести в настройках редактора (временный) или положить в .env (постоянный).` : `Ключ: ${key.source === 'permanent' ? 'постоянный (.env или окружение)' : 'временный'}.`);
-    console.log('Остановить — Ctrl+C.');
+    // run from a terminal, the editor lives as long as the terminal; started without one (node ccf.mjs editor, an
+    // agent's background run) it runs on until stopped
+    const terminal = !!(process.stdin.isTTY || process.stdout.isTTY);
+    console.log(terminal ? 'Остановить — Ctrl+C или закрыть окно терминала.' : 'Редактор работает в фоне. Остановить: node ccf.mjs editor --stop.');
     if (browser) openBrowser(target);
-    const stop = async () => { await ed.close(); process.exit(0); };
+    /** @type {Promise<void>|undefined} */
+    let stopping;
+    const stop = () => { stopping ??= ed.close().then(() => process.exit(0)); };
     process.on('SIGINT', stop);
     process.on('SIGTERM', stop);
+    // a closed terminal sends SIGHUP: stop cleanly (the discovery file goes too), even if a parent set it ignored
+    process.on('SIGHUP', stop);
+    if (terminal && process.ppid !== 1) {
+      // a terminal closed without SIGHUP reaching this process leaves it to the system: then the parent changes
+      const parent = process.ppid;
+      setInterval(() => { if (process.ppid !== parent) stop(); }, ORPHAN_CHECK_MS).unref();
+    }
   }
 }

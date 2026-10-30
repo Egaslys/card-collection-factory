@@ -58,23 +58,45 @@ function lookHtml(a) {
  * @param {{version?: number, wish?: string}} [o]  the version to show first (default: the card); the wish typed so far
  */
 export async function openCard(collectionId, cardId, { version, wish: typed = '' } = {}) {
-  const [data, col] = await Promise.all([attempt(() => call('getCard', { collectionId, cardId })), attempt(() => call('getCollection', { collectionId }))]);
-  if (!data || !col) return;
-  const s = data.summary ?? { id: cardId, title: data.order.title ?? cardId, status: 'new' };
-  const set = s.setId ? col.sets.find((/** @type {any} */ x) => x.id === s.setId) : null;
-  const versions = /** @type {any[]} */ (data.attempts);
-  const proc = data.processing;
-  const running = [...jobs.values()].find(j => j.status === 'running' && j.scope?.cardId === cardId);
-  // a long operation on this card from anywhere — a set's job, an agent's ccf.mjs — holds the card's actions too: the
-  // core keeps every result either way, but a person's choice or processing made meanwhile would be overtaken by it
-  const busy = /** @type {string[]} */ (s.busy ?? []);
-  const blocked = !!running || busy.length > 0;
-  const off_ = blocked ? 'disabled' : '';
-  const where = set ? `Набор «${set.title}», место ${s.slot + 1}` : 'В хранилище, вне наборов';
-  const total = versions.reduce((/** @type {{images: number, vision: number}} */ x, /** @type {any} */ a) => ({ images: x.images + a.spend.images, vision: x.vision + a.spend.vision }), { images: 0, vision: 0 });
+  const load = () => Promise.all([attempt(() => call('getCard', { collectionId, cardId })), attempt(() => call('getCollection', { collectionId }))]);
+  const first = await load();
+  if (!first[0] || !first[1]) return;
+  // what the panel shows, read again in place by reload() after an action or a live change
+  /** @type {any} */ let data, /** @type {any} */ col, /** @type {any} */ s, /** @type {any} */ set, /** @type {any[]} */ versions = [], /** @type {any} */ proc;
+  /** @type {any} */ let running;
+  /** @type {string[]} */ let busy = [];
+  let blocked = false, off_ = '', where = '', total = { images: 0, vision: 0 };
+  /**
+   * @param {any[]} got  [getCard, getCollection]
+   * @param {any} [job]  a job of this card just started here, until its first live event arrives
+   */
+  const take = ([d, c], job) => {
+    data = d; col = c;
+    s = data.summary ?? { id: cardId, title: data.order.title ?? cardId, status: 'new' };
+    set = s.setId ? col.sets.find((/** @type {any} */ x) => x.id === s.setId) : null;
+    versions = data.attempts;
+    proc = data.processing;
+    const started = job ? jobs.get(job.id) ?? job : null;
+    running = [...jobs.values()].find(j => j.status === 'running' && j.scope?.cardId === cardId) ?? (started?.status === 'running' ? started : undefined);
+    // a long operation on this card from anywhere — a set's job, an agent's ccf.mjs — holds the card's actions too: the
+    // core keeps every result either way, but a person's choice or processing made meanwhile would be overtaken by it
+    busy = s.busy ?? [];
+    blocked = !!running || busy.length > 0;
+    off_ = blocked ? 'disabled' : '';
+    where = set ? `Набор «${set.title}», место ${s.slot + 1}` : 'В хранилище, вне наборов';
+    total = versions.reduce((x, a) => ({ images: x.images + a.spend.images, vision: x.vision + a.spend.vision }), { images: 0, vision: 0 });
+  };
+  take(first);
   let wish = typed;
   /** an action's call is under way: further clicks wait for it (no double sends) */
   let pending = false;
+
+  /** how the wish is sent: regenerate | edit (kept while the panel is drawn over) */
+  let wishMode = 'regenerate';
+  /** @param {boolean} edit */
+  const wishHint = edit => (edit
+    ? `Картинка версии ${cur} уйдёт модели с вашим пожеланием: она поправит только то, о чём вы просите. Результат станет новой версией.`
+    : 'Карточка будет сгенерирована заново по своему заказу с вашим пожеланием и станет новой версией.');
 
   /** @type {number|null} the version shown */
   let cur = versions.some(a => a.n === version) ? /** @type {number} */ (version) : data.chosen ?? versions.at(-1)?.n ?? null;
@@ -96,6 +118,23 @@ export async function openCard(collectionId, cardId, { version, wish: typed = ''
   let ctx = null;
   /** @type {HTMLCanvasElement|null} */
   let canvas = null;
+  /** the render whose images may still be drawn: a slower image of an earlier render must not cover a newer one */
+  let renders = 0;
+  /** Decoded images of this panel by URL (a rewritten file gets a new URL), so flipping versions draws at once. */
+  /** @type {Map<string, Promise<{pixels: Uint8ClampedArray, width: number, height: number}>>} */
+  const decoded = new Map();
+  /** @param {string} url */
+  const pixels = url => {
+    let p = decoded.get(url);
+    if (!p) { p = pixelsOf(url); decoded.set(url, p); p.catch(() => decoded.delete(url)); }
+    return p;
+  };
+  /** @param {{pixels: Uint8ClampedArray, width: number, height: number}} p */
+  const paint = p => {
+    if (!canvas || !ctx) return;
+    canvas.width = p.width; canvas.height = p.height;
+    ctx.putImageData(new ImageData(p.pixels, p.width, p.height), 0, 0);
+  };
 
   function render() {
     const a = shown();
@@ -113,6 +152,7 @@ export async function openCard(collectionId, cardId, { version, wish: typed = ''
     const isCard = a && a.n === data.chosen;
     const issues = (a?.details?.results ?? []).filter((/** @type {any} */ r) => r.status !== 'PASS' && r.status !== 'N/A');
     const look = a ? lookHtml(a) : '';
+    const edit = wishMode === 'edit' && !!a?.files?.original;
     const details = issues.length || a?.details?.visual?.length ? `<details class="more"><summary class="btn btn--text btn--s"><span>Подробности проверок</span></summary>
         ${issues.length ? `<ul class="checks">${issues.map((/** @type {any} */ r) => `<li><span class="badge badge--${r.status === 'FAIL' ? 'fail' : 'warn'}">${esc(r.status)}</span><span><b>${esc(r.id)}</b> ${esc(r.title)}<br><span class="data ink-3">${esc(typeof r.value === 'object' ? JSON.stringify(r.value) : r.value)}${r.threshold ? ` · ${esc(r.threshold)}` : ''}</span>${r.note ? `<br><span class="ink-3">${esc(r.note)}</span>` : ''}</span></li>`).join('')}</ul>` : ''}
         ${a?.details?.visual?.length ? `<p class="label">Проверить глазами</p><ul class="checks checks--eyes">${a.details.visual.map((/** @type {any} */ x) => `<li><span class="ink-3 data">${esc(x.id ?? `${x.doc} #${x.check}`)}</span><span>${esc(x.what)}</span></li>`).join('')}</ul>` : ''}
@@ -140,10 +180,10 @@ export async function openCard(collectionId, cardId, { version, wish: typed = ''
         ${details}
         ${running ? jobline(running) : busy.length ? `<div class="jobline panel"><i class="dot dot--work"></i><span class="jobline__title">Карточка занята</span><span class="lookline ink-2">идёт ${esc(busy.map(w => BUSY_WORDS[w] ?? w).join(', '))} — действия с карточкой подождут её конца</span></div>` : ''}
         <section class="cardp__sec" aria-label="Пожелание"><div class="field"><span class="label">Пожелание</span>
-          <span class="seg" role="group" data-wish-mode><button type="button" data-v="regenerate" aria-pressed="true">Сделать заново</button><button type="button" data-v="edit" aria-pressed="false" ${a?.files?.original ? '' : 'disabled'}>Поправить картинку</button></span>
+          <span class="seg" role="group" data-wish-mode><button type="button" data-v="regenerate" aria-pressed="${!edit}">Сделать заново</button><button type="button" data-v="edit" aria-pressed="${edit}" ${a?.files?.original ? '' : 'disabled'}>Поправить картинку</button></span>
           <textarea class="input" rows="2" data-wish placeholder="Например: поплавок крупнее, фон теплее">${esc(wish)}</textarea>
           ${textHelp('cardWish')}
-          <span class="field__hint" data-wish-hint>Карточка будет сгенерирована заново по своему заказу с вашим пожеланием и станет новой версией.</span></div>
+          <span class="field__hint" data-wish-hint>${esc(wishHint(edit))}</span></div>
           <div class="row"><button type="button" class="btn btn--secondary" data-wish-go ${off_}>${I.spark}Отправить</button></div>
         </section>
         <section class="cardp__sec" aria-label="Обработка"><div class="cardp__sec-head"><span class="label">Обработка версии ${a?.n ?? ''}</span></div>
@@ -168,14 +208,46 @@ export async function openCard(collectionId, cardId, { version, wish: typed = ''
     foot.innerHTML = canAdjust ? `<button type="button" class="btn btn--secondary" data-reset-all disabled title="Вернуть ползунки к сохранённой обработке этой версии">${I.reset}Сбросить</button><button type="button" class="btn btn--primary" data-apply disabled>Применить обработку</button>` : '';
     foot.hidden = !canAdjust;
 
-    // the image and the live preview
-    canvas = /** @type {HTMLCanvasElement} */ (body.querySelector('[data-canvas]'));
+    // the image and the live preview: the card's own image, until a slider moves; the preview is computed over the
+    // prepared image. The canvas drawn so far stays in place until the new image is decoded, so it does not blink.
+    const fresh = /** @type {HTMLCanvasElement} */ (body.querySelector('[data-canvas]'));
+    if (canvas && a?.files?.cardUrl) fresh.replaceWith(canvas); else canvas = fresh;
     ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d', { colorSpace: 'srgb' }));
     src = null;
-    const at = cur;
-    if (a?.files?.cardUrl) pixelsOf(a.files.cardUrl).then(p => { if (at !== cur || !canvas || !ctx || src) return; canvas.width = p.width; canvas.height = p.height; ctx.putImageData(new ImageData(p.pixels, p.width, p.height), 0, 0); }).catch(() => {});
-    if (canAdjust) pixelsOf(a.files.preparedUrl).then(p => { if (at === cur) src = p; }).catch(() => toast('Не получилось прочитать подготовленную картинку версии.', { kind: 'fail' }));
+    const my = ++renders;
+    if (a?.files?.cardUrl) pixels(a.files.cardUrl).then(p => { if (my === renders && !changed()) paint(p); }).catch(() => {});
+    if (canAdjust) pixels(a.files.preparedUrl).then(p => { if (my !== renders) return; src = p; if (changed()) draw(); }).catch(() => toast('Не получилось прочитать подготовленную картинку версии.', { kind: 'fail' }));
+    // the other versions' images, ready for the arrows
+    for (const x of versions) if (x.files?.cardUrl) pixels(x.files.cardUrl).catch(() => {});
     syncSliders();
+  }
+
+  let loads = 0;
+  /** what a reload overtaken by a newer one asked for, carried over to it @type {{version?: number|null, job?: any}} */
+  let asked = {};
+  /**
+   * Reads the card again and draws the panel over in place (it is not closed and opened again), keeping the wish
+   * typed and the scroll.
+   * @param {{version?: number|null, job?: any}} [o]  the version to show (null: the card; default: the one shown);
+   *   job: a job of this card just started here
+   */
+  async function reload(o = {}) {
+    asked = { ...asked, ...o };
+    const my = ++loads;
+    const got = await load();
+    if (my !== loads || !body.isConnected || !got[0] || !got[1]) return;
+    const { version: v, job } = asked;
+    asked = {};
+    wish = /** @type {HTMLTextAreaElement|null} */ (body.querySelector('[data-wish]'))?.value ?? wish;
+    take(got, job);
+    if (v !== undefined) cur = v;
+    if (!versions.some(a => a.n === cur)) cur = data.chosen ?? versions.at(-1)?.n ?? null;
+    const y = body.scrollTop;
+    const typing = /** @type {HTMLTextAreaElement|null} */ (body.querySelector('[data-wish]:focus'));
+    const caret = typing ? [typing.selectionStart, typing.selectionEnd] : null;
+    render();
+    body.scrollTop = y;
+    if (caret) { const w = /** @type {HTMLTextAreaElement} */ (body.querySelector('[data-wish]')); w.focus({ preventScroll: true }); w.setSelectionRange(caret[0], caret[1]); }
   }
 
   let frame = 0;
@@ -220,7 +292,6 @@ export async function openCard(collectionId, cardId, { version, wish: typed = ''
   });
 
   // ---------- actions ----------
-  const reopen = () => { wish = /** @type {HTMLTextAreaElement|null} */ (body.querySelector('[data-wish]'))?.value ?? wish; close(); openCard(collectionId, cardId, { version: cur ?? undefined, wish }); };
   /**
    * Runs one action on the card: refused while the card is busy or another action's call is under way, its buttons
    * held meanwhile.
@@ -258,16 +329,15 @@ export async function openCard(collectionId, cardId, { version, wish: typed = ''
     if (pick) { show(Number(pick.dataset.show)); return; }
     if (t.closest('[data-choose]')) {
       const r = await act(() => attempt(() => call('chooseAttempt', { collectionId, cardId, n: cur })));
-      if (r) { toast(`Версия ${cur} — теперь карточка.`, { kind: 'done' }); app.refresh(); reopen(); }
+      if (r) { toast(`Версия ${cur} — теперь карточка.`, { kind: 'done' }); app.refresh(); reload(); }
       return;
     }
     const mode = /** @type {HTMLElement|null} */ (t.closest('[data-wish-mode] > button'));
     if (mode) {
       e.preventDefault();
+      wishMode = /** @type {string} */ (mode.dataset.v);
       for (const b of /** @type {HTMLElement} */ (mode.parentElement).children) b.setAttribute('aria-pressed', String(b === mode));
-      /** @type {HTMLElement} */ (body.querySelector('[data-wish-hint]')).textContent = mode.dataset.v === 'edit'
-        ? `Картинка версии ${cur} уйдёт модели с вашим пожеланием: она поправит только то, о чём вы просите. Результат станет новой версией.`
-        : 'Карточка будет сгенерирована заново по своему заказу с вашим пожеланием и станет новой версией.';
+      /** @type {HTMLElement} */ (body.querySelector('[data-wish-hint]')).textContent = wishHint(wishMode === 'edit');
       return;
     }
     const reset = /** @type {HTMLElement|null} */ (t.closest('[data-reset]'));
@@ -275,12 +345,12 @@ export async function openCard(collectionId, cardId, { version, wish: typed = ''
     if (t.closest('[data-reset-all]')) { Object.assign(values, applied); syncSliders(); draw(); return; }
     if (t.closest('[data-apply]')) {
       const r = await act(() => attempt(() => call('adjustCard', { collectionId, cardId, n: cur, saturation: values.saturation, brightness: values.brightness, sharpen: values.sharpen, shadows: values.shadows })));
-      if (r) { toast('Обработка применена, версия проверена заново.', { kind: 'done' }); reopen(); }
+      if (r) { toast('Обработка применена, версия проверена заново.', { kind: 'done' }); reload(); }
       return;
     }
     if (t.closest('[data-auto]')) {
       const r = await act(() => attempt(() => call('adjustCard', { collectionId, cardId, n: cur, reset: true })));
-      if (r) { toast('Обработка снова подобрана программой, версия проверена заново.', { kind: 'done' }); reopen(); }
+      if (r) { toast('Обработка снова подобрана программой, версия проверена заново.', { kind: 'done' }); reload(); }
       return;
     }
     if (t.closest('[data-wish-go]')) {
@@ -288,14 +358,14 @@ export async function openCard(collectionId, cardId, { version, wish: typed = ''
       if (!text) { toast('Напишите пожелание: что изменить.', { kind: 'fail' }); return; }
       const edit = /** @type {HTMLElement} */ (body.querySelector('[data-wish-mode] [aria-pressed="true"]')).dataset.v === 'edit';
       const r = await act(() => attempt(() => call(edit ? 'editCard' : 'regenerateCard', { collectionId, cardId, wish: text, ...(edit ? { n: cur } : {}) })));
-      if (r) { /** @type {HTMLTextAreaElement} */ (body.querySelector('[data-wish]')).value = ''; reopen(); }
+      if (r) { /** @type {HTMLTextAreaElement} */ (body.querySelector('[data-wish]')).value = ''; reload({ job: r.job }); }
       return;
     }
     if (t.closest('[data-move]')) {
       const setId = /** @type {HTMLSelectElement} */ (body.querySelector('[data-move-set]')).value;
       const slot = Number(/** @type {HTMLSelectElement} */ (body.querySelector('[data-move-slot]')).value);
       const r = await act(() => attempt(() => call('moveCard', setId ? { collectionId, cardId, setId, slot } : { collectionId, cardId, pool: true })));
-      if (r !== undefined) { toast(setId ? 'Карточка перемещена.' : 'Карточка убрана в хранилище.', { kind: 'done' }); app.refresh(); reopen(); }
+      if (r !== undefined) { toast(setId ? 'Карточка перемещена.' : 'Карточка убрана в хранилище.', { kind: 'done' }); app.refresh(); reload(); }
       return;
     }
     if (t.closest('[data-export]')) { close(); openExport({ collection: col.collection, sets: col.sets, set: set ?? undefined, cardId, cardTitle: s.title }); return; }
@@ -316,17 +386,17 @@ export async function openCard(collectionId, cardId, { version, wish: typed = ''
       toast('Проверяю картинку: обрезка, контур, обработка, проверки…');
       return attempt(() => call('importImage', { collectionId, cardId, data: dataUrl }));
     });
-    if (r) { toast('Картинка добавлена новой версией.', { kind: 'done' }); cur = r.chosen; reopen(); }
+    if (r) { toast('Картинка добавлена новой версией.', { kind: 'done' }); reload({ version: r.chosen }); }
   });
 
   // ---------- live: the card changed elsewhere, or its job moved on ----------
   const off = onEvent(e => {
     if (!body.isConnected) return;
     if (e.type === 'job' && e.job.scope?.cardId === cardId) {
-      if (e.job.status !== 'running') { cur = null; reopen(); }
+      if (e.job.status !== 'running') reload({ version: null });
       else body.querySelector(`[data-jobline="${e.job.id}"]`)?.replaceWith(fromHtml(jobline(e.job)));
     }
-    // a job of this editor reopens the panel when it ends (above); a busy card reopens on its changes, so it frees itself
-    if (e.type === 'store' && e.entity === 'card' && e.id === cardId && !changed() && !running && !pending) reopen();
+    // a job of this editor reloads the panel when it ends (above); a busy card reloads on its changes, so it frees itself
+    if (e.type === 'store' && e.entity === 'card' && e.id === cardId && !changed() && !running && !pending) reload();
   });
 }
