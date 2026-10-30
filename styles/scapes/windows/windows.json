@@ -1,5 +1,5 @@
 {
-  "_about": "Geometry of the big set window of the Scapes style (5 x 2 slots), the single source the editor reads to lay a set over the window templates in this folder. Units: pixels of the template images (all four share one geometry and one size); x, y is the top-left corner. The images are the game window cropped to its outline and scaled by 0.8, so a 430 x 480 card is drawn at 344 x 384. Draw order: card images at slots[].card, then the template on top (its picture openings are transparent and its frame covers the card edges), then the texts. Text boxes are where lettering goes: height = the measured height of the original capitals with their outline, width = the free space; centre the text in the box and shrink it to fit the width. color = letter fill, stroke = letter outline; outlines that change with the window colour are in templates.<colour>. The plaque under each card is part of the template; the window colour labels are the style bible's names.",
+  "_about": "Geometry of the big set window of the Scapes style (5 x 2 slots), the single source the editor reads to lay a set over the window templates in this folder. Units: pixels of the template images (all four share one geometry and one size); x, y is the top-left corner. The images are the game window cropped to its outline and scaled by 0.8, so a 430 x 480 card is drawn at 344 x 384. Draw order: card images at slots[].card, then the template on top (its picture openings are transparent and its frame covers the card edges), then the texts. Text boxes are where lettering goes: height = the measured height of the original capitals with their outline, width = the free space; centre the text in the box and shrink it to fit the width. color = letter fill, stroke = letter outline; outlines that change with the window colour are in templates.<colour>. The plaque under each card is part of the template; the window colour labels are the style bible's names. Frames: the template draws every slot in the silver frame; a slot whose card has another frame (set-rules.json `frames`, SETS.md 4) gets that frame image from slots[].frames.<kind> drawn over the template at its own rectangle (template pixels, like the cards), before the texts. A frame image covers only the frame ring: the picture opening, the plaque (it keeps the window colour, SETS.md 4) and the stars stay the template's, so one image serves all four colours. The gold images are the reference gold frame (the five large reference windows, which show it on slots 7–10) laid on each slot's own silver geometry; the parts of the top bar the reference hides under 4–5 stars are carried over from the silver drawing.",
   "kind": "large",
   "size": {
     "width": 2920,
@@ -60,6 +60,11 @@
   "caption": {
     "color": "#ffffff"
   },
+  "frames": {
+    "gold": {
+      "label": "золотая"
+    }
+  },
   "slots": [
     {
       "n": 1,
@@ -75,6 +80,15 @@
         "y": 997,
         "width": 272,
         "height": 38
+      },
+      "frames": {
+        "gold": {
+          "file": "frames/gold-01.png",
+          "x": 355,
+          "y": 556,
+          "width": 411,
+          "height": 561
+        }
       }
     },
     {
@@ -91,6 +105,15 @@
         "y": 997,
         "width": 272,
         "height": 38
+      },
+      "frames": {
+        "gold": {
+          "file": "frames/gold-02.png",
+          "x": 806,
+          "y": 556,
+          "width": 410,
+          "height": 561
+        }
       }
     },
     {
@@ -107,6 +130,15 @@
         "y": 997,
         "width": 272,
         "height": 38
+      },
+      "frames": {
+        "gold": {
+          "file": "frames/gold-03.png",
+          "x": 1254,
+          "y": 556,
+          "width": 411,
+          "height": 561
+        }
       }
     },
     {
@@ -123,6 +155,15 @@
         "y": 997,
         "width": 272,
         "height": 38
+      },
+      "frames": {
+        "gold": {
+          "file": "frames/gold-04.png",
+          "x": 1704,
+          "y": 556,
+          "width": 410,
+          "height": 561
+        }
       }
     },
     {
@@ -139,6 +180,15 @@
         "y": 997,
         "width": 272,
         "height": 38
+      },
+      "frames": {
+        "gold": {
+          "file": "frames/gold-05.png",
+          "x": 2153,
+          "y": 557,
+          "width": 410,
+          "height": 560
+        }
       }
     },
     {
@@ -155,6 +205,15 @@
         "y": 1618,
         "width": 272,
         "height": 38
+      },
+      "frames": {
+        "gold": {
+          "file": "frames/gold-06.png",
+          "x": 355,
+          "y": 1180,
+          "width": 411,
+          "height": 558
+        }
       }
     },
     {
@@ -171,6 +230,15 @@
         "y": 1618,
         "width": 272,
         "height": 38
+      },
+      "frames": {
+        "gold": {
+          "file": "frames/gold-07.png",
+          "x": 806,
+          "y": 1198,
+          "width": 410,
+          "height": 540
+        }
       }
     },
     {
@@ -187,6 +255,15 @@
         "y": 1618,
         "width": 272,
         "height": 38
+      },
+      "frames": {
+        "gold": {
+          "file": "frames/gold-08.png",
+          "x": 1254,
+          "y": 1198,
+          "width": 411,
+          "height": 540
+        }
       }
     },
     {
@@ -203,6 +280,15 @@
         "y": 1618,
         "width": 272,
         "height": 38
+      },
+      "frames": {
+        "gold": {
+          "file": "frames/gold-09.png",
+          "x": 1704,
+          "y": 1220,
+          "width": 410,
+          "height": 518
+        }
       }
     },
     {
@@ -219,7 +305,371 @@
         "y": 1618,
         "width": 272,
         "height": 38
+      },
+      "frames": {
+        "gold": {
+          "file": "frames/gold-10.png",
+          "x": 2151,
+          "y": 1220,
+          "width": 411,
+          "height": 518
+        }
       }
     }
-  ]
+  ],
+  "families": {
+    "small": {
+      "_about": "The small window (set-rules.json windows.*.family = small): the same window, slots, texts and colours as the large one above, but every slot has its own star count, so its templates have no stars. Draw order: cards, the template, a gold frame where the card has one, the star image for the slot's count at slots[].card + (dx, dy), then the texts. The templates are the large ones with the stars removed (the frame top under the stars rebuilt from the clean frame of slot 1, the background under them filled smoothly); the star images are the large templates' own stars with their shadows, cut so that drawn over this template they give the large window back. The gold frames here have no star holes (the stars are drawn after them).",
+      "templates": {
+        "blue": {
+          "file": "small/blue.png"
+        },
+        "violet": {
+          "file": "small/violet.png"
+        },
+        "crimson": {
+          "file": "small/crimson.png"
+        },
+        "orange": {
+          "file": "small/orange.png"
+        }
+      },
+      "stars": {
+        "1": {
+          "file": "small/stars-1.png",
+          "dx": 116,
+          "dy": -72,
+          "width": 113,
+          "height": 127
+        },
+        "2": {
+          "file": "small/stars-2.png",
+          "dx": 74.8,
+          "dy": -67,
+          "width": 207,
+          "height": 122
+        },
+        "3": {
+          "file": "small/stars-3.png",
+          "dx": 21.4,
+          "dy": -72,
+          "width": 308,
+          "height": 146
+        },
+        "4": {
+          "file": "small/stars-4.png",
+          "dx": -19.4,
+          "dy": -67.6,
+          "width": 394,
+          "height": 198
+        },
+        "5": {
+          "file": "small/stars-5.png",
+          "dx": -32.8,
+          "dy": -74.6,
+          "width": 417,
+          "height": 205
+        }
+      },
+      "frames": {
+        "gold": [
+          {
+            "n": 1,
+            "file": "small/gold-01.png",
+            "x": 355,
+            "y": 556,
+            "width": 411,
+            "height": 561
+          },
+          {
+            "n": 2,
+            "file": "small/gold-02.png",
+            "x": 805,
+            "y": 556,
+            "width": 411,
+            "height": 561
+          },
+          {
+            "n": 3,
+            "file": "small/gold-03.png",
+            "x": 1254,
+            "y": 556,
+            "width": 411,
+            "height": 561
+          },
+          {
+            "n": 4,
+            "file": "small/gold-04.png",
+            "x": 1704,
+            "y": 556,
+            "width": 411,
+            "height": 561
+          },
+          {
+            "n": 5,
+            "file": "small/gold-05.png",
+            "x": 2153,
+            "y": 556,
+            "width": 411,
+            "height": 561
+          },
+          {
+            "n": 6,
+            "file": "small/gold-06.png",
+            "x": 355,
+            "y": 1178,
+            "width": 411,
+            "height": 560
+          },
+          {
+            "n": 7,
+            "file": "small/gold-07.png",
+            "x": 805,
+            "y": 1180,
+            "width": 411,
+            "height": 558
+          },
+          {
+            "n": 8,
+            "file": "small/gold-08.png",
+            "x": 1254,
+            "y": 1180,
+            "width": 411,
+            "height": 558
+          },
+          {
+            "n": 9,
+            "file": "small/gold-09.png",
+            "x": 1704,
+            "y": 1178,
+            "width": 411,
+            "height": 560
+          },
+          {
+            "n": 10,
+            "file": "small/gold-10.png",
+            "x": 2151,
+            "y": 1178,
+            "width": 411,
+            "height": 560
+          }
+        ]
+      }
+    },
+    "grand": {
+      "_about": "The grand window (family grand, SETS.md 4.3): its own window from the reference Summer Party screenshot, one colour, crystal frames and 5 stars on every slot baked in. Cropped to the window outline and scaled by 0.8 like the large one, so a card is drawn at 430 x 480 x 1.004 x 0.8 (the reference shows the cards 0.4 % larger). The picture openings (arched top) and the glass rim over the card were separated from the ten reference cards by solving the frame colour and coverage over them; captions, title, \"8/25\" and \"Set 16/16\" were removed (the plaque of the shortest word filled smoothly and repeated in all slots; the other texts filled from their surroundings). Text boxes and colours are measured like the large window's; this window's texts have a stroke (outline) colour each.",
+      "kind": "grand",
+      "size": {
+        "width": 2980,
+        "height": 2008
+      },
+      "templates": {
+        "crystal": {
+          "file": "grand.png",
+          "label": "кристальный",
+          "swatch": "#101e7c",
+          "progressStroke": "#06113d",
+          "captionStroke": "#3e1b5e"
+        }
+      },
+      "title": {
+        "x": 504,
+        "y": 80,
+        "width": 1980,
+        "height": 139.2,
+        "color": "#ffe30a",
+        "stroke": "#3f1594"
+      },
+      "number": {
+        "x": 1243,
+        "y": 1824,
+        "width": 496,
+        "height": 72,
+        "color": "#ffffff",
+        "stroke": "#000691"
+      },
+      "progress": {
+        "x": 1349,
+        "y": 408,
+        "width": 320,
+        "height": 52,
+        "color": "#ffffff"
+      },
+      "caption": {
+        "color": "#ffffff"
+      },
+      "slots": [
+        {
+          "n": 1,
+          "stars": 5,
+          "frame": "crystal",
+          "card": {
+            "x": 404.8,
+            "y": 600.8,
+            "width": 345.4,
+            "height": 385.5
+          },
+          "caption": {
+            "x": 443.2,
+            "y": 1014.4,
+            "width": 268.8,
+            "height": 39.2
+          }
+        },
+        {
+          "n": 2,
+          "stars": 5,
+          "frame": "crystal",
+          "card": {
+            "x": 864.2,
+            "y": 600.8,
+            "width": 345.4,
+            "height": 385.5
+          },
+          "caption": {
+            "x": 902.4,
+            "y": 1014.4,
+            "width": 268.8,
+            "height": 39.2
+          }
+        },
+        {
+          "n": 3,
+          "stars": 5,
+          "frame": "crystal",
+          "card": {
+            "x": 1323.4,
+            "y": 600.8,
+            "width": 345.4,
+            "height": 385.5
+          },
+          "caption": {
+            "x": 1361.6,
+            "y": 1014.4,
+            "width": 268.8,
+            "height": 39.2
+          }
+        },
+        {
+          "n": 4,
+          "stars": 5,
+          "frame": "crystal",
+          "card": {
+            "x": 1782.4,
+            "y": 600.8,
+            "width": 345.4,
+            "height": 385.5
+          },
+          "caption": {
+            "x": 1820.8,
+            "y": 1014.4,
+            "width": 268.8,
+            "height": 39.2
+          }
+        },
+        {
+          "n": 5,
+          "stars": 5,
+          "frame": "crystal",
+          "card": {
+            "x": 2241.6,
+            "y": 600.8,
+            "width": 345.4,
+            "height": 385.5
+          },
+          "caption": {
+            "x": 2280,
+            "y": 1014.4,
+            "width": 268.8,
+            "height": 39.2
+          }
+        },
+        {
+          "n": 6,
+          "stars": 5,
+          "frame": "crystal",
+          "card": {
+            "x": 405,
+            "y": 1234.4,
+            "width": 345.4,
+            "height": 385.5
+          },
+          "caption": {
+            "x": 443.2,
+            "y": 1648,
+            "width": 268.8,
+            "height": 39.2
+          }
+        },
+        {
+          "n": 7,
+          "stars": 5,
+          "frame": "crystal",
+          "card": {
+            "x": 864.2,
+            "y": 1234.4,
+            "width": 345.4,
+            "height": 385.5
+          },
+          "caption": {
+            "x": 902.4,
+            "y": 1648,
+            "width": 268.8,
+            "height": 39.2
+          }
+        },
+        {
+          "n": 8,
+          "stars": 5,
+          "frame": "crystal",
+          "card": {
+            "x": 1323.4,
+            "y": 1234.4,
+            "width": 345.4,
+            "height": 385.5
+          },
+          "caption": {
+            "x": 1361.6,
+            "y": 1648,
+            "width": 268.8,
+            "height": 39.2
+          }
+        },
+        {
+          "n": 9,
+          "stars": 5,
+          "frame": "crystal",
+          "card": {
+            "x": 1782.6,
+            "y": 1234.4,
+            "width": 345.4,
+            "height": 385.5
+          },
+          "caption": {
+            "x": 1820.8,
+            "y": 1648,
+            "width": 268.8,
+            "height": 39.2
+          }
+        },
+        {
+          "n": 10,
+          "stars": 5,
+          "frame": "crystal",
+          "card": {
+            "x": 2241.8,
+            "y": 1234.4,
+            "width": 345.4,
+            "height": 385.5
+          },
+          "caption": {
+            "x": 2280,
+            "y": 1648,
+            "width": 268.8,
+            "height": 39.2
+          }
+        }
+      ]
+    }
+  }
 }

@@ -39,7 +39,7 @@ The spec is JSON {"cards": [ {...}, ... ]}; one entry per card:
   camera     eye_level | high | low
   characters 0 | 1 | 2
   time       day | golden | dusk | night | n/a
-  sky_top    true when the top of the frame is day sky (enables COLOUR 14)
+  sky_top    true when the top of the frame is sky (with time day it enables COLOUR 14)
   hero_box   optional [x0,y0,x1,y1] px drawn by a person; used for composition instead of the mask
   mask       optional "confirmed" | "rejected": a person looked at the mask overlay (--overlays);
              rejected = mask-based checks are not measured (give hero_box for composition)
@@ -137,6 +137,19 @@ const boxOnly = /^(COMPOSITION\.(2|3|4a|4b|5b)|BACKGROUNDS\.(6c|6d|7a|9))$/;
  * environments it takes sky and water between the characters (measured on trial round 2); use only its box there. */
 export const outlineFits = staging => staging?.backdrop === 'field' || staging?.backdrop === 'wall';
 
+// ---------- busyness (RENDERING.18) ----------
+// Luma central differences gx = Y[x+1] − Y[x−1], gy = Y[y+1] − Y[y−1]; a pixel is strong when hypot(gx, gy) > stepMin.
+// Returns the share of strong pixels among the interior ones (no border row or column), in %, over the whole card.
+function busyness(Y, stepMin) {
+  let strong = 0, n = 0;
+  for (let y = 1; y < M.H - 1; y++) for (let x = 1; x < M.W - 1; x++) {
+    const p = y * M.W + x;
+    if (Math.hypot(Y[p + 1] - Y[p - 1], Y[p + M.W] - Y[p - M.W]) > stepMin) strong++;
+    n++;
+  }
+  return { strong_pct: M.r1(100 * strong / n) };
+}
+
 // ---------- one card ----------
 // card: one spec entry (see --help); baseDir: the folder card.file is relative to; overlaysDir: where to write
 // <id>.mask.png (optional); outline: the hero outline found outside the checker ({fg, box, confidence, boxConfidence}
@@ -230,11 +243,11 @@ export async function checkCard(card, { baseDir, overlaysDir, outline } = {}) {
       res.push(range('COLOUR.12', M.r2(wrong / n), { note: `${wrong} of ${n} shifts reversed` }));
     } else res.push(na('COLOUR.12', 'all hue families are within 15° of yellow or blue'));
   } else for (const id of ['COLOUR.11', 'COLOUR.12']) res.push(mask.ok ? nm(id, 'no hue family of 10 % of the hero') : nm(id, noHero));
-  if (s.sky_top) {
+  if (s.sky_top && s.time === 'day') {
     const t14 = T['COLOUR.14'], ts = wc.top_strip;
     const ok = inRange(ts.hue, t14.hue) && inRange(ts.C, t14.C);
     res.push(make('COLOUR.14', ok ? 'PASS' : 'FAIL', `top band ${ts.hex}: hue ${ts.hue}°, C* ${ts.C}`, `hue ${rangeText(t14.hue)}°, C* ${rangeText(t14.C)}`));
-  } else res.push(na('COLOUR.14', 'top of the frame is not day sky (sky_top not set)'));
+  } else res.push(na('COLOUR.14', s.sky_top ? `the sky at the top is not day sky (time ${s.time})` : 'top of the frame is not sky (sky_top not set)'));
   if (night) { res.push(range('COLOUR.15a', VALUE_OF['COLOUR.15a']({ wc }))); res.push(range('COLOUR.15b', VALUE_OF['COLOUR.15b']({ wc }))); }
   else for (const id of ['COLOUR.15a', 'COLOUR.15b']) res.push(na(id, 'not night or dusk'));
 
@@ -344,6 +357,11 @@ export async function checkCard(card, { baseDir, overlaysDir, outline } = {}) {
   const ov = M.overshoot(P); meas.overshoot = ov;
   { const t = T['RENDERING.17a']; const r = range('RENDERING.17a', VALUE_OF['RENDERING.17a']({ ov })); if (r.status === 'PASS' && ov.overshoot_med >= t.halo_warn) { r.status = 'WARN'; r.note = `≥ ${t.halo_warn}: visible halos, stronger than most reference cards`; } res.push(r); }
   res.push(range('RENDERING.17b', VALUE_OF['RENDERING.17b']({ ov }), { note: `${ov.steps} steps` }));
+  {
+    const b = busyness(P.Y, METHOD.busyness_luma_step_min); meas.busyness = b;
+    const g = chars ? 'scene' : abstract ? 'abstract' : 'environment', t = T['RENDERING.18'];
+    res.push(range('RENDERING.18', b.strong_pct, { ...t.groups[g], note: `group ${g}; ${t.note}` }));
+  }
 
   for (const r of res) if (restsOnUnconfirmedMask(r, hero))
     r.note = `${r.note ? r.note + '; ' : ''}rests on an unconfirmed mask: look at the overlay (--overlays)`;

@@ -69,3 +69,13 @@ test('живые события: пачка записей даёт одно с�
   await sleep(300);
   assert.equal(events.length, 1, events.map(key).join(', '));
 });
+
+test('живые события: файл в корне хранилища (журнал расходов) не роняет наблюдение', async t => {
+  const { store } = tempStore(t);
+  const { until } = listen(t, store, { debounceMs: 50 });
+  await sleep(100);
+  await store.recordSpend(null, { kind: 'text', what: 'text-help', model: 'm', usd: 0.001 });
+  await sleep(150);
+  const c = (await store.createCollection({ title: 'C' })).id;
+  await until([`collection:${c}/${c}:created`]);
+});

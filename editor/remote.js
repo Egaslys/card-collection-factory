@@ -58,7 +58,9 @@ export async function callEditor(editor, op, args = {}, { onLog, signal } = {}) 
  * the editor, with the editor's key. The terminal commands (ccf.mjs) call their operations through this.
  * @template T
  * @param {object} o
- * @param {boolean} o.needsKey  the run calls OpenRouter (an image or text model)
+ * @param {boolean} o.needsKey  the run calls OpenRouter (an image, text or vision model)
+ * @param {boolean} [o.optional]  the run can do without the key (it skips its vision steps): with no key here and no
+ *   editor running it runs here instead of failing
  * @param {string} o.envVar  the key's variable (settings provider.openrouter.keyEnvVar)
  * @param {string} o.op  the editor's operation (editor/server/ops.js)
  * @param {() => Record<string, unknown>} o.args  its arguments (built only when the call goes to the editor)
@@ -66,9 +68,10 @@ export async function callEditor(editor, op, args = {}, { onLog, signal } = {}) 
  * @param {AbortSignal} [o.signal]  the caller's stop; without one, Ctrl+C cancels the editor's job
  * @returns {Promise<T>}
  */
-export async function hereOrInEditor({ needsKey, envVar, op, args, here, signal }) {
+export async function hereOrInEditor({ needsKey, optional = false, envVar, op, args, here, signal }) {
   if (!needsKey || keyHere(envVar)) return here();
   const editor = await runningEditor();
+  if (!editor && optional) return here();
   if (!editor) {
     throw new Error(`Нет ключа ${envVar}. Положите постоянный ключ в файл .env проекта или запустите редактор (node ccf.mjs editor) и введите временный ключ в его настройках: тогда команда выполнится в редакторе с его ключом.`);
   }

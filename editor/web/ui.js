@@ -1,5 +1,7 @@
 // Shared pieces of the editor's page: escaping, icons, card thumbnails, check words, the sheet (a side panel over
-// the screen), toasts and dragging cards. The look comes only from design-system/components.css and editor.css.
+// the screen), toasts, dragging cards and the text help of free-text fields. The look comes only from
+// design-system/components.css and editor.css.
+import { call } from './api.js';
 
 /** @param {unknown} s */
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => /** @type {Record<string, string>} */ ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -22,6 +24,7 @@ export const I = {
   folder: svg('<path d="M1.75 4.25a1 1 0 0 1 1-1h3l1.5 1.5h6a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1H2.75a1 1 0 0 1-1-1z"/>'),
   download: svg('<path d="M8 2v8.5M4.75 7.5L8 10.75l3.25-3.25M2.75 13.25h10.5"/>'),
   back: svg('<path d="M10 3.5L5.5 8l4.5 4.5"/>'),
+  next: svg('<path d="M6 3.5L10.5 8 6 12.5"/>'),
   more: svg('<circle cx="3.5" cy="8" r=".9" fill="currentColor"/><circle cx="8" cy="8" r=".9" fill="currentColor"/><circle cx="12.5" cy="8" r=".9" fill="currentColor"/>'),
   trash: svg('<path d="M2.75 4.25h10.5M6.25 4.25V2.75h3.5v1.5M4 4.25l.75 9h6.5l.75-9"/>'),
   key: svg('<circle cx="5" cy="10.5" r="2.75"/><path d="M7 8.5l6-6M11 4.5l1.5 1.5M9.5 6l1.25 1.25"/>'),
@@ -35,6 +38,9 @@ export function setTheme(t) {
   try { localStorage.setItem('ccf-theme', t); } catch { /* private mode */ }
   for (const b of document.querySelectorAll('[data-theme-pick]')) b.setAttribute('aria-pressed', String(/** @type {HTMLElement} */ (b).dataset.themePick === t));
 }
+
+/** The model that made a card's version, as a person reads it: without its provider prefix; "agent" = an image handed in. @param {string} model */
+export const modelName = model => (model === 'agent' ? 'своя картинка' : model.replace(/^[\w.-]+\//, ''));
 
 /** USD with cents, or a dash. @param {number|null|undefined} v */
 export const usd = v => (v == null ? '—' : `$${v < 0.01 && v > 0 ? v.toFixed(4) : v.toFixed(2)}`);
@@ -69,14 +75,15 @@ export const badge = v => (v.kind ? `<span class="badge badge--${v.kind}" title=
 /**
  * A card thumbnail (design system «Card thumbnail»): the image is never covered; number, name and badge under it.
  * @param {any} c  CardSummary with imageUrl
- * @param {{n?: number|null, drag?: object|null, selected?: boolean}} [o]  drag: what the card is dragged from
+ * @param {{n?: number|null, drag?: object|null, selected?: boolean, note?: string}} [o]  drag: what the card is dragged
+ *   from; note: a quiet line under the name (which model made it, when two cards would otherwise look the same)
  */
-export function thumb(c, { n = null, drag = null, selected = false } = {}) {
+export function thumb(c, { n = null, drag = null, selected = false, note = '' } = {}) {
   const v = verdict(c.checks, c.status);
   const img = c.imageUrl ? `<img src="${esc(c.imageUrl)}" alt="" width="430" height="480" loading="lazy" decoding="async" draggable="false">` : `<span class="thumb__empty">${c.status === 'failed' ? I.alert : I.image}</span>`;
   return `<figure class="thumb" data-card="${esc(c.id)}" aria-selected="${selected}" tabindex="0" ${drag ? `data-drag='${esc(JSON.stringify({ card: c.id, ...drag }))}'` : ''}>
     <div class="thumb__img">${img}</div>
-    <figcaption class="thumb__cap"><span class="thumb__line">${n != null ? `<span class="thumb__num">${String(n).padStart(2, '0')}</span>` : ''}<span class="thumb__name" title="${esc(c.title)}">${esc(c.title)}</span></span>
+    <figcaption class="thumb__cap"><span class="thumb__line">${n != null ? `<span class="thumb__num">${String(n).padStart(2, '0')}</span>` : ''}<span class="thumb__name" title="${esc(c.title)}">${esc(c.title)}</span></span>${note ? `<span class="thumb__note data ink-3" title="${esc(note)}">${esc(note)}</span>` : ''}
       <span class="thumb__line">${badge(v)}<span class="thumb__check">${I.check}</span>${drag ? `<span class="thumb__grip" data-grip aria-hidden="true">${I.grip}</span>` : ''}</span></figcaption>
   </figure>`;
 }
@@ -154,6 +161,56 @@ export function toast(text, { kind = null, action, ms = 5000 } = {}) {
   if (action) t.querySelector('button')?.addEventListener('click', () => { action.run(); t.remove(); });
   host.append(t);
   setTimeout(() => t.remove(), kind === 'fail' ? Math.max(ms, 9000) : ms);
+}
+
+// ---------- text help: rough notes in a field → a finished text (core/text/draft.js) ----------
+
+/** Sent on the window after a paid call the page made outside a job (the text help): the spend line reads it again. */
+export const SPENT_EVENT = 'ccf:spent';
+
+/**
+ * The text help of one free-text field, placed in its `.field` after the input: «Сформулировать» sends what is
+ * written to the text model and puts the finished text in its place; «Вернуть как было» puts the notes back. Nothing
+ * is saved: the form the field belongs to saves it. The kinds: settings text.help.kinds.
+ * @param {string} kind
+ */
+export const textHelp = kind => `<span class="texthelp" data-texthelp="${esc(kind)}"><button type="button" class="btn btn--text btn--s" data-draft title="Модель сделает из ваших мыслей готовый текст; проверьте его перед сохранением">${I.spark}<span>Сформулировать</span></button><button type="button" class="btn btn--text btn--s" data-draft-undo hidden><span>Вернуть как было</span></button></span>`;
+
+/**
+ * Makes the text help under `root` work.
+ * @param {HTMLElement} root
+ * @param {() => {context?: Record<string, string|undefined>, collectionId?: string|null}} about  what the text belongs
+ *   to, read at the moment of the click
+ */
+export function bindTextHelp(root, about) {
+  root.addEventListener('click', async e => {
+    const t = /** @type {HTMLElement} */ (e.target);
+    const box = /** @type {HTMLElement|null} */ (t.closest('[data-texthelp]'));
+    if (!box) return;
+    e.preventDefault();
+    const field = /** @type {HTMLInputElement|HTMLTextAreaElement} */ (box.closest('.field')?.querySelector('textarea, input'));
+    const go = /** @type {HTMLButtonElement} */ (box.querySelector('[data-draft]'));
+    const undo = /** @type {HTMLButtonElement} */ (box.querySelector('[data-draft-undo]'));
+    if (t.closest('[data-draft-undo]')) { field.value = box.dataset.before ?? ''; undo.hidden = true; field.focus(); return; }
+    if (!t.closest('[data-draft]')) return;
+    const notes = field.value.trim();
+    if (!notes) { toast('Напишите мысли как есть — модель сформулирует из них текст.', { kind: 'fail' }); field.focus(); return; }
+    const label = /** @type {HTMLElement} */ (go.querySelector('span'));
+    go.disabled = true;
+    label.textContent = 'Формулирую…';
+    try {
+      const r = await call('draftText', { kind: box.dataset.texthelp, notes, ...about() });
+      box.dataset.before = field.value;
+      field.value = r.text;
+      undo.hidden = false;
+      dispatchEvent(new Event(SPENT_EVENT));
+    } catch (/** @type {any} */ err) {
+      toast(err?.message ?? String(err), { kind: 'fail' });
+    } finally {
+      go.disabled = false;
+      label.textContent = 'Сформулировать';
+    }
+  });
 }
 
 /** Runs an async action and shows its error as a toast. @param {() => Promise<unknown>} fn */

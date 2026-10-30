@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { ROOT } from './root.mjs';
-import { adjust, luma } from '../core/image/adjust.js';
+import { adjust, luma, SHADOW_REACH } from '../core/image/adjust.js';
 
 const neutral = () => JSON.parse(fs.readFileSync(path.join(ROOT, 'styles/scapes/processing.json'), 'utf8')).neutral;
 const withSettings = over => ({ ...neutral(), ...over });
@@ -52,6 +52,18 @@ test('adjust: резкость не трогает ровное поле, на �
   assert.equal(at(0, 0), 60, 'далеко от перепада без изменений');
   assert.equal(at(19, 2), 200, 'далеко от перепада без изменений');
   for (const x of [8, 9, 10, 11]) assert.equal(at(x, 2) - at(x, 0), 40, 'разница каналов (цвет) сохранена');
+});
+
+test('adjust: тени поднимают чёрный на заданное число уровней, тёмное почти так же, светлую половину не трогают, цвет не меняют', () => {
+  const px = Uint8Array.of(0, 0, 0, 20, 40, 10, 60, 60, 60, 128, 128, 128, 220, 100, 40);
+  const out = adjust(px, 5, 1, withSettings({ shadows: 20 }));
+  assert.deepEqual([...out.slice(0, 3)], [20, 20, 20], 'чёрный +20');
+  const dy = [0, 1, 2, 3, 4].map(p => luma(out[p * 3], out[p * 3 + 1], out[p * 3 + 2]) - luma(px[p * 3], px[p * 3 + 1], px[p * 3 + 2]));
+  assert.ok(dy[1] > 10 && dy[1] < 20 && dy[2] > 0 && dy[2] < dy[1], `подъём убывает к середине: ${dy.map(v => v.toFixed(1))}`);
+  assert.deepEqual([...out.slice(9)], [128, 128, 128, 220, 100, 40], `от ${SHADOW_REACH} и выше — как было`);
+  assert.equal(out[4] - out[3], 20, 'отличие цвета от яркости сохранено');
+  assert.deepEqual([...adjust(px, 5, 1, withSettings({ shadows: 0 }))], [...px], 'тени 0 — без изменений');
+  assert.throws(() => adjust(px, 5, 1, withSettings({ shadows: -1 })), /shadows/);
 });
 
 test('adjust: неверные настройки и размер отклоняются', () => {

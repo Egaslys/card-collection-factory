@@ -20,10 +20,10 @@ The JSDoc typedefs in `card-order.js` are the reference; allowed staging values 
 | `object` | short English name of the hero for the staging phrase («a single [object] …»); required for 1–4 |
 | `place`, `environment` | short place name and its English description (category 4 outdoors, scenes) |
 | `motif` | backdrop icon motif (pattern `motif_repeat`) |
-| `palette` | optional hero-against-backdrop colours, appended after the bible's colour phrase («Here: …») |
+| `palette` | optional hero-against-backdrop colours: on an abstract backdrop appended after the bible's colour phrase («Here: …»), on a wall as its own line («This card's colours: …»); any other staging leaves it out |
 | `staging` | see below |
 | `scene` | category 5 only: `theme`, `time` (words: "at sunset"), `action`, `item`, `joke`, `reactor`, `jokeObject`, `crop` (`hips` / `waist` / `knees`), `characters: [{ name, costume? }]` |
-| `promptExtra` | appended at the end; also lets a staging the bible has no fragment for pass validation |
+| `promptExtra` | appended at the end; also lets a staging the bible has no fragment for pass validation. In a set plan the slot's `wishes` are appended to it (`core/set/README.md`). Written as what is seen, not as prohibitions |
 | `promptOverride` | the prompt, verbatim; nothing is assembled (references are still picked) |
 | `references` | reference card numbers to attach instead of the picked ones |
 | `humanRequest` | the person's words when they asked for a staging no reference card shows; without it such a staging is an error (author's decision: the agent does not choose it on its own). What counts as one staging: `unseen_stagings` of `prompt-assembly.json` |

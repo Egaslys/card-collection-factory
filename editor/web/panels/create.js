@@ -1,20 +1,21 @@
 // Creating: a collection (with its description; optionally all 16 sets at once), a set inside a collection from a
-// free-text brief, the whole collection with one button, and editing what the collection is.
+// free-text brief, loose cards into the collection's pool, the whole collection with one button, and editing what the
+// collection is.
 import { call } from '../api.js';
-import { attempt, esc, I, openSheet, toast, usd } from '../ui.js';
+import { attempt, bindTextHelp, esc, I, openSheet, textHelp, toast, usd } from '../ui.js';
 import { app } from '../state.js';
 
 /** What a generation run will use and may spend, from the settings: one line for a person. */
-async function costLine(/** @type {'set'|'collection'} */ what) {
+async function costLine(/** @type {'set'|'collection'|'cards'} */ what) {
   const r = await attempt(() => call('getSettings'));
   if (!r) return '';
   const s = r.settings;
   const codex = s.provider.use === 'codex-cli';
   const model = codex ? 'Codex CLI (по подписке, без оплаты за картинку)' : s.provider.openrouter.model;
-  const cap = what === 'set' ? s.set.maxSpendUsd : s.set.maxSpendUsd * 16;
+  const cap = what === 'collection' ? s.set.maxSpendUsd * 16 : s.set.maxSpendUsd;
   const keyNeeded = app.key.source === 'none'
-    ? `<p class="field__hint field__hint--fail">${I.alert} Нет ключа OpenRouter: план набора пишет текстовая модель через OpenRouter. <button type="button" class="btn btn--text btn--s" data-open-key><span>Ввести ключ</span></button></p>` : '';
-  return `<div class="costline"><p class="field__hint">Картинки: ${esc(model)}${codex ? '' : ` · потолок расходов ${what === 'set' ? 'на набор' : 'на коллекцию'} ${usd(cap)}`}. План пишет ${esc(s.set.plan.model)} (до ${usd(s.set.plan.maxSpendUsd)}). Изменить — в настройках.</p>${keyNeeded}</div>`;
+    ? `<p class="field__hint field__hint--fail">${I.alert} Нет ключа OpenRouter: ${what === 'cards' ? 'заказы карточек' : 'план набора'} пишет текстовая модель через OpenRouter. <button type="button" class="btn btn--text btn--s" data-open-key><span>Ввести ключ</span></button></p>` : '';
+  return `<div class="costline"><p class="field__hint">Картинки: ${esc(model)}${codex ? '' : ` · потолок расходов ${{ set: 'на набор', cards: 'на карточки', collection: 'на коллекцию' }[what]} ${usd(cap)}`}. План пишет ${esc(s.set.plan.model)} (до ${usd(s.set.plan.maxSpendUsd)}). Изменить — в настройках.</p>${keyNeeded}</div>`;
 }
 
 /** @param {HTMLElement} sheet */
@@ -40,8 +41,8 @@ export async function openCreateCollection() {
     title: 'Новая коллекция',
     body: `<form class="form" data-form>
       <label class="field"><span class="field__label">Название</span><input class="input" name="title" required autofocus placeholder="Например, Летний отдых"></label>
-      <label class="field"><span class="field__label">Что это за коллекция</span><textarea class="input" name="description" rows="4" placeholder="Тема, настроение, для кого. Это описание — основа всех наборов"></textarea></label>
-      <label class="field"><span class="field__label">Пожелания</span><textarea class="input" name="wishes" rows="2" placeholder="Необязательно: что обязательно должно быть или чего избегать"></textarea></label>
+      <label class="field"><span class="field__label">Что это за коллекция</span><textarea class="input" name="description" rows="4" placeholder="Тема, настроение, для кого. Можно набросать мысли как есть — «Сформулировать» превратит их в описание. Это описание — основа всех наборов"></textarea>${textHelp('collection')}</label>
+      <label class="field"><span class="field__label">Пожелания</span><textarea class="input" name="wishes" rows="2" placeholder="Необязательно: что обязательно должно быть или чего избегать"></textarea>${textHelp('wishes')}</label>
       <div class="field"><span class="field__label">Как собирать</span>
         <div class="seg" role="group" data-seg="how"><button type="button" data-v="0" aria-pressed="true">По одному набору</button><button type="button" data-v="1" aria-pressed="false">Сразу все 16</button></div>
         <span class="field__hint" data-how-hint>Коллекция создаётся пустой; наборы вы создаёте сами, по одному.</span></div>
@@ -51,6 +52,7 @@ export async function openCreateCollection() {
   });
   bindSegs(sheet);
   const form = /** @type {HTMLFormElement} */ (sheet.querySelector('[data-form]'));
+  bindTextHelp(form, () => ({ context: { collection: String(new FormData(form).get('title') ?? ''), description: String(new FormData(form).get('description') ?? '') } }));
   const costEl = /** @type {HTMLElement} */ (sheet.querySelector('[data-cost]'));
   costEl.innerHTML = await costLine('collection');
   bindKeyLink(sheet);
@@ -83,8 +85,8 @@ export async function openCreateSet(col) {
   const { sheet, close } = openSheet({
     title: 'Новый набор',
     body: `<form class="form" data-form>
-      <label class="field"><span class="field__label">Тема набора</span><input class="input" name="theme" required autofocus placeholder="Например, рыбалка на озере"></label>
-      <label class="field"><span class="field__label">Пожелания</span><textarea class="input" name="wishes" rows="3" placeholder="Свободным текстом: что показать, чего избегать, какое настроение"></textarea></label>
+      <label class="field"><span class="field__label">Тема набора</span><input class="input" name="theme" required autofocus placeholder="Например, рыбалка на озере">${textHelp('setTheme')}</label>
+      <label class="field"><span class="field__label">Пожелания</span><textarea class="input" name="wishes" rows="3" placeholder="Свободным текстом: что показать, чего избегать, какое настроение"></textarea>${textHelp('wishes')}</label>
       <div class="field"><span class="field__label">Сколько вариантов</span>${variantsSeg(1)}<span class="field__hint">Каждый вариант — набор целиком; потом выберете лучший.</span></div>
       <div data-cost></div>
     </form>`,
@@ -92,6 +94,7 @@ export async function openCreateSet(col) {
   });
   bindSegs(sheet);
   const form = /** @type {HTMLFormElement} */ (sheet.querySelector('[data-form]'));
+  bindTextHelp(form, () => ({ collectionId: col.id, context: { collection: col.title, description: col.description, set: String(new FormData(form).get('theme') ?? '') } }));
   /** @type {HTMLElement} */ (sheet.querySelector('[data-cost]')).innerHTML = await costLine('set');
   bindKeyLink(sheet);
   sheet.querySelector('[data-submit]')?.addEventListener('click', async () => {
@@ -106,14 +109,49 @@ export async function openCreateSet(col) {
   });
 }
 
+/** Loose cards into the collection's pool: a theme, wishes, how many and how many scenes. @param {any} col */
+export async function openCreateCards(col) {
+  const { sheet, close } = openSheet({
+    title: 'Новые карточки',
+    body: `<form class="form" data-form>
+      <label class="field"><span class="field__label">О чём карточки</span><input class="input" name="theme" required autofocus placeholder="Например, снасти для рыбалки">${textHelp('cardsTheme')}</label>
+      <label class="field"><span class="field__label">Пожелания</span><textarea class="input" name="wishes" rows="3" placeholder="Свободным текстом: что показать, чего избегать, какое настроение"></textarea>${textHelp('wishes')}</label>
+      <div class="row row--fields">
+        <label class="field"><span class="field__label">Сколько карточек</span><input class="input data" name="count" type="number" min="1" max="40" step="1" value="5" inputmode="numeric"></label>
+        <label class="field"><span class="field__label">Из них сцен с персонажами</span><input class="input data" name="scenes" type="number" min="0" max="40" step="1" value="0" inputmode="numeric"></label>
+      </div>
+      <p class="field__hint">Карточки лягут в хранилище коллекции, вне наборов; оттуда их можно разложить по наборам.</p>
+      <div data-cost></div>
+    </form>`,
+    foot: `<button type="button" class="btn btn--secondary" data-close>Отмена</button><button type="button" class="btn btn--primary" data-submit>${I.spark}Создать карточки</button>`,
+  });
+  const form = /** @type {HTMLFormElement} */ (sheet.querySelector('[data-form]'));
+  bindTextHelp(form, () => ({ collectionId: col.id, context: { collection: col.title, description: col.description } }));
+  /** @type {HTMLElement} */ (sheet.querySelector('[data-cost]')).innerHTML = await costLine('cards');
+  bindKeyLink(sheet);
+  sheet.querySelector('[data-submit]')?.addEventListener('click', async () => {
+    const f = new FormData(form);
+    const theme = String(f.get('theme') ?? '').trim();
+    const count = Number(f.get('count')), scenes = Number(f.get('scenes'));
+    if (!theme) { /** @type {HTMLInputElement} */ (form.elements.namedItem('theme')).focus(); toast('Напишите, о чём карточки.', { kind: 'fail' }); return; }
+    if (!(Number.isInteger(count) && count >= 1)) { toast('Сколько карточек: целое число от 1.', { kind: 'fail' }); return; }
+    if (!(Number.isInteger(scenes) && scenes >= 0 && scenes <= count)) { toast(`Сцен с персонажами: от 0 до ${count}.`, { kind: 'fail' }); return; }
+    const r = await attempt(() => call('makeCards', { collectionId: col.id, theme, wishes: String(f.get('wishes') ?? '').trim(), count, scenes }));
+    if (!r) return;
+    close();
+    toast('Карточки создаются: сначала заказы, потом картинки. Они появятся в хранилище сами.');
+    app.refresh();
+  });
+}
+
 /** @param {any} col @param {number} have  sets the collection already has */
 export async function openBuildCollection(col, have) {
   const { sheet, close } = openSheet({
     title: 'Собрать все наборы',
     body: `<form class="form" data-form>
       <p class="ink-2">${have ? `В коллекции уже ${have} — модель допишет недостающие до 16, не повторяя то, что есть.` : 'Модель разделит тему на 16 наборов (последний — гранд-набор) и сделает все карточки.'}</p>
-      <label class="field"><span class="field__label">Видение коллекции</span><textarea class="input" name="theme" rows="5" autofocus>${esc(col.description || col.title)}</textarea><span class="field__hint">Описание коллекции; поправьте, если хотите сказать иначе.</span></label>
-      <label class="field"><span class="field__label">Пожелания</span><textarea class="input" name="wishes" rows="2">${esc(col.fields?.['Пожелания'] ?? '')}</textarea></label>
+      <label class="field"><span class="field__label">Видение коллекции</span><textarea class="input" name="theme" rows="5" autofocus>${esc(col.description || col.title)}</textarea>${textHelp('collection')}<span class="field__hint">Описание коллекции; поправьте, если хотите сказать иначе.</span></label>
+      <label class="field"><span class="field__label">Пожелания</span><textarea class="input" name="wishes" rows="2">${esc(col.fields?.['Пожелания'] ?? '')}</textarea>${textHelp('wishes')}</label>
       <div class="field"><span class="field__label">Вариантов каждого набора</span>${variantsSeg(1)}</div>
       <div data-cost></div>
     </form>`,
@@ -121,6 +159,7 @@ export async function openBuildCollection(col, have) {
   });
   bindSegs(sheet);
   const form = /** @type {HTMLFormElement} */ (sheet.querySelector('[data-form]'));
+  bindTextHelp(form, () => ({ collectionId: col.id, context: { collection: col.title, description: String(new FormData(form).get('theme') ?? '') } }));
   /** @type {HTMLElement} */ (sheet.querySelector('[data-cost]')).innerHTML = await costLine('collection');
   bindKeyLink(sheet);
   sheet.querySelector('[data-submit]')?.addEventListener('click', async () => {
@@ -141,7 +180,7 @@ export function openEditCollection(col) {
     title: 'Коллекция',
     body: `<form class="form" data-form>
       <label class="field"><span class="field__label">Название</span><input class="input" name="title" value="${esc(col.title)}" required></label>
-      <label class="field"><span class="field__label">Что это за коллекция</span><textarea class="input" name="description" rows="6">${esc(col.description)}</textarea></label>
+      <label class="field"><span class="field__label">Что это за коллекция</span><textarea class="input" name="description" rows="6">${esc(col.description)}</textarea>${textHelp('collection')}</label>
       <div class="field"><span class="field__label">Поля</span><div class="kvs" data-rows>${rows.map(([k, v]) => row(k, v)).join('')}</div>
         <button type="button" class="btn btn--text btn--s" data-add-row>${I.plus}<span>Добавить поле</span></button><span class="field__hint">Свои поля коллекции: сезон, аудитория, настроение — что угодно.</span></div>
       <details class="more"><summary class="btn btn--text btn--s"><span>Удалить коллекцию</span></summary>
@@ -151,6 +190,7 @@ export function openEditCollection(col) {
     foot: `<button type="button" class="btn btn--secondary" data-close>Отмена</button><button type="button" class="btn btn--primary" data-submit>Сохранить</button>`,
   });
   const rowsEl = /** @type {HTMLElement} */ (sheet.querySelector('[data-rows]'));
+  bindTextHelp(sheet, () => ({ collectionId: col.id, context: { collection: String(/** @type {HTMLInputElement} */ (sheet.querySelector('[name="title"]')).value) } }));
   sheet.addEventListener('click', async e => {
     const t = /** @type {HTMLElement} */ (e.target);
     if (t.closest('[data-add-row]')) { rowsEl.insertAdjacentHTML('beforeend', row()); /** @type {HTMLInputElement} */ (rowsEl.lastElementChild?.querySelector('input')).focus(); }

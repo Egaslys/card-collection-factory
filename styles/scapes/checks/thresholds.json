@@ -629,6 +629,19 @@
         "max": 3
       },
       "target_source": "RENDERING.md «Резкость при обработке: цель и начальные настройки»: the aim of the adjustment step, not a check"
+    },
+    "RENDERING.18": {
+      "doc": "RENDERING.md",
+      "check": 18,
+      "title": "busyness: share of the card's pixels on a strong luma step, %; norm and limit by staging group",
+      "groups": {
+        "abstract": { "norm": { "min": 3.7, "max": 10 }, "limit": { "max": 15.3 } },
+        "environment": { "norm": { "min": 4.8, "max": 13.6 }, "limit": { "max": 17.6 } },
+        "scene": { "norm": { "min": 7.3, "max": 12.1 }, "limit": { "max": 17.9 } }
+      },
+      "groups_rule": "characters > 0 → scene; otherwise backdrop field or wall → abstract; otherwise (environment, none) → environment",
+      "proposed": true,
+      "note": "busier than the references: small detail on the ground, foliage or props (tiny flowers, photo-like pebbles) instead of a few large soft masses — check by eye"
     }
   },
   "visual": [
@@ -890,6 +903,10 @@
     "compare_at_bible_precision": {
       "value": true,
       "source": "script: a measured value is rounded to the decimals of the bible threshold before comparing (the bible gives 15 rays for a measured 15.1 on #11, 46 % for a measured 45.8 % on #32)"
+    },
+    "busyness_luma_step_min": {
+      "value": 30,
+      "source": "RENDERING.md check 18 (2026-10-30): a pixel is on a strong luma step when hypot(gx, gy) of the luma central differences (gx = Y[x+1] − Y[x−1], gy = Y[y+1] − Y[y−1], luma as in measures.mjs) is above this; the value the comparison of factory cards with the references used, not tuned further"
     },
     "known_measure_failures": {
       "value": {

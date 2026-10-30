@@ -3,7 +3,7 @@
 // screen), and live updates: whatever an agent or another window writes appears here by itself.
 import { loadDesign } from '/design-system/tokens.js';
 import { call, connect, jobs, onEvent } from './api.js';
-import { attempt, closeSheet, enableDrag, esc, fromHtml, I, jobline, setTheme, toast } from './ui.js';
+import { attempt, closeSheet, enableDrag, esc, fromHtml, I, jobline, setTheme, SPENT_EVENT, toast, usd } from './ui.js';
 import * as collections from './screens/collections.js';
 import * as collection from './screens/collection.js';
 import * as setScreen from './screens/set.js';
@@ -56,7 +56,39 @@ async function refresh() {
   appEl.innerHTML = `${topbar(screen)}<main class="screen">${screen.html}</main>`;
   screen.mount?.(/** @type {HTMLElement} */ (appEl.querySelector('.screen')));
   if (same) scrollTo(0, y); else scrollTo(0, 0);
+  readSpend();
 }
+
+// ---------- what has been spent: the open collection's, or the factory's on the collections screen ----------
+
+/** @type {{scope: string, spend: any}|null} */
+let spent = null;
+/** Asks for the spend of what the screen shows and redraws its line. */
+async function readSpend() {
+  const scope = spendScope();
+  const r = await call('spend', scope ? { collectionId: scope } : {}).catch(() => null);
+  if (!r || scope !== spendScope()) return;
+  spent = { scope, spend: r };
+  const bar = appEl.querySelector('.topbar');
+  const fresh = fromHtml(spendLine());
+  const old = bar?.querySelector('[data-spend]');
+  if (old) old.replaceWith(fresh); else bar?.querySelector('[data-open-settings="key"]')?.before(fresh);
+}
+
+/** The scope of the spend the current screen shows: its collection, or '' for the factory. */
+const spendScope = () => (app.route[0] === 'c' ? app.route[1] ?? '' : '');
+
+function spendLine() {
+  const sp = spent?.scope === spendScope() ? spent.spend : null;
+  if (!sp) return '<span class="spend" data-spend hidden></span>';
+  const whose = spent?.scope ? 'на эту коллекцию' : 'всей фабрикой';
+  const title = `Потрачено ${whose}: картинки ${usd(sp.images)}, текст ${usd(sp.text)}, взгляд смотрящей модели ${usd(sp.vision)}${sp.unknown ? `; ещё ${sp.unknown} — цена неизвестна` : ''}`;
+  return `<span class="spend data" data-spend role="status" title="${esc(title)}" aria-label="${esc(title)}">
+    <span class="spend__part hide-m">Картинки ${usd(sp.images)}</span><span class="spend__part hide-m">Текст ${usd(sp.text)}</span><span class="spend__part hide-m">Взгляд ${usd(sp.vision)}</span><span>${spent?.scope ? 'Всего' : 'Фабрика'} ${usd(sp.total)}</span></span>`;
+}
+let spendTimer = /** @type {number|undefined} */ (undefined);
+const spendSoon = () => { clearTimeout(spendTimer); spendTimer = setTimeout(readSpend, 600); };
+addEventListener(SPENT_EVENT, spendSoon);
 
 /** @param {Screen} s */
 function topbar(s) {
@@ -68,7 +100,7 @@ function topbar(s) {
   const back = s.where.length > 1 ? `<a class="btn btn--secondary btn--icon btn--s topbar__back" href="${esc(s.where[s.where.length - 2].href ?? '#/')}" aria-label="Назад">${I.back}</a>` : '';
   return `<div class="bar"><div class="topbar glass">
     ${back}<nav class="topbar__where" aria-label="Где вы">${where}</nav>
-    ${keyChip()}${jobsChip()}
+    ${spendLine()}${keyChip()}${jobsChip()}
     <div class="seg seg--icon hide-s" role="group" aria-label="Тема"><button type="button" data-theme-pick="light" aria-pressed="${document.documentElement.dataset.theme !== 'dark'}" aria-label="Светлая тема">${I.sun}</button><button type="button" data-theme-pick="dark" aria-pressed="${document.documentElement.dataset.theme === 'dark'}" aria-label="Тёмная тема">${I.moon}</button></div>
     <button type="button" class="btn btn--secondary btn--icon" data-open-settings aria-label="Настройки">${I.gear}</button>
     ${s.primary ? `<button type="button" class="btn btn--primary" data-primary>${s.primary.icon ?? ''}<span class="hide-s">${esc(s.primary.label)}</span></button>` : ''}
@@ -79,7 +111,7 @@ function keyChip() {
   const k = app.key;
   const word = !app.online ? 'Редактор не отвечает' : k.source === 'none' ? 'Нет ключа' : k.source === 'temporary' ? 'Временный ключ' : 'Ключ';
   const bad = !app.online || k.source === 'none';
-  return `<button type="button" class="chip${bad ? ' chip--fail' : ''}" data-open-settings="key" title="${esc(bad ? 'Без ключа OpenRouter генерация через OpenRouter не работает. Нажмите, чтобы ввести ключ.' : `Ключ OpenRouter${k.hint ? ` …${k.hint}` : ''}`)}"><i class="dot ${bad ? 'dot--fail' : 'dot--done'}"></i><span class="chip__text">${word}</span></button>`;
+  return `<button type="button" class="chip${bad ? ' chip--fail' : ''}" data-open-settings="key" title="${esc(bad ? 'Без ключа OpenRouter генерация через OpenRouter не работает. Нажмите, чтобы ввести ключ.' : k.source === 'temporary' ? 'Временный ключ OpenRouter: живёт, пока запущен редактор' : 'Постоянный ключ OpenRouter из файла .env')}"><i class="dot ${bad ? 'dot--fail' : 'dot--done'}"></i><span class="chip__text">${word}</span></button>`;
 }
 
 function jobsChip() {
@@ -135,6 +167,7 @@ onEvent(e => {
   if (e.type === 'job') {
     const j = e.job;
     redrawChips();
+    if (j.status !== 'running') spendSoon();
     if (j.status === 'done' && !j.warnings?.length) toast(`Готово: ${j.title}`, { kind: 'done' });
     if (j.status === 'done' && j.warnings?.length) toast(`Готово с оговорками: ${j.title}. ${j.warnings[0]}`, { kind: 'fail', action: { label: 'Подробности', run: openJobs } });
     if (j.status === 'failed') toast(`Не получилось: ${j.title}. ${j.error ?? ''}`, { kind: 'fail', action: { label: 'Подробности', run: openJobs } });
@@ -144,6 +177,7 @@ onEvent(e => {
     else if (app.screen?.affects?.({ type: 'job', ...j.scope })) schedule();
     return;
   }
+  if (e.type === 'store') spendSoon();
   if (e.type === 'store' && app.screen?.affects?.(e)) schedule();
 });
 function schedule() {

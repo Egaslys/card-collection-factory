@@ -1,16 +1,20 @@
-// Post-processing of a card: brightness, saturation, sharpening. Pure functions over 8-bit RGB or RGBA pixels,
-// with no Node or library imports, so the same code runs in Node and on the editor page and the editor's preview
-// equals the final card. The settings come from the caller; a style keeps its values in its own folder
+// Post-processing of a card: brightness, shadow lift, saturation, sharpening. Pure functions over 8-bit RGB or RGBA
+// pixels, with no Node or library imports, so the same code runs in Node and on the editor page and the editor's
+// preview equals the final card. The settings come from the caller; a style keeps its values in its own folder
 // (styles/<style>/processing.json).
 //
 // Every operation works on luma and keeps the colour difference, as an editor's luma sharpening does:
 //   luma Y = 0.299 R + 0.587 G + 0.114 B (BT.601, the luma the style checks measure);
 //   adding the same d to R, G and B shifts Y by d and keeps Cb / Cr; R - Y, G - Y, B - Y scaled by s scale Cb / Cr by s.
-// Order: brightness, then saturation, then sharpening; values stay floating-point until the one rounding at the end.
+// Shadow lift is a tone curve on luma: Y gains shadows * (1 - Y / SHADOW_REACH)² below SHADOW_REACH, nothing above,
+// so black rises by `shadows` levels, the darkest tones nearly as much, mid-tones and highlights not at all.
+// Order: brightness, then shadows, then saturation, then sharpening; values stay floating-point until the one
+// rounding at the end.
 
 /**
  * @typedef {object} AdjustSettings
  * @property {number} brightness  levels (0..255 scale) added to luma; 0 = unchanged
+ * @property {number} [shadows]  levels added to black by the shadow lift; 0 or absent = unchanged
  * @property {number} saturation  multiplier of the colour difference from luma; 1 = unchanged, 0 = grey
  * @property {{amount: number, radius: number}} sharpen  unsharp mask on luma: Y + amount * (Y - blur(Y)),
  *   blur = Gaussian with sigma = radius px (truncated at 3 sigma); amount 0 = unchanged
@@ -31,11 +35,16 @@ export function adjust(pixels, width, height, settings) {
   }
   checkSettings(settings);
   const { brightness, saturation, sharpen } = settings;
+  const shadows = settings.shadows ?? 0;
   const rgb = new Float32Array(n * 3), Y = new Float32Array(n);
   for (let p = 0; p < n; p++) {
     const i = p * channels;
-    const r = pixels[i] + brightness, g = pixels[i + 1] + brightness, b = pixels[i + 2] + brightness;
-    const y = luma(r, g, b);
+    let r = pixels[i] + brightness, g = pixels[i + 1] + brightness, b = pixels[i + 2] + brightness;
+    let y = luma(r, g, b);
+    if (shadows !== 0 && y < SHADOW_REACH) {
+      const d = shadows * shadowWeight(y);
+      r += d; g += d; b += d; y += d;
+    }
     const r1 = clamp(y + saturation * (r - y)), g1 = clamp(y + saturation * (g - y)), b1 = clamp(y + saturation * (b - y));
     rgb[p * 3] = r1; rgb[p * 3 + 1] = g1; rgb[p * 3 + 2] = b1;
     // sharpening works on the luma of the colour as it will be shown: a colour pushed out of range is clipped first
@@ -59,6 +68,12 @@ export function adjust(pixels, width, height, settings) {
 
 /** @param {number} r @param {number} g @param {number} b */
 export const luma = (r, g, b) => 0.299 * r + 0.587 * g + 0.114 * b;
+
+/** The luma (0..255) up to which the shadow lift reaches: the darker half of the tones. */
+export const SHADOW_REACH = 128;
+
+/** How much of the shadow lift a luma gets: 1 at black, falling smoothly to 0 at SHADOW_REACH. @param {number} y */
+const shadowWeight = y => { const t = 1 - Math.max(0, y) / SHADOW_REACH; return t * t; };
 
 /** @param {number} v */
 const clamp = v => (v < 0 ? 0 : v > 255 ? 255 : v);
@@ -104,6 +119,7 @@ function gaussianKernel(sigma) {
 function checkSettings(s) {
   const bad = [];
   if (!Number.isFinite(s?.brightness)) bad.push('brightness');
+  if (s?.shadows !== undefined && !(Number.isFinite(s.shadows) && s.shadows >= 0)) bad.push('shadows');
   if (!Number.isFinite(s?.saturation) || s.saturation < 0) bad.push('saturation');
   if (!Number.isFinite(s?.sharpen?.amount) || s.sharpen.amount < 0) bad.push('sharpen.amount');
   if (!Number.isFinite(s?.sharpen?.radius) || s.sharpen.radius <= 0) bad.push('sharpen.radius');

@@ -18,9 +18,10 @@
 // prepared.png and card.png have the model image's size, not the card size, and check.json holds only the list of
 // checks for eyes (`visual`, no `results`): no pixel checks run, so nothing blocks.
 //
-// Who chooses the card: the checks (the best attempt, `chosenBy` "checks") or an explicit request of a person or an
-// agent (regenerate with a wish, edit, import: the best of the attempts the request made, `chosenBy` "request");
-// a choice by request is kept when the checks run again.
+// Every attempt is a version of the card (version n = attempt n). Who chooses the card: the checks (the best attempt,
+// `chosenBy` "checks"), an explicit request of a person or an agent (regenerate with a wish, edit, import: the best of
+// the attempts the request made, `chosenBy` "request"), or a person or an agent picking a version by hand
+// (`chooseAttempt`, `chosenBy` "choice"); a choice by request or by hand is kept when the checks run again.
 //
 // collections/ is not tracked by Git (VISION.md «Устройство и стек»).
 import fs from 'node:fs';
@@ -96,6 +97,13 @@ export const ATTEMPT_FILES = { original: 'model', prepared: 'prepared.png', card
 export const attemptCost = a => (a.cost ?? 0) + (a.hero?.cost ?? 0) + (a.look?.cost ?? 0);
 
 /**
+ * The same USD split by kind: `images` the image (0 for a free provider and an imported image), `vision` the vision
+ * model's calls (hero and look).
+ * @param {Attempt} a @returns {{images: number, vision: number}}
+ */
+export const attemptSpend = a => ({ images: a.cost ?? 0, vision: (a.hero?.cost ?? 0) + (a.look?.cost ?? 0) });
+
+/**
  * @typedef {object} Attempt
  * @property {number} n
  * @property {string} at  ISO time the generation was requested
@@ -123,7 +131,8 @@ export const attemptCost = a => (a.cost ?? 0) + (a.hero?.cost ?? 0) + (a.look?.c
  * @property {import('../style/card-order.js').CardOrder} order  the current order; each attempt keeps its own prompt
  * @property {Attempt[]} attempts
  * @property {number|null} chosen  n of the chosen attempt (card.png is its copy)
- * @property {'checks'|'request'} [chosenBy]  absent = checks
+ * @property {'checks'|'request'|'choice'} [chosenBy]  absent = checks; choice = a person or an agent made this
+ *   version the card (`chooseAttempt`)
  */
 
 /** @param {string} dir @param {number} n */

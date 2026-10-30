@@ -6,9 +6,10 @@
 //
 // A person's (or an agent's) requests on a made card, the editor's buttons: regenerate with a wish (the order plus
 // their words), edit (the card's model image goes to the provider as the input image with their words), adjust
-// (post-processing set by hand), import (an image the agent drew with its own tool). They make one attempt unless told
-// otherwise, and their result becomes the card even when an earlier attempt passes more checks: the person's word
-// outranks the rules (VISION.md «Слово человека — главное»).
+// (post-processing set by hand, or reset to the program's own), import (an image the agent drew with its own tool,
+// checked as strictly as a generated one), choose (make any earlier version — attempt — the card). They make one
+// attempt unless told otherwise, and their result becomes the card even when an earlier attempt passes more checks:
+// the person's word outranks the rules (VISION.md «Слово человека — главное»).
 //
 // Outline policy. Many checks need the hero separated from the backdrop. Each attempt's hero outline is cut in a box
 // (hero.js, GrabCut): the box an agent or a person gave (`card check --hero-box`), else the box the vision model of the
@@ -34,6 +35,7 @@ import path from 'node:path';
 import { adjust } from '../image/adjust.js';
 import { encodePng, prepareCard } from '../image/prepare.js';
 import * as codexCli from '../providers/codex-cli.js';
+import { profileOf, requestFor } from '../providers/models.js';
 import * as openrouter from '../providers/openrouter.js';
 import { ROOT } from '../settings.js';
 import { orderOutput, validateOrder } from '../style/card-order.js';
@@ -56,13 +58,14 @@ import { tuneProcessing } from './tune.js';
  * The image provider of a run. model: the id recorded in the attempts and used to pick post-processing;
  * free: the provider takes no payment per image (its cost is recorded as 0); generate: one image for the prompt,
  * answering like core/providers/openrouter.js generateImage.
- * aspectRatio: the order kind's own frame, else the provider settings'. fallback: the provider to try, in the same
+ * aspectRatio: the order kind's own frame, else the provider settings'; crop: the card size the image will be cut to, when
+ * it is (a model that lacks the ratio is asked for the one closest to it). fallback: the provider to try, in the same
  * attempt, when this one fails (an error, a refusal, an answer without an image). legend: what the attached images
  * are, for a provider that says it in words (Codex); default: style references. vision: asks a vision model about one
  * image through the same connection (OpenRouter-compatible, with its key); absent when there is no key — the loop then
  * finds no hero box by itself and does not look (settings → vision, hero, look).
  * @typedef {{model: string, free?: boolean, fallback?: Provider, vision?: VisionCall,
- *   generate: (req: {prompt: string, references: {path: string}[], aspectRatio?: string, legend?: string}) => Promise<{bytes: Uint8Array, mime?: string, cost: number|null}>}} Provider
+ *   generate: (req: {prompt: string, references: {path: string}[], aspectRatio?: string, legend?: string, crop?: {width: number, height: number}}) => Promise<{bytes: Uint8Array, mime?: string, cost: number|null}>}} Provider
  */
 
 /**
@@ -124,7 +127,10 @@ const EXT_BY_MIME = /** @type {Record<string, string>} */ ({ 'image/png': '.png'
 const MIME_BY_EXT = /** @type {Record<string, string>} */ ({ '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' });
 /** The model recorded for an image an agent made with its own tool (`importImage`); the style's processing start has an entry for it. */
 export const AGENT_MODEL = 'agent';
+/** The key of Codex's profile in provider.models. */
+const CODEX_PROFILE = 'codex-cli';
 const EPSILON_USD = 1e-9;
+const NO_VISION = 'Смотрящая модель не спрошена (нет ключа OpenRouter): рамку героя для проверок даёт только агент или человек, взгляда на карточку нет.';
 
 /**
  * Whether the loop may make one more paid call, or why not.
@@ -177,12 +183,29 @@ export function processingFor({ style, model, settings }) {
 async function tuneFor({ order, card, start, fg, outline = 'confirmed' }) {
   const checker = await styleChecker(order.style);
   const own = styleProcessing(order.style);
-  const bounds = { ...own.bounds, sharpen: { ...own.bounds.sharpen, max: own.sharpen_amount_max } };
+  const lift = shadowLiftFor(own, order.staging ?? {});
+  const { shadows: shadowAxis, ...axes } = own.bounds;
+  const bounds = { ...axes, sharpen: { ...own.bounds.sharpen, max: own.sharpen_amount_max }, ...(lift ? { shadows: shadowAxis } : {}) };
+  const ids = [...own.tune_checks, ...(lift ? [lift.check] : [])];
   return tuneProcessing({
     ...card, start, neutral: own.neutral, bounds,
     basis: fg ? `whole card + backdrop (${outline} outline)` : 'whole card',
-    measure: (rgb, prefix) => checker.processingMeasures(rgb, { staging: order.staging ?? {}, ids: own.tune_checks.filter((/** @type {string} */ id) => !prefix || id.startsWith(prefix)), fg }),
+    measure: (rgb, prefix) => checker.processingMeasures(rgb, { staging: order.staging ?? {}, ids: ids.filter(id => !prefix || id.startsWith(prefix)), fg })
+      .map(m => (lift && m.id === lift.check ? { ...m, aim: lift.aim } : m)),
   });
+}
+
+/**
+ * The style's shadow lift for a staging (processing.json `shadows`: the check it moves, the aim, and `when` — staging
+ * fields with a lower bound, e.g. scenes: characters ≥ 1), or null when the staging does not match or the style has none.
+ * @param {any} own  processing.json @param {Record<string, any>} staging
+ * @returns {{check: string, aim: {min?: number, max?: number}}|null}
+ */
+export function shadowLiftFor(own, staging) {
+  const s = own.shadows;
+  if (!s || !own.bounds?.shadows) return null;
+  const fits = Object.entries(s.when ?? {}).every(([field, b]) => typeof staging[field] === 'number' && staging[field] >= (/** @type {any} */ (b).min ?? -Infinity));
+  return fits ? { check: s.check, aim: s.aim } : null;
 }
 
 /** @param {string} file @returns {Promise<{pixels: Uint8Array, width: number, height: number}>} */
@@ -192,48 +215,75 @@ async function readPixels(file) {
 
 /**
  * The provider chosen in the settings (provider.use); for OpenRouter with `fallbackModel` set, that model is the
- * fallback of the main one. The OpenRouter key is read from the environment or .env, never printed, unless the caller
+ * fallback of the main one (`model` replaces the main one for this run). Each model is asked through its profile
+ * (provider.models, core/providers/models.js): the ratio it accepts closest to the wanted one, its own request fields,
+ * no more input images than it takes. The OpenRouter key is read from the environment or .env, never printed, unless the caller
  * holds it (a running editor's temporary key). With a key, the provider also carries `vision` through
  * provider.openrouter's endpoint — for Codex too, whose images need no key: without one it has no `vision`.
  * @param {import('../settings.js').ProviderSettings} settings
- * @param {{apiKey?: string}} [o]
+ * @param {{apiKey?: string, model?: string}} [o]  model: the OpenRouter model of this run instead of provider.openrouter.model
  * @returns {Provider}
  */
-export function providerFrom(settings, { apiKey: held } = {}) {
+export function providerFrom(settings, { apiKey: held, model: chosen } = {}) {
   const o = settings.openrouter;
-  /** @param {string} apiKey @returns {VisionCall} */
-  const visionWith = apiKey => ({ model, prompt, image, maxTokens, reasoning, timeoutMs }) => openrouter.askVision({
-    endpoint: o.endpoint, apiKey, model, prompt, image, maxTokens, reasoning, net: { timeoutMs, retries: o.retries, backoffMs: o.backoffMs },
-  });
   if (settings.use === 'codex-cli') {
+    if (chosen) throw new Error(`Модель ${chosen} выбирается только у OpenRouter; Codex рисует своей (provider.codexCli.model).`);
     const c = settings.codexCli;
-    let key = held;
-    try { key ??= openrouter.loadApiKey({ envVar: o.keyEnvVar }); } catch { /* no key: Codex draws without one, nothing looks */ }
+    const profile = profileOf(settings.models, CODEX_PROFILE);
+    const vision = visionFrom(settings, { apiKey: held });
     return {
       model: 'codex-cli' + (c.model ? `/${c.model}` : ''), free: true,
-      generate: ({ prompt, references, aspectRatio, legend }) => codexCli.generateImage({ settings: c, prompt, references, aspectRatio: aspectRatio ?? c.aspectRatio, legend }),
-      ...(key ? { vision: visionWith(key) } : {}),
+      generate: async ({ prompt, references, aspectRatio, legend, crop }) => codexCli.generateImage({
+        settings: c, prompt, references, legend,
+        aspectRatio: requestFor(profile, { model: CODEX_PROFILE, aspectRatio: aspectRatio ?? c.aspectRatio, references: references.length, crop }).aspectRatio,
+      }),
+      ...(vision ? { vision } : {}),
     };
   }
   if (settings.use !== 'openrouter') throw new Error(`Настройки: неизвестный провайдер provider.use = «${settings.use}» (есть openrouter и codex-cli).`);
   const apiKey = held ?? openrouter.loadApiKey({ envVar: o.keyEnvVar });
   const net = { timeoutMs: o.timeoutMs, retries: o.retries, backoffMs: o.backoffMs };
   /** @param {string} model @returns {Provider} */
-  const on = model => ({
-    model,
-    generate: ({ prompt, references, aspectRatio }) => openrouter.generateImage({
-      endpoint: o.endpoint, apiKey, model, prompt, references, aspectRatio: aspectRatio ?? o.aspectRatio, resolution: o.resolution, params: o.params, net,
-    }),
-  });
-  return { ...on(o.model), ...(o.fallbackModel ? { fallback: on(o.fallbackModel) } : {}), vision: visionWith(apiKey) };
+  const on = model => {
+    const profile = profileOf(settings.models, model);
+    return {
+      model,
+      generate: async ({ prompt, references, aspectRatio, crop }) => {
+        const r = requestFor(profile, { model, aspectRatio: aspectRatio ?? o.aspectRatio, references: references.length, crop });
+        return openrouter.generateImage({ endpoint: o.endpoint, apiKey, model, prompt, references, aspectRatio: r.aspectRatio, params: { ...o.params, ...r.params }, net });
+      },
+    };
+  };
+  const main = chosen ?? o.model;
+  const fallback = o.fallbackModel && o.fallbackModel !== main ? o.fallbackModel : null;
+  return { ...on(main), ...(fallback ? { fallback: on(fallback) } : {}), vision: /** @type {VisionCall} */ (visionFrom(settings, { apiKey })) };
 }
 
 /**
- * The vision model of the settings (settings → vision) through the provider's connection, or null when it has none.
- * @param {Provider|undefined} provider @param {import('../settings.js').Settings} settings @returns {Ask|null}
+ * The vision call through provider.openrouter's endpoint with the caller's key (a running editor's) or the one in the
+ * environment or .env; null without a key. It never throws: an image an agent hands in is checked without the vision
+ * model when there is no key, as Codex's images are.
+ * @param {import('../settings.js').ProviderSettings} settings
+ * @param {{apiKey?: string|null}} [o]
+ * @returns {VisionCall|null}
  */
-function askOf(provider, settings) {
-  const call = provider?.vision, v = settings.vision;
+export function visionFrom(settings, { apiKey } = {}) {
+  const o = settings.openrouter;
+  let key = apiKey ?? null;
+  try { key ??= openrouter.loadApiKey({ envVar: o.keyEnvVar }); } catch { /* no key: nothing looks */ }
+  if (!key) return null;
+  const k = key;
+  return ({ model, prompt, image, maxTokens, reasoning, timeoutMs }) => openrouter.askVision({
+    endpoint: o.endpoint, apiKey: k, model, prompt, image, maxTokens, reasoning, net: { timeoutMs, retries: o.retries, backoffMs: o.backoffMs },
+  });
+}
+
+/**
+ * The vision model of the settings (settings → vision) through a connection (the provider's `vision`), or null without one.
+ * @param {VisionCall|null|undefined} call @param {import('../settings.js').Settings} settings @returns {Ask|null}
+ */
+function askOf(call, settings) {
+  const v = settings.vision;
   return call ? req => call({ model: v.model, reasoning: v.reasoning ?? undefined, timeoutMs: v.timeoutMs, ...req }) : null;
 }
 
@@ -405,12 +455,15 @@ export function cardReport(dir, card, ns) {
 async function runAttempts({ dir, card, request, mark = {}, provider, settings, limits, control = {} }) {
   const { order } = card;
   const output = outputOf(order);
-  const ask = askOf(provider, settings);
+  const ask = askOf(provider.vision, settings);
   /** @type {Set<string>} */
-  const warnings = new Set(ask ? [] : ['Смотрящая модель не спрошена (нет ключа OpenRouter): рамку героя для проверок даёт только агент или человек, взгляда на карточку нет.']);
+  const warnings = new Set(ask ? [] : [NO_VISION]);
   /** @param {string} model the highest known price of one call with the model in this card (0 = none known) */
   const priceHint = model => Math.max(0, ...card.attempts.filter(a => a.model === model && typeof a.cost === 'number').map(a => /** @type {number} */ (a.cost)));
-  const req = { ...request, references: request.references.map(r => ({ path: r.path })), ...(output.aspectRatio ? { aspectRatio: output.aspectRatio } : {}) };
+  const req = {
+    ...request, references: request.references.map(r => ({ path: r.path })), ...(output.aspectRatio ? { aspectRatio: output.aspectRatio } : {}),
+    ...(output.crop ? { crop: (await styleChecker(order.style)).CARD_SIZE } : {}),
+  };
   /** @param {any} e */
   const failure = e => ({ message: String(e?.message ?? e), ...(e?.status ? { status: e.status } : {}) });
   /** @type {number[]} */
@@ -640,40 +693,95 @@ function needWish(wish) {
 /**
  * Sets the post-processing of an attempt (default: the chosen one) by hand: card.png is drawn again from
  * prepared.png with the given values (the others stay as they were), the values are kept as the person's
- * (`processingFixed`: never tuned again), and the attempt is checked again. The chosen attempt stays chosen.
+ * (`processingFixed`: never tuned again), and the attempt is checked again. `reset` instead gives the attempt back
+ * the processing the program finds by itself: tuned again as after its generation (from the same start, on the same
+ * hero outline; settings card.tuneProcessing), or the start for its model when tuning is off. The chosen attempt
+ * stays chosen.
  * @param {object} o
  * @param {string} o.dir
  * @param {number} [o.n]
  * @param {number} [o.saturation]  multiplier, 1 = unchanged
  * @param {number} [o.brightness]  levels added to luma, 0 = unchanged
  * @param {number} [o.sharpen]  unsharp-mask amount, 0 = none (the radius stays)
+ * @param {number} [o.shadows]  shadow lift, levels added to black, 0 = none
+ * @param {boolean} [o.reset]  instead of the values: the program's own processing again
+ * @param {import('../settings.js').Settings} [o.settings]  required with `reset`
  * @returns {Promise<CardReport>}
  */
-export async function adjustCard({ dir, n, saturation, brightness, sharpen }) {
+export async function adjustCard({ dir, n, saturation, brightness, sharpen, shadows, reset = false, settings }) {
   const card = needCard(dir);
   const { attempt: a, file } = sourceAttempt(dir, card, n, ATTEMPT_FILES.prepared);
-  if (saturation == null && brightness == null && sharpen == null) throw new Error('Не задано ни одного значения обработки (насыщенность, яркость, резкость).');
-  const base = a.processing ?? styleProcessing(card.order.style).neutral;
-  const processing = {
-    ...base, ...(saturation != null ? { saturation } : {}), ...(brightness != null ? { brightness } : {}),
-    ...(sharpen != null ? { sharpen: { ...base.sharpen, amount: sharpen } } : {}),
-  };
-  a.processing = processing;
-  a.processingFixed = true;
+  const given = saturation != null || brightness != null || sharpen != null || shadows != null;
+  if (reset && given) throw new Error('Сброс обработки идёт без значений: либо значения, либо сброс.');
+  if (!reset && !given) throw new Error('Не задано ни одного значения обработки (насыщенность, яркость, резкость, тени).');
   const adir = attemptDir(dir, a.n);
   const pic = await readPixels(file);
-  fs.writeFileSync(path.join(adir, ATTEMPT_FILES.card), await encodePng(adjust(pic.pixels, pic.width, pic.height, processing), pic.width, pic.height));
-  a.check = await checkOrSkip({ order: card.order, dir: adir, attempt: a, output: outputOf(card.order), hero: await storedHero(a, adir) });
+  const hero = await storedHero(a, adir);
+  if (reset) {
+    if (!settings) throw new Error('Для сброса обработки нужны настройки фабрики.');
+    delete a.processingFixed;
+    await autoProcessing({ order: card.order, attempt: a, adir, card: pic, hero, settings });
+  } else {
+    const base = a.processing ?? styleProcessing(card.order.style).neutral;
+    a.processing = {
+      ...base, ...(saturation != null ? { saturation } : {}), ...(brightness != null ? { brightness } : {}),
+      ...(sharpen != null ? { sharpen: { ...base.sharpen, amount: sharpen } } : {}), ...(shadows != null ? { shadows } : {}),
+    };
+    a.processingFixed = true;
+  }
+  fs.writeFileSync(path.join(adir, ATTEMPT_FILES.card), await encodePng(adjust(pic.pixels, pic.width, pic.height, /** @type {AdjustSettings} */ (a.processing)), pic.width, pic.height));
+  a.check = await checkOrSkip({ order: card.order, dir: adir, attempt: a, output: outputOf(card.order), hero });
   if (card.chosen === a.n) copyChosen(dir, card);
   writeCardFile(dir, card);
   return cardReport(dir, card, [a.n]);
 }
 
 /**
- * Takes in an image an agent made with its own tool (its built-in image generation): as a new attempt of a card,
- * or as the first attempt of a new card made from an order. The image is prepared, tuned and checked like a
- * generated one; the attempt's model is "agent", its cost 0, its prompt empty (the program did not send it). The
- * attempt becomes the card when it reached the checks.
+ * The processing the program gives an attempt by itself, as processAttempt does after a generation: from the start
+ * the attempt was tuned from (else the start for its model), tuned on the hero outline it was tuned on — a trusted
+ * one, or the checker's own outline a person confirmed — or on the whole card; the start as it is when tuning is off.
+ * @param {{order: CardOrder, attempt: Attempt, adir: string, card: {pixels: Uint8Array, width: number, height: number}, hero: Hero|null, settings: import('../settings.js').Settings}} o
+ */
+async function autoProcessing({ order, attempt: a, adir, card, hero, settings }) {
+  const start = a.tuning?.start ?? processingFor({ style: order.style, model: a.model, settings }).processing;
+  if (!settings.card.tuneProcessing || !outputOf(order).checks) { a.processing = start; delete a.tuning; return; }
+  let fg = trustedFg(hero), outline = 'trusted';
+  if (!fg && a.review?.mask === 'confirmed') {
+    const { heroOutline } = await styleChecker(order.style);
+    fg = heroOutline((await readPixels(path.join(adir, ATTEMPT_FILES.card))).pixels);
+    outline = 'confirmed';
+  }
+  ({ settings: a.processing, tuning: a.tuning } = await tuneFor({ order, card, start, fg, outline }));
+}
+
+/**
+ * Makes a version (an attempt) the card by the word of a person or an agent: its card.png becomes the card's, and the
+ * choice (`chosenBy` "choice") is kept when the checks run again; a later request (regenerate, edit, import) or
+ * `makeCard` chooses anew. Nothing is generated or paid.
+ * @param {{dir: string, n: number}} o
+ * @returns {Promise<CardReport>}
+ */
+export async function chooseAttempt({ dir, n }) {
+  const card = needCard(dir);
+  const a = card.attempts.find(x => x.n === n);
+  if (!a) throw new Error(`У карточки нет версии ${n}: есть ${card.attempts.map(x => x.n).join(', ') || 'ни одной'}.`);
+  if (!fs.existsSync(path.join(attemptDir(dir, n), ATTEMPT_FILES.card))) {
+    throw new Error(`Версия ${n} не может стать карточкой: у неё нет готовой картинки${a.error ? ` (${a.error.message})` : ''}.`);
+  }
+  card.chosen = n;
+  card.chosenBy = 'choice';
+  copyChosen(dir, card);
+  writeCardFile(dir, card);
+  return cardReport(dir, card, [n]);
+}
+
+/**
+ * Takes in an image an agent made with its own tool (its built-in image generation), or a person's own image: as a
+ * new attempt of a card, or as the first attempt of a new card made from an order. The image goes through the same
+ * steps as a generated one (VISION.md «Источник изображений»: as strictly): prepared, its hero found by the vision
+ * model when `vision` is given (or no outline but the checker's own, as without a key), tuned, checked, looked at
+ * against the order; the vision calls are its spend. The attempt's model is "agent", its image cost 0, its prompt
+ * empty (the program did not send it). The attempt becomes the card when it reached the checks.
  * @param {object} o
  * @param {string} o.image  the image file
  * @param {string} [o.dir]  an existing card folder
@@ -681,10 +789,11 @@ export async function adjustCard({ dir, n, saturation, brightness, sharpen }) {
  * @param {string} [o.collection]
  * @param {{setId: string, slot: number}} [o.place]  with `order`: the set slot to put the new card into
  * @param {import('../settings.js').Settings} o.settings
+ * @param {VisionCall|null} [o.vision]  the vision model's connection (visionFrom); without it nothing looks, with a warning
  * @param {CardStore} [o.store]
  * @returns {Promise<CardReport>}
  */
-export async function importImage({ image, dir, order, collection, place, settings, store = factoryStore }) {
+export async function importImage({ image, dir, order, collection, place, settings, vision = null, store = factoryStore }) {
   const mime = MIME_BY_EXT[path.extname(image).toLowerCase()];
   if (!mime) throw new Error(`Картинка должна быть PNG, JPEG или WebP: ${image}`);
   const bytes = fs.readFileSync(image);
@@ -705,7 +814,9 @@ export async function importImage({ image, dir, order, collection, place, settin
   card.attempts.push(attempt);
   const adir = attemptDir(dir, n);
   fs.mkdirSync(adir, { recursive: true });
-  const warnings = await processInto({ order: card.order, attempt, dir: adir, bytes, mime, settings, output: outputOf(card.order) });
+  const ask = askOf(vision, settings);
+  const warnings = await processInto({ order: card.order, attempt, dir: adir, bytes, mime, settings, output: outputOf(card.order), ask });
+  if (!ask) warnings.unshift(NO_VISION);
   choose(dir, card, 'request', [n]);
   writeCardFile(dir, card);
   if (place && id) await store.moveCard(/** @type {string} */ (collection), id, place);
@@ -731,7 +842,7 @@ async function retune(order, a, adir, fg = null, outline = 'confirmed') {
 /**
  * Runs the checks again on attempts of a card (after the order's staging was edited, or with what a person or an
  * agent confirmed by eye), then chooses the best attempt again, unless the choice came from a request (regenerate,
- * edit, import): then it stays. A hero box given here cuts a new outline (free; it replaces any verdict on the outline
+ * edit, import) or a version was chosen by hand (chooseAttempt): then it stays. A hero box given here cuts a new outline (free; it replaces any verdict on the outline
  * shown before, `mask`), and the attempt is tuned again with it when it is trusted; an attempt whose checker outline
  * has just been confirmed is tuned again too — both unless its processing was set by hand. The vision model is not
  * asked again: the hero and the look recorded in the attempt are reused.
@@ -759,7 +870,7 @@ export async function recheckCard({ dir, n, review }) {
     }
     a.check = await checkOrSkip({ order: card.order, dir: adir, attempt: a, output, hero });
   }
-  if (card.chosenBy === 'request') copyChosen(dir, card);
+  if (card.chosenBy === 'request' || card.chosenBy === 'choice') copyChosen(dir, card);
   else choose(dir, card, 'checks');
   writeCardFile(dir, card);
   return cardReport(dir, card, targets.map(a => a.n));

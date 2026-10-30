@@ -15,8 +15,7 @@ const settingsDir = () => (process.env.CCF_SETTINGS_DIR ? path.resolve(process.e
  * @property {string} endpoint
  * @property {string} model
  * @property {string|null} fallbackModel  tried in the same attempt when `model` fails; null = none
- * @property {string} aspectRatio
- * @property {string} resolution
+ * @property {string} aspectRatio  wanted for a card; each model gets the closest ratio of its profile
  * @property {string} keyEnvVar  name of the environment variable holding the key; the key itself is never in settings
  * @property {Record<string, unknown>} params  other request fields, passed as is
  * @property {number} timeoutMs
@@ -40,6 +39,7 @@ const settingsDir = () => (process.env.CCF_SETTINGS_DIR ? path.resolve(process.e
  * @property {'openrouter'|'codex-cli'} use
  * @property {OpenRouterSettings} openrouter
  * @property {CodexCliSettings} codexCli
+ * @property {Record<string, import('./providers/models.js').ModelProfile>} models  per model id ("codex-cli" for Codex)
  */
 
 /**
@@ -57,15 +57,15 @@ const isObject = v => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /**
  * Merges the local override into the defaults: objects key by key, anything else replaced. A key the defaults do
- * not have is refused (a typo would otherwise be silently ignored), except under an empty object of the defaults,
- * which is an open map, and keys starting with "_" (comments).
+ * not have is refused (a typo would otherwise be silently ignored), except under an open map of the defaults (an empty
+ * object, or one marked "_open": true) and keys starting with "_" (comments).
  * @param {Record<string, any>} defaults
  * @param {Record<string, any>} local
  * @param {string} [where]  key path for error messages
  * @returns {Record<string, any>}
  */
 export function mergeSettings(defaults, local, where = '') {
-  const open = Object.keys(defaults).length === 0;
+  const open = Object.keys(defaults).length === 0 || defaults._open === true;
   /** @type {Record<string, any>} */
   const out = { ...defaults };
   for (const [key, value] of Object.entries(local)) {

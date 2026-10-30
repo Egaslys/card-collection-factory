@@ -13,8 +13,9 @@ description: Make cards with the card factory — from a request like "20 cards 
 - Pick who draws:
   - `openrouter` — the product default (`provider.use` in `FACTORY/settings/defaults.json`; what each setting means is in its `_about`). Needs the key in the environment or `FACTORY/.env` (variable: `provider.openrouter.keyEnvVar`). `node FACTORY/ccf.mjs credits` shows whether it works. Never print, copy or write the key.
   - `codex-cli` — Codex under the person's ChatGPT subscription, no payment per image, GPT Image only; the factory's own trial runs use it (`--provider codex-cli`). Needs `codex` installed and logged in.
+  - Another OpenRouter image model for one run (to compare models, or when the person names one): `--model ID` on `card make`, `card regenerate`, `card edit` (and `set make`, `collection make`); it implies `--provider openrouter`. Each model is asked through its profile (`provider.models` in the settings: the ratios and the number of reference images it takes); a model lacking the card's ratio is asked for the accepted one closest to the card and cut; a model without a profile is asked for 1:1.
   - Your own built-in image tool — step 4b.
-  - No key, but the person's editor is running with one: the paid commands (`card make`, `card regenerate`, `card edit`, `set plan`, `set make`, `collection plan`, `collection make`) send themselves to the editor and run there with its key; the output is the same. Without a key and without an editor they stop and say so.
+  - No key, but the person's editor is running with one: the paid commands (`card make`, `card regenerate`, `card edit`, `set plan`, `set make`, `collection plan`, `collection make`) send themselves to the editor and run there with its key; the output is the same. Without a key and without an editor they stop and say so. `card import` goes to the editor too (for its vision steps), and without either runs here without them.
 - A paid run spends the person's money. Before it, tell them how many cards and the cap (`card.maxSpendUsd` per card run, or `--max-spend`), and stay inside what they agreed.
 
 ## 2. Collection
@@ -35,16 +36,18 @@ One JSON `CardOrder` per card. Fields and their meaning: `FACTORY/core/style/REA
 
 - Staging decides the category: the staging table at the top of the variables section of `styles/<style>/BACKGROUNDS.md` (staging → category → reference cards); categories in `BASE_RULES.md` §2; character scenes in `CHARACTERS.md`.
 - `subject`, `object`, `environment`, `palette` in English; `title` is the caption.
+- Write `subject`, `promptExtra` and wishes as what the viewer should see, not as prohibitions (the author's decision, VISION.md, the image source section): «small dark round eyes and a smooth fuzzy body», not «no face»; «a plain painted wall», not «no pattern».
 - Use only stagings some reference card shows. One the references never show needs `humanRequest` with the person's own words.
 - Many loose cards are not a set, but the style's measure of a good mix is `SETS.md` §3.5–3.7 (categories, backdrops, patterns): follow it unless the person asked otherwise, and say so.
 - A request that is really a set (10 cards in a window) or a collection → ccf-make-sets.
+- Orders written for you: `ccf.mjs cards make --collection ID --theme TEXT --count N [--scenes N] [--wishes TEXT] [--provider codex-cli] --json` — the settings' text model writes N orders from the set fragments, checked like a set's orders (errors → nothing is made, `plan.errors`), then makes each into the pool as 4a does (the pool's create-cards button in the editor runs the same). Planning needs an OpenRouter key (here or in a running editor) whatever draws; it does not avoid kinds the collection's sets already hold.
 
 Check each order for free: `ccf.mjs card prompt ORDER.json` prints the assembled prompt, or the order's errors with exit 1. Nothing is generated.
 
 ## 4a. Make with a provider
 
 ```sh
-node FACTORY/ccf.mjs card make ORDER.json --collection ID [--set ID --slot N] [--provider codex-cli] [--max-spend USD] --json
+node FACTORY/ccf.mjs card make ORDER.json --collection ID [--set ID --slot N] [--provider codex-cli | --model ID] [--max-spend USD] --json
 ```
 
 The loop generates, crops, tunes the processing, checks, and regenerates while a blocking FAIL remains, within the attempt limit and the cap. Several `card make` processes may run at once for pool cards; with `--set` run them one after another (two processes writing one `set.json` can lose an update: `core/store/README.md`, «Writes and live events»). To try again on the same card after changing its order: `--card CARD_ID` (attempts are appended).
@@ -53,7 +56,7 @@ The loop generates, crops, tunes the processing, checks, and regenerates while a
 
 1. `ccf.mjs card prompt ORDER.json --json` → `prompt`, `references` (attach in this order), `aspectRatio`, `next`.
 2. Draw one image with your tool from exactly that prompt and those references.
-3. `ccf.mjs card import ORDER.json IMAGE --collection ID [--set ID --slot N] --json` (new card) or `card import CARD_DIR IMAGE --json` (new attempt of a card). It is cropped, processed and checked like a generated one; cost 0.
+3. `ccf.mjs card import ORDER.json IMAGE --collection ID [--set ID --slot N] --json` (new card) or `card import CARD_DIR IMAGE --json` (new attempt of a card). It goes through every step of a generated one: cropped, hero outline from the vision model, processing tuned, checked, looked at against the order — with a key here or a running editor's (else the vision steps are skipped and `warnings` says so). The image costs 0; the vision calls are counted.
 
 ## 5. Read the report
 

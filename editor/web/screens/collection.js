@@ -6,7 +6,7 @@ import { windowHtml, windowsOf } from '../window.js';
 import { openCreateSet, openBuildCollection, openEditCollection } from '../panels/create.js';
 import { openExport } from '../panels/export.js';
 import { app } from '../state.js';
-import { poolHtml, poolView } from './pool.js';
+import { poolClick, poolHtml, poolView } from './pool.js';
 
 /** @param {string} id */
 export async function load(id) {
@@ -67,6 +67,7 @@ export async function load(id) {
         const t = /** @type {HTMLElement} */ (e.target);
         const pick = /** @type {HTMLElement|null} */ (t.closest('[data-pool]'));
         if (pick) { poolView.all = pick.dataset.pool === 'all'; app.refresh(); return; }
+        if (poolClick(t, col)) return;
         if (t.closest('[data-edit]')) { openEditCollection(col); return; }
         if (t.closest('[data-build]')) { openBuildCollection(col, sets.length); return; }
         if (t.closest('[data-export]')) { openExport({ collection: col, sets }); return; }

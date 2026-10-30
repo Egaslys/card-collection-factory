@@ -4,7 +4,7 @@
 // only a plan without errors. Format and rules: core/set/README.md.
 import { checkOrder } from '../style/card-order.js';
 import { matches, stagingValue } from '../style/assembly.js';
-import { WINDOW_TEMPLATES } from '../store/layout.js';
+import { windowTemplates } from '../store/layout.js';
 import { expandStaging, kindKey, loadSetRules, rowCategories, stagingRow } from './rules.js';
 
 /** @typedef {import('../style/card-order.js').CardOrder} CardOrder */
@@ -21,6 +21,8 @@ import { expandStaging, kindKey, loadSetRules, rowCategories, stagingRow } from 
  * @property {string[]} [props]  scene: the noticeable item kinds of the scene (what it plays with, props in hands,
  *   noticeable background objects); they count in the collection registry (SETS.md 1.5)
  * @property {string} [hue]  the backdrop colour word of an abstract backdrop (SETS.md 3.7: neighbours differ)
+ * @property {string} [wishes]  what the set's wishes ask of this card, in English, as what the viewer should see; "" =
+ *   nothing in them concerns this card. normalizePlan appends it to the order's promptExtra, so it reaches the prompt
  * @property {CardOrder} order  the card order (core/style); its `title` is the caption; `staging` may be
  *   `{preset, …fields}` (presets: `stagings` of set-rules.json) until normalizePlan expands it
  * @property {string} [cardId]  the made card (makeSet writes it)
@@ -39,7 +41,7 @@ import { expandStaging, kindKey, loadSetRules, rowCategories, stagingRow } from 
  * @property {boolean} [grand]
  * @property {string} [place]  grand set: the one place of all ten scenes (each scene's order.place)
  * @property {{layout: string, template?: string, reason?: string}} window  layout = a key of set-rules.json `windows`
- *   (its family is the store's window kind); template = the window colour (core/store WINDOW_TEMPLATES); reason = why
+ *   (its family is the store's window kind); template = the window colour (core/store windowTemplates of that kind); reason = why
  *   the agent chose a small layout (SETS.md 4.3: the choice is named with its reason)
  * @property {{n: number, group: string}} [variant]  variant n of the variant group (sets with one group are variants)
  * @property {string} [language]  caption language (default: the rules' captions.language)
@@ -63,7 +65,8 @@ const where = (i, s) => `слот ${i + 1}${s?.order?.title ? ` («${s.order.tit
 const slug = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'card';
 
 /**
- * The plan with presets expanded, the style and a readable id put into every order (a copy).
+ * The plan with presets expanded, the style and a readable id put into every order, and each slot's `wishes` appended to
+ * its order's promptExtra (once) (a copy).
  * @param {SetPlan} plan
  * @returns {{plan: SetPlan, errors: string[]}}
  */
@@ -78,6 +81,8 @@ export function normalizePlan(plan) {
     if (error) errors.push(`${where(i, s)}: ${error}`);
     if (staging) s.order.staging = /** @type {any} */ (staging);
     s.order.style ??= plan.style;
+    const wish = typeof s.wishes === 'string' ? s.wishes.trim() : '';
+    if (wish && !String(s.order.promptExtra ?? '').includes(wish)) s.order.promptExtra = [s.order.promptExtra, wish].filter(Boolean).join(' ');
     s.order.id ??= `${slug(plan.title)}-${i + 1}-${slug(s.order.title ?? s.kind)}`;
   });
   return { plan: copy, errors };
@@ -99,6 +104,26 @@ export function registryOf(plan) {
     else out.push({ kind: s.kind, key: kindKey(s.kind), role: 'hero', caption: s.order.title, row: stagingRow(s.order, rules, style), ...base });
     if (isScene(s) && s.order.title) out.push({ kind: '', key: '', role: 'prop', caption: s.order.title, ...base });
   }
+  return out;
+}
+
+/** Words that make a wish a prohibition rather than a description of what is seen. */
+const NEGATION = /\b(no|not|non|without|don'?t|never|avoid|nothing)\b/i;
+
+/**
+ * Whether the set's wishes reached its cards (VISION.md: the theme and wishes go into each card's description): with
+ * wishes, every slot says what they ask of it (`wishes`, "" when nothing), in words of what is seen.
+ * @param {SetPlan} plan @returns {string[]}
+ */
+export function wishWarnings(plan) {
+  if (!plan.wishes?.trim()) return [];
+  /** @type {string[]} */
+  const out = [];
+  const missing = plan.slots.map((s, i) => (typeof s.wishes === 'string' ? 0 : i + 1)).filter(Boolean);
+  if (missing.length) out.push(`пожелания набора («${plan.wishes.trim()}») не перенесены в карточки: у слот${missing.length > 1 ? 'ов' : 'а'} ${missing.join(', ')} нет поля wishes — что пожелания значат для этой карточки, по-английски, как то, что видно; "" — если к ней они не относятся`);
+  plan.slots.forEach((s, i) => {
+    if (typeof s.wishes === 'string' && NEGATION.test(s.wishes)) out.push(`${where(i, s)}: wishes «${s.wishes}» — запрет, а не описание: напишите, что должно быть видно (не «no faces», а «small dark round eyes and a smooth fuzzy body»)`);
+  });
   return out;
 }
 
@@ -126,7 +151,8 @@ export function validatePlan(input, { registry = [], variants = [], titles = [] 
   for (const k of ['title', 'theme', 'angle']) if (typeof (/** @type {any} */ (plan))[k] !== 'string' || !(/** @type {any} */ (plan))[k].trim()) errors.push(`нет поля ${k} (${k === 'angle' ? 'угол темы одной строкой, SETS.md 1.3' : k === 'title' ? 'название набора' : 'тема набора'})`);
   const w = rules.windows[plan.window?.layout];
   if (!w) errors.push(`window.layout = «${plan.window?.layout}» — нет такого окна; есть: ${Object.keys(rules.windows).join(', ')} (SETS.md 4.2)`);
-  if (plan.window?.template !== undefined && !(/** @type {readonly string[]} */ (WINDOW_TEMPLATES)).includes(plan.window.template)) errors.push(`window.template = «${plan.window.template}» — шаблоны окна: ${WINDOW_TEMPLATES.join(', ')}`);
+  const templates = w ? windowTemplates(plan.style, w.family) : [];
+  if (w && plan.window?.template !== undefined && !templates.includes(plan.window.template)) errors.push(`window.template = «${plan.window.template}» — шаблоны окна ${w.family}: ${templates.join(', ')}`);
   if (!Array.isArray(plan.slots) || plan.slots.length !== rules.set_size) {
     errors.push(`в наборе должно быть ровно ${rules.set_size} слотов, а их ${Array.isArray(plan.slots) ? plan.slots.length : 0} (SETS.md 9.1)`);
     return { errors, warnings, plan };
@@ -148,6 +174,7 @@ export function validatePlan(input, { registry = [], variants = [], titles = [] 
   });
 
   errors.push(...orderErrors);
+  warnings.push(...wishWarnings(plan));
   // the category follows from the staging (BACKGROUNDS.md «Категория как следствие постановки»)
   slots.forEach((s, i) => {
     const row = rules.stagings.find(r => r.id === stagingRow(s.order, rules, style));

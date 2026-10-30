@@ -6,12 +6,13 @@ For agents. The product's vision: `docs/plans/VISION.md` («Устройство
 
 | Folder | What | Owner of the contract |
 |---|---|---|
-| `providers/` | image generation: OpenRouter-compatible endpoint, Codex CLI | `openrouter.js`, `codex-cli.js` |
+| `providers/` | image generation: OpenRouter-compatible endpoint, Codex CLI; each model's profile (ratios, reference images, request fields) | `openrouter.js`, `codex-cli.js`, `models.js` |
 | `image/` | model image → card pixels (`prepare.js`), post-processing shared with the browser (`adjust.js`, no imports) | |
 | `style/` | card orders, prompt assembly from the bible's fragments, reference picking | `style/README.md` |
-| `card/` | one card: generate → prepare → hero outline (`hero.js`) → tune → check → the vision model's look (`look.js`) → regenerate (`make.js`); a person's requests: regenerate with a wish, edit, adjust by hand, import an agent's image; recheck | `card/card-file.js` |
+| `card/` | one card: generate → prepare → hero outline (`hero.js`) → tune → check → the vision model's look (`look.js`) → regenerate (`make.js`); a person's requests: regenerate with a wish, edit, adjust by hand (or reset to the program's own), import an image (checked as strictly as a generated one), choose any version (attempt) as the card; recheck | `card/card-file.js` |
 | `store/` | collections, sets, the card pool, moves, export, live events | `store/README.md` |
-| `set/` | planning a set and a collection by the style's rules, generating them | `set/README.md` |
+| `set/` | planning a set and a collection by the style's rules, generating them; loose cards into a collection's pool | `set/README.md` |
+| `text/` | text help: a producer's rough notes → the finished text of a field (`draft.js` `draftText`) | `text/draft.js` |
 | `settings.js` | `settings/defaults.json` + `settings/local.json`; the key is never in settings | |
 
 ## Data layout
@@ -37,6 +38,8 @@ newCardId(collectionId, base) → id                   // sync; unique, readable
 cardDir(collectionId, cardId) → absolute path        // sync; where core/card writes the card
 listCards(collectionId, { setId? , pool? }) → CardSummary[]   // id, title, image, status, checks, cost, setId, slot
 exportItems({ collectionId, setIds?, cardIds?, format: 'png' | 'zip', name? }) → { path, files, skipped }
+recordSpend(collectionId | null, { kind: 'images'|'vision'|'text', what, model, usd })   // a paid call no card records
+spend({ collectionId? }?) → { images, vision, text, total, unknown }                    // USD by kind: a collection, or the factory
 openFolder(path)                                     // the OS file manager
 watch(onEvent, { debounceMs?, pollMs?, poll? }?) → stop   // { type: 'collection' | 'set' | 'card', collectionId, id, change }
 ```

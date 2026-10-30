@@ -7,7 +7,7 @@ import path from 'node:path';
 import * as store from '../../core/store/index.js';
 import { COLLECTIONS_DIR, EXPORT_DIR } from '../../core/store/index.js';
 import { loadSettings, readLocalSettings, saveLocalSettings, ROOT } from '../../core/settings.js';
-import { readCardFile, attemptDir, ATTEMPT_FILES } from '../../core/card/card-file.js';
+import { readCardFile, attemptDir, attemptSpend, ATTEMPT_FILES } from '../../core/card/card-file.js';
 import { clearTemporaryKey, currentKey, initKey, keyStatus, setTemporaryKey } from './key.js';
 
 /**
@@ -40,11 +40,15 @@ function keyOrThrow() {
   return key;
 }
 
-/** The image provider of the settings (or `use`), with the editor's key. @param {any} s @param {string} [use] */
-async function providerOf(s, use) {
+/**
+ * The image provider of a run, with the editor's key: the settings', or the run's `provider` and OpenRouter `model`.
+ * @param {any} s @param {{provider?: string, model?: string}} [run]
+ */
+async function providerOf(s, run = {}) {
   const { providerFrom } = await import('../../core/card/make.js');
-  const p = { ...s.provider, use: use ?? s.provider.use };
-  return providerFrom(p, p.use === 'openrouter' ? { apiKey: keyOrThrow() } : {});
+  const { runProvider } = await import('../../core/providers/models.js');
+  const p = { ...s.provider, use: runProvider(s.provider.use, run) };
+  return providerFrom(p, p.use === 'openrouter' ? { apiKey: keyOrThrow(), model: run.model } : { model: run.model });
 }
 
 /** A card's folder in a collection. @param {{collectionId: string, cardId: string}} a */
@@ -66,8 +70,8 @@ function insideCollection(collectionId, target) {
 }
 
 /**
- * One card in full for the card panel: its summary, its order, every attempt with its files, and the full check
- * results of the chosen attempt.
+ * One card in full for the card panel: its summary, its order, every attempt (a version of the card) with its files,
+ * its spend by kind and the full results of its checks (`details`, from check.json).
  * @param {{collectionId: string, cardId: string}} a
  */
 async function getCard(a) {
@@ -80,20 +84,17 @@ async function getCard(a) {
     /** @type {Record<string, string>} */
     const files = {};
     for (const [k, name] of Object.entries({ ...ATTEMPT_FILES, original: x.original ?? '' })) if (name && fs.existsSync(path.join(adir, name))) files[k] = path.join(adir, name);
-    const { prompt, ...rest } = x;
-    return { ...rest, files };
-  });
-  /** @type {{results: any[], visual: any[]}|null} */
-  let check = null;
-  if (file.chosen != null) {
-    const f = path.join(attemptDir(dir, file.chosen), ATTEMPT_FILES.check);
-    if (fs.existsSync(f)) {
-      const c = JSON.parse(fs.readFileSync(f, 'utf8'));
-      check = { results: c.results ?? [], visual: c.visual ?? [] };
+    /** @type {{results: any[], visual: any[]}|null} */
+    let details = null;
+    if (files.check) {
+      const c = JSON.parse(fs.readFileSync(files.check, 'utf8'));
+      details = { results: c.results ?? [], visual: c.visual ?? [] };
     }
-  }
+    const { prompt, ...rest } = x;
+    return { ...rest, files, spend: attemptSpend(x), details };
+  });
   const style = JSON.parse(fs.readFileSync(path.join(ROOT, 'styles', file.order.style, 'processing.json'), 'utf8'));
-  return { summary, order: file.order, chosen: file.chosen, attempts, check, dir, processing: { neutral: style.neutral, bounds: style.bounds, sharpenMax: style.sharpen_amount_max } };
+  return { summary, order: file.order, chosen: file.chosen, chosenBy: file.chosenBy ?? 'checks', attempts, dir, processing: { neutral: style.neutral, bounds: style.bounds, sharpenMax: style.sharpen_amount_max } };
 }
 
 /** @type {Record<string, Op>} */
@@ -147,6 +148,16 @@ export const OPS = {
     },
   },
 
+  spend: { run: async ({ collectionId }) => store.spend(collectionId ? { collectionId } : {}) },
+
+  // ---------- text help (core/text) ----------
+  draftText: {
+    run: async ({ kind, notes, context, collectionId }) => {
+      const { draftText } = await import('../../core/text/draft.js');
+      return draftText({ kind: need('kind', kind), notes, context, collectionId: collectionId ?? null, settings: settings(), apiKey: keyOrThrow() });
+    },
+  },
+
   // ---------- one card (core/card) ----------
   getCard: { run: getCard },
   makeCard: {
@@ -159,7 +170,7 @@ export const OPS = {
       const { makeCard } = await import('../../core/card/make.js');
       return makeCard({
         order: need('order', a.order), collection: need('collectionId', a.collectionId), card: a.cardId, place: a.place,
-        settings: s, provider: await providerOf(s, a.provider), limits: a.limits, signal, onProgress: cardProgress(progress),
+        settings: s, provider: await providerOf(s, a), limits: a.limits, signal, onProgress: cardProgress(progress),
       });
     },
   },
@@ -171,7 +182,7 @@ export const OPS = {
     run: async (a, { progress, signal }) => {
       const s = settings();
       const { regenerateCard } = await import('../../core/card/make.js');
-      return regenerateCard({ dir: cardDirOf(a), wish: a.wish, settings: s, provider: await providerOf(s, a.provider), limits: a.limits, signal, onProgress: cardProgress(progress) });
+      return regenerateCard({ dir: cardDirOf(a), wish: a.wish, settings: s, provider: await providerOf(s, a), limits: a.limits, signal, onProgress: cardProgress(progress) });
     },
   },
   editCard: {
@@ -182,13 +193,19 @@ export const OPS = {
     run: async (a, { progress, signal }) => {
       const s = settings();
       const { editCard } = await import('../../core/card/make.js');
-      return editCard({ dir: cardDirOf(a), wish: a.wish, n: a.n, settings: s, provider: await providerOf(s, a.provider), limits: a.limits, signal, onProgress: cardProgress(progress) });
+      return editCard({ dir: cardDirOf(a), wish: a.wish, n: a.n, settings: s, provider: await providerOf(s, a), limits: a.limits, signal, onProgress: cardProgress(progress) });
     },
   },
   adjustCard: {
     run: async a => {
       const { adjustCard } = await import('../../core/card/make.js');
-      return adjustCard({ dir: cardDirOf(a), n: a.n, saturation: a.saturation, brightness: a.brightness, sharpen: a.sharpen });
+      return adjustCard({ dir: cardDirOf(a), n: a.n, saturation: a.saturation, brightness: a.brightness, sharpen: a.sharpen, shadows: a.shadows, ...(a.reset ? { reset: true, settings: settings() } : {}) });
+    },
+  },
+  chooseAttempt: {
+    run: async a => {
+      const { chooseAttempt } = await import('../../core/card/make.js');
+      return chooseAttempt({ dir: cardDirOf(a), n: Number(need('n', a.n)) });
     },
   },
   recheckCard: {
@@ -198,16 +215,22 @@ export const OPS = {
     },
   },
   importImage: {
-    // the page sends the image as base64 (data URL); it is written to a temporary file for core/card and removed
-    run: async ({ collectionId, cardId, name, data }) => {
+    // the page sends the image as base64 (data URL), written to a temporary file for core/card and removed; a local
+    // agent (ccf.mjs card import) sends the image's path. A card of the collection (cardId), or a new card from an
+    // order (order, place). The vision steps run with the editor's key when it holds one.
+    run: async ({ collectionId, cardId, data, image, order, place }) => {
+      const s = settings();
+      const { importImage, visionFrom } = await import('../../core/card/make.js');
+      const where = cardId ? { dir: cardDirOf({ collectionId, cardId }) } : { order: need('order', order), collection: need('collectionId', collectionId), place };
+      const run = (/** @type {string} */ file) => importImage({ image: file, ...where, settings: s, vision: visionFrom(s.provider, { apiKey: currentKey() }) });
+      if (image) return run(path.resolve(String(image)));
       const m = String(need('data', data)).match(/^data:image\/(png|jpeg|webp);base64,(.+)$/);
       if (!m) throw new Error('Картинка должна быть PNG, JPEG или WebP.');
       const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ccf-import-'));
       const file = path.join(tmp, `image.${m[1] === 'jpeg' ? 'jpg' : m[1]}`);
       try {
         fs.writeFileSync(file, Buffer.from(m[2], 'base64'));
-        const { importImage } = await import('../../core/card/make.js');
-        return await importImage({ image: file, dir: cardDirOf({ collectionId, cardId }), settings: settings() });
+        return await run(file);
       } finally {
         fs.rmSync(tmp, { recursive: true, force: true });
       }
@@ -237,7 +260,7 @@ export const OPS = {
       const s = settings();
       const { makeSet } = await import('../../core/set/make.js');
       return makeSet({
-        collection: need('collectionId', a.collectionId), ...(a.plan ? { plan: a.plan } : { set: need('setId', a.setId) }), settings: s, provider: await providerOf(s, a.provider),
+        collection: need('collectionId', a.collectionId), ...(a.plan ? { plan: a.plan } : { set: need('setId', a.setId) }), settings: s, provider: await providerOf(s, a),
         redo: !!a.redo, only: a.only, signal, progress, limits: { ...a.limits, ...(a.maxSpendUsd !== undefined ? { maxSpendUsd: a.maxSpendUsd } : {}) },
       });
     },
@@ -264,8 +287,23 @@ export const OPS = {
       const s = settings();
       const { makeCollection } = await import('../../core/set/make.js');
       return makeCollection({
-        collection: need('collectionId', a.collectionId), numbers: a.numbers, settings: s, provider: await providerOf(s, a.provider), signal, progress,
+        collection: need('collectionId', a.collectionId), numbers: a.numbers, settings: s, provider: await providerOf(s, a), signal, progress,
         limits: { ...a.limits, ...(a.maxSpendUsd !== undefined ? { maxSpendUsd: a.maxSpendUsd } : {}) },
+      });
+    },
+  },
+
+  makeCards: {
+    job: true, cancellable: true,
+    title: a => `Карточки «${a.theme}»`,
+    scope: a => ({ collectionId: a.collectionId }),
+    spentOf: r => r?.spent ?? null,
+    run: async (a, { progress, signal }) => {
+      const s = settings();
+      const { makeCardsInto } = await import('../../core/set/cards.js');
+      return makeCardsInto({
+        collection: need('collectionId', a.collectionId), theme: need('theme', a.theme), wishes: a.wishes, count: Number(need('count', a.count)),
+        scenes: Number(a.scenes ?? 0), maxSpendUsd: a.maxSpendUsd, settings: s, provider: await providerOf(s, a), apiKey: keyOrThrow(), signal, progress,
       });
     },
   },
@@ -288,7 +326,7 @@ export const OPS = {
       let spent = plan.spent;
       for (const setId of ids) {
         if (ctx.signal.aborted) break;
-        const r = /** @type {any} */ (await OPS.makeSet.run({ collectionId: a.collectionId, setId, provider: a.provider }, ctx));
+        const r = /** @type {any} */ (await OPS.makeSet.run({ collectionId: a.collectionId, setId, provider: a.provider, model: a.model }, ctx));
         spent += r.spent;
         sets.push(r);
       }
@@ -304,7 +342,7 @@ export const OPS = {
       const plan = /** @type {any} */ (await OPS.planCollection.run(a, ctx));
       ctx.progress('План коллекции готов — делаю карточки', { total: plan.spent });
       if (ctx.signal.aborted) return { plan, made: null, spent: plan.spent };
-      const made = /** @type {any} */ (await OPS.makeCollection.run({ collectionId: a.collectionId, provider: a.provider }, ctx));
+      const made = /** @type {any} */ (await OPS.makeCollection.run({ collectionId: a.collectionId, provider: a.provider, model: a.model }, ctx));
       const warnings = [
         ...plan.sets.filter((/** @type {any} */ s) => !s.set).map((/** @type {any} */ s) => `Набор №${s.number ?? '?'} «${s.plan?.title ?? ''}» не спланирован: ${s.errors[0] ?? 'модель не дала плана'}`),
         ...plan.errors, ...made.skipped.map((/** @type {string} */ s) => `Пропущен набор ${s}`),

@@ -18,7 +18,7 @@ import { loadStyle, styleDirOf } from './style.js';
  * @property {string} camera     eye_level | high | low
  * @property {number} characters 0 | 1 | 2
  * @property {string} time       day | golden | dusk | night | n/a
- * @property {boolean} sky_top   the top of the frame is day sky
+ * @property {boolean} sky_top   the top of the frame is sky (day sky with time day: COLOUR 14 checks it)
  * @property {string} [stripes]  vertical | diagonal (straight stripes)
  * @property {string} [surface]  the textured support or the full-frame surface: sand | grass | wood | deck | tiles | water
  * @property {string} [medium]   sky | water (floating in its own medium)

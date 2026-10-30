@@ -5,6 +5,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { slugify } from '../core/store/index.js';
 import { tempStore, writeCard } from './store-helpers.mjs';
+import { ROOT } from './root.mjs';
 
 test('хранилище: id читаемые и уникальные — из названия, кириллица в латиницу, повтор получает -2', async t => {
   const { store, root } = tempStore(t);
@@ -56,6 +57,12 @@ test('хранилище: коллекция — список, правка, п�
   await assert.rejects(store.updateCollection(col.id, { id: 'x' }), /менять нельзя/);
   await assert.rejects(store.createSet(col.id, { title: 'X', window: { kind: 'huge' } }), /Вид окна «huge»/);
   await assert.rejects(store.createSet(col.id, { title: 'X', window: { template: 'green' } }), /Шаблон окна «green»/);
+  // the kinds and templates come from the style's windows.json: the grand window has its own one colour
+  const g = JSON.parse(fs.readFileSync(path.join(ROOT, 'styles/scapes/windows/windows.json'), 'utf8'));
+  const grand = await store.createSet(col.id, { title: 'Праздник', window: { kind: 'grand' } });
+  assert.deepEqual(grand.window, { kind: 'grand', template: Object.keys(g.families.grand.templates)[0] });
+  await assert.rejects(store.createSet(col.id, { title: 'X', window: { kind: 'grand', template: 'blue' } }), /Шаблон окна «blue» у окна grand/);
+  assert.deepEqual((await store.updateSet(col.id, grand.id, { window: { kind: 'large' } })).window, { kind: 'large', template: Object.keys(g.templates)[0] }, 'другое окно — его первый цвет');
 });
 
 test('хранилище: набор хранит plan и чужие ключи; правка сливает brief и window, ключи не из правки остаются', async t => {
@@ -188,4 +195,30 @@ test('хранилище: openFolder зовёт файловый менедже�
     assert.deepEqual(calls, [[command, path.resolve(root)]], platform);
     await assert.rejects(store.openFolder(path.join(root, 'nope')), /Нет такой папки/);
   }
+});
+
+test('хранилище: расходы по видам — картинки и взгляд из карточек, текст из журнала; коллекция и фабрика целиком', async t => {
+  const { store, root } = tempStore(t);
+  const a = await store.createCollection({ title: 'А' });
+  const b = await store.createCollection({ title: 'Б' });
+  writeCard(store, a.id, 'x', { costs: [0.04, null] });
+  const file = path.join(store.cardDir(a.id, 'x'), 'card.json');
+  const card = JSON.parse(fs.readFileSync(file, 'utf8'));
+  card.attempts[0].hero = { cost: 0.001 };
+  card.attempts[0].look = { cost: 0.002 };
+  card.attempts.push({ n: 3, model: 'codex-cli', cost: 0, look: { cost: 0.002 } });
+  fs.writeFileSync(file, JSON.stringify(card));
+  writeCard(store, b.id, 'y', { costs: [0.05] });
+  await store.recordSpend(a.id, { kind: 'text', what: 'plan', model: 't', usd: 0.01 });
+  await store.recordSpend(null, { kind: 'text', what: 'text-help', model: 't', usd: 0.002 });
+  await store.recordSpend(b.id, { kind: 'text', what: 'plan', model: 't', usd: null });
+  await assert.rejects(store.recordSpend('nope', { kind: 'text', what: 'plan', model: 't', usd: 1 }), /Коллекции «nope» нет/);
+  await assert.rejects(store.recordSpend(null, { kind: 'coffee', what: 'x', model: 't', usd: 1 }), /неизвестен/);
+  const x = (await store.listCards(a.id))[0];
+  assert.deepEqual([x.spend, x.model], [{ images: 0.04, vision: 0.005 }, 'm']);
+  assert.deepEqual(await store.spend({ collectionId: a.id }), { images: 0.04, vision: 0.005, text: 0.01, total: 0.055, unknown: 1 });
+  assert.deepEqual(await store.spend({ collectionId: b.id }), { images: 0.05, vision: 0, text: 0, total: 0.05, unknown: 1 });
+  assert.deepEqual(await store.spend(), { images: 0.09, vision: 0.005, text: 0.012, total: 0.107, unknown: 2 });
+  assert.equal(fs.readFileSync(path.join(root, 'spend.jsonl'), 'utf8').trim().split('\n').length, 3);
+  assert.deepEqual((await store.listCollections()).map(c => c.id), [a.id, b.id], 'журнал не коллекция');
 });

@@ -122,3 +122,23 @@ test('askVision: сначала текст, затем картинка data URL
   await assert.rejects(askVision({ ...base, model: 'v/m', prompt: 'p', image: { bytes: Buffer.from('i'), mime: 'image/png' }, net: { fetchImpl: empty } }), /без текста/);
   assert.equal('reasoning' in JSON.parse(c2[0].init.body), false, 'no reasoning field unless given');
 });
+
+test('профиль модели: ближайшая принятая пропорция, свои поля запроса, лимит образцов; без профиля — 1:1', async () => {
+  const { closestAspect, profileOf, requestFor, runProvider, SAFE_ASPECT } = await import('../core/providers/models.js');
+  const { loadSettings } = await import('../core/settings.js');
+  const models = loadSettings().provider.models;
+  const gpt = profileOf(models, 'openai/gpt-image-2.5-flare');
+  assert.equal(closestAspect('4:5', gpt.aspectRatios), '3:4', '4:5 у GPT Image нет, ближайшая — 3:4');
+  assert.equal(closestAspect('4:5', gpt.aspectRatios, 430 / 480), '1:1', 'картинку режут до карточки 430 × 480: меньше всего срезает 1:1');
+  assert.equal(closestAspect('4:5', profileOf(models, 'google/gemini-nano-banana-2.1').aspectRatios, 430 / 480), '4:5', 'принятую пропорцию не меняем');
+  assert.equal(closestAspect('4:5', profileOf(models, 'google/gemini-nano-banana-2.1').aspectRatios), '4:5');
+  assert.equal(closestAspect('2:3', gpt.aspectRatios), '2:3');
+  assert.equal(closestAspect('4:5', null), '4:5', 'любая пропорция — словами (Codex)');
+  assert.deepEqual(requestFor(profileOf(models, 'google/gemini-nano-banana-2.1'), { model: 'nb', aspectRatio: '4:5', references: 2 }), { aspectRatio: '4:5', params: { resolution: '1K' } });
+  assert.deepEqual(requestFor(profileOf(models, 'some/new-model'), { model: 'x', aspectRatio: '4:5', references: 9 }), { aspectRatio: SAFE_ASPECT, params: {} });
+  assert.equal(profileOf(models, '_open').aspectRatios?.[0], SAFE_ASPECT, 'служебный ключ — не профиль');
+  assert.throws(() => requestFor(profileOf(models, 'codex-cli'), { model: 'codex-cli', aspectRatio: '4:5', references: 6 }), /не больше 5 картинок-образцов, а в запросе 6/);
+  assert.equal(runProvider('codex-cli', { model: 'a/b' }), 'openrouter');
+  assert.equal(runProvider('codex-cli', {}), 'codex-cli');
+  assert.equal(runProvider('openrouter', { provider: 'codex-cli' }), 'codex-cli');
+});

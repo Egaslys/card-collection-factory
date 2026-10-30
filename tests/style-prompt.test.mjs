@@ -146,11 +146,11 @@ test('запреты постановки не срабатывают ни на 
 const PILOT_EXPECT = {
   'c1-bobber': {
     fragments: ['base.frameless', 'base.clean-surfaces', 'base.cat1-field', 'bg.abstract', 'bg.rays', 'bg.floating', 'comp.field', 'comp.floating', 'comp.volume-boxy', 'colour.palette', 'colour.shadows-light', 'colour.hero-backdrop', 'colour.gradient', 'render.style', 'render.style[floating]', 'render.materials[glossy plastic]'],
-    text: ['Staging: a single fishing bobber floating in mid-air', 'patterned backdrop (rays) in one hue', 'Here: a red-and-white object on sky blue.'],
+    text: ['Staging: a single fishing bobber floating freely in mid-air', 'patterned backdrop (rays) in one hue', 'Here: a red-and-white object on sky blue.'],
   },
   'c2-tackle-box': {
     fragments: ['base.cat2', 'bg.plain-gradient', 'bg.smooth-floor', 'comp.field', 'comp.standing', 'comp.volume-boxy', 'comp.brand-mark', 'colour.hero-backdrop', 'colour.gradient', 'render.style[resting]', 'render.materials[glossy plastic]'],
-    text: ['Staging: a single tackle box standing on a smooth plain floor strip', 'one small brand mark: a simple house silhouette', 'lit like it: a sticker with a white die-cut border. No text.'],
+    text: ['Staging: a single tackle box standing on a smooth plain floor strip', 'one small brand mark: a simple house silhouette', 'lit like it: a sticker with a white die-cut border. The mark is a pure picture symbol.'],
   },
   'c3-catch-bucket': {
     fragments: ['base.cat3', 'bg.abstract', 'bg.stripes', 'bg.surface-patch', 'comp.field', 'comp.standing', 'comp.volume-boxy', 'render.style[resting]', 'render.materials[metal]', 'render.materials[wood]'],
@@ -189,11 +189,11 @@ for (const order of PILOT_ORDERS) {
   });
 }
 
-test('золотая сцена: каркас и полные описания персонажей с «Do not redesign …»', async () => {
+test('золотая сцена: каркас и полные описания персонажей с «Keep this exact design»', async () => {
   const r = await buildPrompt(pilot('c5-gone-fishing'));
   for (const id of ['char.man', 'char.pig']) assert.ok(r.prompt.includes(frag(id).text), `${id} не полностью`);
-  assert.match(r.prompt, /Do not redesign him\. Costume: a khaki fishing vest/);
-  assert.match(r.prompt, /Do not redesign it\. Here it wears only a small straw hat\./);
+  assert.match(r.prompt, /Keep this exact design\. Costume: a khaki fishing vest/);
+  assert.match(r.prompt, /Keep this exact design\. Here it wears only a small straw hat\./);
   assert.ok(r.prompt.indexOf('A simple everyday') < r.prompt.indexOf('The Man: a heavy-set'));
   assert.ok(!r.fragments.some(f => f.id.startsWith('comp.') || f.id.startsWith('base.cat')), 'у сцены нет фрагментов кадра предмета');
   const sheep = pilot('c5-gone-fishing');
@@ -347,7 +347,7 @@ const NEW_STAGINGS = [
   { name: 'обстановка, камера снизу (№68)', from: 'c4-rowboat', staging: { camera: 'low' },
     fragments: ['bg.setting', 'comp.low-camera'], text: ['low camera: low, at about four fifths of the frame height'] },
   { name: 'обстановка в золотой час (№122)', from: 'c4-rowboat', staging: { time: 'golden', sky_top: false },
-    fragments: ['colour.golden', 'render.style[low sun or stage spots]'], absent: ['colour.day-sky'], text: ['Golden hour stays colourful'] },
+    fragments: ['colour.golden', 'render.style[low sun or stage spots]'], absent: ['colour.day-sky'], text: ['Golden hour: warm low sunlight'] },
 ];
 
 for (const c of NEW_STAGINGS) {

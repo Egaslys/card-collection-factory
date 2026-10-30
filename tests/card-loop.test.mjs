@@ -45,7 +45,9 @@ test('ccf.mjs: справка, неизвестная команда и неиз
   const help = ccf('--help');
   assert.equal(help.status, 0);
   assert.match(help.stdout, /card make/);
-  for (const c of [['card', 'make'], ['card', 'regenerate'], ['card', 'edit'], ['card', 'adjust'], ['card', 'import'], ['card', 'prompt'], ['card', 'check'], ['models'], ['credits']]) {
+  assert.match(help.stdout, /editor --stop/, 'общая справка — все формы команды');
+  assert.match(help.stdout, /card adjust CARD_DIR \[--attempt N\] --reset/);
+  for (const c of [['card', 'make'], ['card', 'regenerate'], ['card', 'edit'], ['card', 'adjust'], ['card', 'import'], ['card', 'choose'], ['card', 'prompt'], ['card', 'check'], ['models'], ['credits']]) {
     assert.equal(ccf(...c, '--help').status, 0, c.join(' '));
     const bad = ccf(...c, ...(c[0] === 'card' ? ['x'] : []), '--no-such-option');
     assert.equal(bad.status, 2, c.join(' '));
@@ -285,6 +287,25 @@ test('подбор обработки: из начальных настроек 
   assert.equal(r.settings.sharpen.amount, 0, 'nothing to sharpen for: no change');
   assert.ok(r.tuning.miss.chosen < r.tuning.miss.start);
   assert.deepEqual(r.tuning.start, neutral);
+
+  // the shadow axis, when the bounds give it: the darkest tone lifted into its aim, brightness not misused for it
+  const dark = Uint8Array.of(30, 30, 30, 200, 120, 60);
+  const shade = rgb => [{ id: 'COLOUR.D', value: Math.min(rgb[0], rgb[3]), aim: { min: 40, max: 50 } }, { id: 'COLOUR.B', value: rgb[3], aim: { min: 199, max: 201 } }];
+  const withShadows = { ...bounds, shadows: { min: 0, max: 40, step: 4, serves: 'COLOUR.' } };
+  const s = tuneProcessing({ pixels: dark, width: 2, height: 1, start: neutral, neutral, bounds: withShadows, measure: shade, basis: 'test' });
+  assert.equal(s.settings.brightness, 0, 'яркость подняла бы и светлое — его держит его цель');
+  assert.ok(s.settings.shadows > 0, `тени ${s.settings.shadows}`);
+  assert.ok(s.tuning.measures.find(m => m.id === 'COLOUR.D').chosen >= 40);
+  assert.equal(tuneProcessing({ pixels: dark, width: 2, height: 1, start: neutral, neutral, bounds, measure: shade, basis: 'test' }).settings.shadows, undefined, 'без оси теней — их не трогают');
+});
+
+test('подъём теней: только для постановок из processing.json (сцены), с целью оттуда', { skip: noSharp }, () => {
+  const { shadowLiftFor } = /** @type {any} */ (loop);
+  const own = JSON.parse(fs.readFileSync(path.join(ROOT, 'styles/scapes/processing.json'), 'utf8'));
+  assert.deepEqual(shadowLiftFor(own, { characters: 2 }), { check: own.shadows.check, aim: own.shadows.aim });
+  assert.equal(shadowLiftFor(own, { characters: 0 }), null);
+  assert.equal(shadowLiftFor(own, {}), null);
+  assert.equal(shadowLiftFor({ ...own, shadows: undefined }, { characters: 2 }), null);
 });
 
 test('подбор обработки в цикле: настройки и меры до и после записаны в card.json, card.png — с выбранными настройками', { skip: noSharp }, async () => {
@@ -364,6 +385,29 @@ test('запасная модель из настроек: fallbackModel у Open
   assert.equal(providerFrom({ ...real, openrouter: { ...real.openrouter, keyEnvVar: 'CCF_TEST_KEY', fallbackModel: null } }).fallback, undefined);
   assert.equal(providerFrom({ ...real, use: 'codex-cli' }).fallback, undefined);
   delete process.env.CCF_TEST_KEY;
+});
+
+test('профиль модели в запросе: GPT Image получает 3:4 вместо 4:5 (1:1 для карточки), Nano Banana — 4:5 и 1K; --model меняет основную', { skip: noSharp }, async t => {
+  const { providerFrom } = /** @type {any} */ (loop);
+  const real = loadSettings().provider;
+  /** @type {any[]} */
+  const sent = [];
+  const png = Buffer.from('x').toString('base64');
+  t.mock.method(globalThis, 'fetch', async (/** @type {any} */ _url, /** @type {any} */ init) => {
+    sent.push(JSON.parse(init.body));
+    return { ok: true, status: 200, headers: new Headers(), text: async () => JSON.stringify({ data: [{ b64_json: png }], usage: { cost: 0.01 } }) };
+  });
+  const p = providerFrom(real, { apiKey: 'test-key' });
+  await p.generate({ prompt: 'p', references: [] });
+  await p.fallback.generate({ prompt: 'p', references: [] });
+  await p.fallback.generate({ prompt: 'p', references: [], crop: { width: 430, height: 480 } });
+  assert.deepEqual([sent[0].model, sent[0].aspect_ratio, sent[0].resolution], [real.openrouter.model, '4:5', '1K']);
+  assert.deepEqual([sent[1].model, sent[1].aspect_ratio, 'resolution' in sent[1]], ['openai/gpt-image-2.5-flare', '3:4', false]);
+  assert.equal(sent[2].aspect_ratio, '1:1', 'режется до карточки — пропорция с наименьшим срезом');
+  const chosen = providerFrom(real, { apiKey: 'test-key', model: real.openrouter.fallbackModel });
+  assert.equal(chosen.model, real.openrouter.fallbackModel);
+  assert.equal(chosen.fallback, undefined, 'запасная совпала с выбранной — её нет');
+  assert.throws(() => providerFrom({ ...real, use: 'codex-cli' }, { model: 'a/b' }), /только у OpenRouter/);
 });
 
 // ---------- the collection's pool and a person's requests on a card ----------
@@ -466,7 +510,8 @@ test('картинка от агента: новая попытка карточ
   const a = cardOf(made.dir).attempts[1];
   assert.deepEqual([a.model, a.cost, a.prompt, a.references], ['agent', 0, '', []]);
   assert.deepEqual(a.processing, JSON.parse(fs.readFileSync(path.join(ROOT, 'styles/scapes/processing.json'), 'utf8')).neutral);
-  assert.deepEqual(r.warnings, []);
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /Смотрящая модель не спрошена/, 'без ключа — сказано, что взгляда не было');
   assert.equal(r.chosen, 2);
   assert.match(fs.readdirSync(path.join(made.dir, 'attempts/2')).join(' '), /model\.png/);
 
@@ -482,6 +527,76 @@ test('картинка от агента: новая попытка карточ
   const cli = ccf('card', 'import', made.dir, image, '--json');
   assert.equal(JSON.parse(cli.stdout).chosen, 3, cli.stderr);
   assert.equal(ccf('card', 'import', made.dir, image, '--collection', 'x').status, 1, 'коллекция — только с заказом');
+});
+
+test('картинка со стороны проверяется так же строго: рамка героя и взгляд смотрящей модели, их расходы; повторная сдача той же картинки не проходит легче', { skip: noSharp }, async () => {
+  const { makeCard, importImage } = /** @type {any} */ (loop);
+  const real = loadSettings();
+  const settings = { ...real, card: { ...real.card, attempts: 1, tuneProcessing: false } };
+  const spec = JSON.parse(fs.readFileSync(path.join(ROOT, 'styles/scapes/checks/reference-spec.json'), 'utf8')).cards.find(c => c.id === 'ref-003');
+  const { id, ref, file, set, mask, ...staging } = spec;
+  const order = { ...ORDER, title: 'Lantern', subject: 'a glowing lantern', object: 'lantern', staging: { ...staging, material: 'metal' } };
+  const asked = [];
+  const vision = async req => {
+    asked.push(req);
+    if (/box_2d/.test(req.prompt)) return { text: '{"box_2d": [60, 180, 940, 820]}', cost: 0.001 };
+    return { text: JSON.stringify({ subject: { ok: false, why: 'a candle' }, staging: { ok: true }, additions: { ok: true }, costume: { ok: null }, checklist: [] }), cost: 0.002 };
+  };
+  const bytes = fs.readFileSync(path.join(ROOT, 'styles/scapes/references/card-003.png'));
+  // the provider's model has the same processing start as an image handed in (neutral; Codex's is too)
+  const made = await makeCard({ order, ...await pool(), settings, provider: fakeProvider(bytes, 0.04, { vision, model: 'codex-cli' }), buildPrompt: fakePrompt });
+  const image = path.join(made.dir, 'attempts/1/model.png');
+  const before = asked.length;
+  const r = await importImage({ dir: made.dir, image, settings, vision });
+  assert.equal(asked.length - before, 3, 'две рамки героя (карточка и зеркало) и взгляд — как у сгенерированной');
+  assert.deepEqual(r.warnings, []);
+  const [gen, imp] = cardOf(made.dir).attempts;
+  assert.equal(imp.hero.source, 'vision');
+  assert.equal(imp.look.verdict, 'fix');
+  assert.deepEqual([imp.check.blocking, imp.check.needsEyes, imp.check.maskStatus], [gen.check.blocking, gen.check.needsEyes, gen.check.maskStatus], 'та же картинка — тот же итог проверок');
+  assert.equal(imp.cost, 0, 'картинка не оплачена…');
+  const { attemptSpend } = await import('../core/card/card-file.js');
+  assert.ok(Math.abs(attemptSpend(imp).vision - 0.004) < 1e-9, '…а взгляд — да');
+});
+
+test('версии карточки: любую готовую попытку можно сделать карточкой; выбор остаётся после перепроверки; негодную — нельзя', { skip: noSharp }, async () => {
+  const { makeCard, chooseAttempt, recheckCard, regenerateCard } = /** @type {any} */ (loop);
+  const p = { ...fakeProvider(reference(), 0.04), generate: async () => { throw Object.assign(new Error('no image'), { status: 500 }); } };
+  const made = await makeCard({ order: ORDER, ...await pool(), settings: SETTINGS, provider: fakeProvider(await grey(), 0.04), buildPrompt: fakePrompt, limits: { attempts: 2 } });
+  await regenerateCard({ dir: made.dir, wish: 'ярче', settings: OPS, provider: p, buildPrompt: fakePrompt });
+  assert.equal(cardOf(made.dir).attempts[2].error.stage, 'generate', 'третья попытка — без картинки');
+  const r = await chooseAttempt({ dir: made.dir, n: 2 });
+  assert.equal(r.chosen, 2);
+  const c = cardOf(made.dir);
+  assert.deepEqual([c.chosen, c.chosenBy], [2, 'choice']);
+  assert.deepEqual(fs.readFileSync(path.join(made.dir, 'card.png')), fs.readFileSync(path.join(made.dir, 'attempts/2/card.png')));
+  assert.equal((await recheckCard({ dir: made.dir })).chosen, 2, 'выбор человека перепроверка не отменяет');
+  await assert.rejects(chooseAttempt({ dir: made.dir, n: 3 }), /нет готовой картинки/);
+  await assert.rejects(chooseAttempt({ dir: made.dir, n: 9 }), /нет версии 9/);
+  const cli = ccf('card', 'choose', made.dir, '--attempt', '1', '--json');
+  assert.equal(JSON.parse(cli.stdout).chosen, 1, cli.stderr);
+  assert.equal(ccf('card', 'choose', made.dir).status, 2, 'без --attempt');
+});
+
+test('сброс обработки: ручные значения заменяются подобранными программой, как после генерации', { skip: noSharp }, async () => {
+  const { makeCard, adjustCard } = /** @type {any} */ (loop);
+  const real = loadSettings();
+  const settings = { ...real, card: { ...real.card, attempts: 1 } };
+  const made = await makeCard({ order: ORDER, ...await pool(), settings, provider: fakeProvider(reference(), 0.04), buildPrompt: fakePrompt });
+  const auto = cardOf(made.dir).attempts[0];
+  const card = fs.readFileSync(path.join(made.dir, 'card.png'));
+  await adjustCard({ dir: made.dir, saturation: 0.8, brightness: -12 });
+  assert.equal(cardOf(made.dir).attempts[0].processingFixed, true);
+  await assert.rejects(adjustCard({ dir: made.dir, reset: true }), /нужны настройки/);
+  await assert.rejects(adjustCard({ dir: made.dir, reset: true, saturation: 1, settings }), /либо значения, либо сброс/);
+  const r = await adjustCard({ dir: made.dir, reset: true, settings });
+  const a = cardOf(made.dir).attempts[0];
+  assert.equal(a.processingFixed, undefined);
+  assert.deepEqual(a.processing, auto.processing, 'те же настройки, что подобрал цикл');
+  assert.deepEqual(fs.readFileSync(path.join(made.dir, 'card.png')), card, 'та же карточка');
+  assert.equal(r.chosenCheck.blocking, auto.check.blocking);
+  assert.equal(ccf('card', 'adjust', made.dir, '--reset', '--saturation', '1').status, 2);
+  assert.equal(ccf('card', 'adjust', made.dir, '--reset', '--json').status === 2, false);
 });
 
 test('отмена и ход запуска: сигнал проверяется перед каждым вызовом, ход сообщается; ключ редактора вместо окружения', { skip: noSharp }, async () => {

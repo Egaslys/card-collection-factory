@@ -1,5 +1,5 @@
 {
-  "_about": "How the program assembles the image-model prompt of a Scapes card from the bible's fragments (core/style/prompt.js reads this file; the format is described in core/style/README.md). The fragment texts are NOT here: they live in the bible documents listed under `documents`, each marked by `<!-- fragment: <id> -->`; this file only says which fragment goes where, in the order of PROMPTS.md, and how its slots are filled. `fields` is the staging vocabulary of a card order: the first nine fields are the spec fields of checks/check-card.mjs (same names and values; tests/style-prompt.test.mjs compares them with its --help), the rest are prompt-only choices that pick a variant inside a fragment. `templates` and `references.note_*` are glue text written for the program, not bible fragments: the labels «Subject:», «Staging:», «Here:» and the reference-image notes come from the pilot generation (styles/scapes/research/pilot, local) and are not yet in the bible. `references.count` = 2 is the pilot's value; the bible has not decided how many references to pass (PROMPTS.md «Не решено»). `references.weights` and `references.exclude` are the program's choice of how to rank reference cards; exclude lists the cards the bible says not to repeat (RENDERING.md «Чего избегать»: flat drawing #23 #83, fine texture #14 #47 #71 #97 #137, main light from the right #14 #56).",
+  "_about": "How the program assembles the image-model prompt of a Scapes card from the bible's fragments (core/style/prompt.js reads this file; the format is described in core/style/README.md). The fragment texts are NOT here: they live in the bible documents listed under `documents`, each marked by `<!-- fragment: <id> -->`; this file only says which fragment goes where, in the order of PROMPTS.md, and how its slots are filled. `fields` is the staging vocabulary of a card order: the first nine fields are the spec fields of checks/check-card.mjs (same names and values; tests/style-prompt.test.mjs compares them with its --help), the rest are prompt-only choices that pick a variant inside a fragment. `templates` and `references.note_*` are glue text written for the program, not bible fragments: the labels «Subject:», «Staging:», «Here:», «This card's colours:» (the order's palette on a wall: added 2026-10-30, before it the wall colour of an order never reached the prompt) and the reference-image notes come from the pilot generation (styles/scapes/research/pilot, local) and are not yet in the bible. `references.count` = 2 is the pilot's value; the bible has not decided how many references to pass (PROMPTS.md «Не решено»). `references.weights` and `references.exclude` are the program's choice of how to rank reference cards; exclude lists the cards the bible says not to repeat (RENDERING.md «Чего избегать»: flat drawing #23 #83, fine texture #14 #47 #71 #97 #137, main light from the right #14 #56).",
   "documents": ["BASE_RULES.md", "BACKGROUNDS.md", "COMPOSITION.md", "COLOUR.md", "RENDERING.md", "CHARACTERS.md"],
 
   "fields": {
@@ -201,6 +201,7 @@
       { "fragment": "colour.shadows-light" },
       { "fragment": "colour.hero-backdrop", "when": { "backdrop": ["field"] } },
       { "template": "Here: {palette}", "attach": true, "optional": true, "when": { "backdrop": ["field"] } },
+      { "template": "This card's colours: {palette}", "optional": true, "when": { "backdrop": ["wall"] } },
       { "fragment": "colour.gradient", "when": { "backdrop": ["field"] } },
       { "fragment": "colour.day-sky", "when": { "time": ["day"], "sky_top": [true] } },
       { "fragment": "colour.golden", "when": { "time": ["golden"] } },
@@ -228,8 +229,8 @@
     "index_cast_column": "Персонажи",
     "exclude": [14, 23, 47, 56, 71, 83, 97, 137],
     "weights": { "category": 3, "backdrop": 3, "placement": 3, "pattern": 2, "support": 2, "camera": 1, "time": 1, "sky_top": 1, "characters": 2, "cast": 4 },
-    "note_style": "Reference images: {images} are style references from the same card series. Copy only their rendering style: materials, soft lighting, colour treatment, backdrop treatment and level of detail. Do not copy their objects, layout or backdrop content.",
-    "note_cast": "Reference images: {images} show {who} of this card series. Keep them exactly as drawn there (faces, proportions, colours) and copy the rendering style of those images. Do not copy their poses, costumes, props or backgrounds.",
+    "note_style": "Reference images: {images} are style references from the same card series. Take only their rendering style from them: materials, soft lighting, colour treatment, backdrop treatment and level of detail; this card's subject, layout and backdrop come from the description above.",
+    "note_cast": "Reference images: {images} show {who} of this card series. Keep them exactly as drawn there (faces, proportions, colours) and copy the rendering style of those images; their poses, costumes, props and backgrounds come from the description above.",
     "anchors": {
       "_about": "Character anchor portraits (CHARACTERS.md «Опорные портреты»; files styles/scapes/characters/<name>.png): a scene order (the `when` condition) attaches one anchor per scene character BEFORE the style reference cards, so the images are numbered anchors first. `max_images` is the provider limit: Codex takes at most 5 `-i` images (core/providers/codex-cli.js); the style cards are cut down so that anchors + style cards stay within it (with two characters and `count` 2 that is 4 images). `intro` + `note_anchor` (one sentence per anchor: {n} its image number, {who} the character's name from its bible description) + `note_style` ({images} the style cards' numbers) are the note the prompt ends with; with no style cards the style sentence is left out. The anchors show the character plain (the pig without clothes, the man in a neutral blue outfit): the scene gives the costume, pose and props.",
       "dir": "characters",
@@ -237,8 +238,8 @@
       "when": { "category": [5] },
       "max_images": 5,
       "intro": "Reference images:",
-      "note_anchor": "Image {n} is the canonical look of {who}: copy its design exactly (face, build, proportions, colours, distinguishing features), but take the pose, costume, props and backdrop from the scene description, not from this image.",
-      "note_style": "{images} are style references from the same card series. Copy only their rendering style: materials, soft lighting, colour treatment, backdrop treatment and level of detail. Do not copy their objects, poses, layout or backdrop content; the characters' design comes from the character images."
+      "note_anchor": "Image {n} is the canonical look of {who}: copy its design exactly (face, build, proportions, colours, distinguishing features); the pose, costume, props and backdrop come from the scene description.",
+      "note_style": "{images} are style references from the same card series. Take only their rendering style from them: materials, soft lighting, colour treatment, backdrop treatment and level of detail; the objects, poses, layout and backdrop come from the scene description, the characters' design from the character images."
     }
   }
 }

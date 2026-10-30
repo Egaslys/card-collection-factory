@@ -10,7 +10,7 @@ import { parseFragments } from '../core/style/fragments.js';
 import { checkOrder } from '../core/style/card-order.js';
 import { expandStaging, kindKey, loadSetRules, stagingRow, windowSkeleton } from '../core/set/rules.js';
 import { normalizePlan, registryOf, validateCollection, validatePlan } from '../core/set/plan.js';
-import { parseAnswer, planCollection, planSet, setPrompt } from '../core/set/planner.js';
+import { parseAnswer, planCollection, planFromAnswer, planSet, setPrompt } from '../core/set/planner.js';
 
 const { rules, style } = loadSetRules('scapes');
 const SETS = fs.readFileSync(path.join(ROOT, 'styles/scapes/SETS.md'), 'utf8');
@@ -150,6 +150,25 @@ test('план: просьба человека переводит ошибки 
   assert.ok(r.warnings.some(w => /по просьбе человека.*нет категории 2/.test(w)));
 });
 
+test('план: пожелания набора ложатся в заказ каждой карточки; без них или запретом — предупреждение', () => {
+  const p = lakePlan();
+  p.wishes = 'летнее утро, без лиц у рыб';
+  const missing = validatePlan(p);
+  assert.ok(missing.warnings.some(w => /пожелания набора .*не перенесены.*слотов 1, 2, 3, 4, 5, 6, 7, 8, 9, 10/.test(w)), missing.warnings.join('\n'));
+  p.slots.forEach((/** @type {any} */ s) => { s.wishes = 'Early summer morning, warm low sun.'; });
+  p.slots[0].wishes = '';
+  p.slots[1].order.promptExtra = 'A brass ring at the top.';
+  p.slots[2].wishes = 'The fish has no face.';
+  const r = validatePlan(p);
+  assert.deepEqual(r.errors, []);
+  assert.ok(!r.warnings.some(w => /не перенесены/.test(w)), r.warnings.join('\n'));
+  assert.ok(r.warnings.some(w => /слот 3.*запрет, а не описание/.test(w)), r.warnings.join('\n'));
+  assert.equal(r.plan.slots[0].order.promptExtra, undefined);
+  assert.equal(r.plan.slots[1].order.promptExtra, 'A brass ring at the top. Early summer morning, warm low sun.');
+  assert.equal(normalizePlan(r.plan).plan.slots[1].order.promptExtra, r.plan.slots[1].order.promptExtra, 'второй раз не добавляется');
+  assert.equal(validatePlan(lakePlan()).warnings.filter(w => /пожелани/.test(w)).length, 0, 'без пожеланий — без предупреждений');
+});
+
 test('план: гранд-набор — 10 сцен в одном месте, кристальные рамки, подписи в одно слово', () => {
   const s = lakePlan().slots[8];
   const grand = {
@@ -208,7 +227,8 @@ test('planSet: запрос из фрагментов SETS.md; ошибки пл
   assert.match(prompt, /Assign each non-character card a staging category/);
   assert.match(prompt, /Write 2 short scenes for the end of the set/);
   assert.match(prompt, /Card caption in English/);
-  assert.match(prompt, /без лодок с мотором/);
+  assert.match(prompt, /без лодок с мотором\nCarry them into the cards/);
+  assert.equal(planFromAnswer({ cards: [{ slot: 1, wishes: 'Early morning.' }, { slot: 2, wishes: '' }] }, { style: 'scapes', theme: 't', layout: 'large', scenes: 2 }).slots.slice(0, 3).map(s => s.wishes).join('|'), 'Early morning.||');
   assert.doesNotMatch(prompt, /\[(set theme|registry|N|language)\]/);
   assert.match(seen[1].at(-1).content, /нет категории 2/);
 });

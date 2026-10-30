@@ -1,8 +1,8 @@
 // Shared state of the editor's page; app.js fills in the functions when it starts.
 
 export const app = {
-  /** @type {{source: string, envVar: string, hint: string|null}} */
-  key: { source: 'none', envVar: '', hint: null },
+  /** @type {{source: string, envVar: string}} */
+  key: { source: 'none', envVar: '' },
   online: true,
   /** the route from the address, e.g. ['c', collectionId, 's', setId] */
   route: /** @type {string[]} */ ([]),

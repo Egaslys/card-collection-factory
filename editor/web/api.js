@@ -15,6 +15,7 @@ export async function call(op, args = {}) {
   } catch {
     throw new Error('Редактор не отвечает: возможно, его остановили. Запустите его снова и обновите страницу.');
   }
+  if (res.status === 403) { reloadForNewToken(); throw new Error('Редактор перезапущен: страница обновляется.'); }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error ?? `Ошибка ${res.status}`);
   return body.job ? { job: body.job } : body.result;
@@ -41,7 +42,17 @@ export function onEvent(fn) {
   return () => listeners.delete(fn);
 }
 
-/** Opens the live channel; reconnects by itself (EventSource) and reports the connection state as events. */
+/** The editor was started again: this page's token is no longer valid, and a reload gets the new one. */
+function reloadForNewToken() { location.reload(); }
+
+/** How often a closed live channel asks whether the editor is back. */
+const PROBE_MS = 2000;
+
+/**
+ * Opens the live channel and reports the connection state as events. EventSource reconnects by itself after a dropped
+ * connection; when the editor was stopped and started again, its answer to this page's old token closes the channel
+ * for good — then the page asks the editor until it answers, and reloads itself to take the new token.
+ */
 export function connect() {
   const es = new EventSource(`/api/events?token=${encodeURIComponent(TOKEN)}`);
   es.onmessage = m => {
@@ -50,6 +61,18 @@ export function connect() {
     if (e.type === 'job') jobs.set(e.job.id, e.job);
     for (const fn of listeners) fn(e);
   };
-  es.onerror = () => { for (const fn of listeners) fn({ type: 'offline' }); };
+  es.onerror = () => {
+    for (const fn of listeners) fn({ type: 'offline' });
+    if (es.readyState === EventSource.CLOSED) setTimeout(probe, PROBE_MS);
+  };
   es.onopen = () => { for (const fn of listeners) fn({ type: 'online' }); };
+}
+
+async function probe() {
+  try {
+    const res = await fetch('/api/op/health', { method: 'POST', headers: HEADERS, body: '{}' });
+    if (res.status === 403) { reloadForNewToken(); return; }
+    if (res.ok) { connect(); return; }
+  } catch { /* not running yet */ }
+  setTimeout(probe, PROBE_MS);
 }

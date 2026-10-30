@@ -24,7 +24,7 @@ Readiness, who draws (provider), money and the collection: steps 1–2 of ccf-ma
 node FACTORY/ccf.mjs set check PLAN.json [VARIANT2.json …] --collection ID
 ```
 
-`--collection` checks against the collection's other sets (no repeated item kinds or captions). Variants: one file per variant with `variant: { n, group }` and the same window layout, all checked in one call. Then go through the items the program cannot check («Not checkable by the program» in `core/set/README.md`) yourself.
+`--collection` checks against the collection's other sets (no repeated item kinds or captions). The person's wishes reach the images only through the cards: give every slot `wishes` — one English sentence of what the wishes ask of that card, said as what is seen («warm low morning sun, long soft shadows»), `""` when they do not concern it — and let them shape the card's own fields too (the staging `time` for «morning»); the program appends `wishes` to the order's `promptExtra`, and `set check` warns about a slot without it or one phrased as a prohibition. Variants: one file per variant with `variant: { n, group }` and the same window layout, all checked in one call. Then go through the items the program cannot check («Not checkable by the program» in `core/set/README.md`) yourself.
 
 Your own collection: write, check and save it set by set in collection order. `set check --collection` sees only plans already saved in the collection, so save each plan (`set save PLAN.json --collection ID`, which checks it again and makes no cards) before checking the next, and each set is checked against the ones before it. The whole-collection check (16 sets, the grand set last, the scene curve) is `node FACTORY/ccf.mjs collection check --collection ID` over the saved plans (`--partial` while the collection is not complete); the rest of the collection part of `SETS.md` §9 you go through yourself.
 
@@ -46,7 +46,7 @@ node FACTORY/ccf.mjs set make --collection ID --set SET_ID [--slots 1,2] [--redo
 node FACTORY/ccf.mjs collection make --collection ID [--sets N,N]
 ```
 
-Options: `--provider`, `--parallel`, `--attempts`, `--max-spend`. Caps (`FACTORY/settings/defaults.json`, `_about`): `set.maxSpendUsd` per set, `card.maxSpendUsd` per card inside it, `set.plan.maxSpendUsd` per planning run; `collection make --max-spend` caps the whole run. Tell the person the cap before a paid run and stay inside what they agreed.
+Options: `--provider`, `--model` (another OpenRouter image model for this run, ccf-make-cards step 1), `--parallel`, `--attempts`, `--max-spend`. Caps (`FACTORY/settings/defaults.json`, `_about`): `set.maxSpendUsd` per set, `card.maxSpendUsd` per card inside it, `set.plan.maxSpendUsd` per planning run; `collection make --max-spend` caps the whole run. Tell the person the cap before a paid run and stay inside what they agreed.
 
 Progress: one stderr line per card event. Stop: one Ctrl+C — no new card starts, cards in progress finish, the rest are reported `cancelled`. Running `set make --set SET_ID` again continues: made slots are kept, failed ones are made again.
 

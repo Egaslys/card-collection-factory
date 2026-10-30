@@ -37,9 +37,10 @@ function grid(a, start) {
 }
 
 /**
- * Two stages, in the order adjust.js applies them. Colour (only the measures the colour axes serve): saturation and
- * brightness in turn, each scanned over its whole grid with the other fixed, until neither moves (sharpening as at
- * the start) — the smallest summed miss, then the smallest change from the start (in steps of each axis).
+ * Two stages, in the order adjust.js applies them. Colour (only the measures the colour axes serve): the shadow lift
+ * (only when `bounds.shadows` is given), saturation and brightness in turn, each scanned over its whole grid with the
+ * others fixed, until none moves (sharpening as at the start) — the smallest summed miss, then the smallest change
+ * from the start (in steps of each axis).
  * Sharpness (every measure): every sharpening amount with that colour — the smallest miss of the
  * measures the sharpening axis serves, then the smallest change. Neither stage takes a setting that pushes out a
  * measure that is inside its aim at the start (the sharpness stage also may not add to the colour miss); if the
@@ -49,7 +50,8 @@ function grid(a, start) {
  * @param {number} o.width @param {number} o.height
  * @param {AdjustSettings} o.start
  * @param {AdjustSettings} o.neutral  no change: what the model's own image measures as
- * @param {{saturation: Axis, brightness: Axis, sharpen: Axis}} o.bounds  saturation and brightness serve the same measures
+ * @param {{saturation: Axis, brightness: Axis, sharpen: Axis, shadows?: Axis}} o.bounds  saturation, brightness and
+ *   shadows serve the colour measures; without `shadows` the lift stays as at the start
  * @param {(rgb: Uint8Array | Uint8ClampedArray, prefix?: string) => Measure[]} o.measure  with `prefix`, only the
  *   measures whose id starts with it (the colour stage measures less: faster)
  * @param {string} o.basis
@@ -61,11 +63,12 @@ export function tuneProcessing({ pixels, width, height, start, neutral, bounds, 
   const cache = new Map();
   /** @param {AdjustSettings} s @param {string} [prefix] @returns {Eval} */
   const evaluate = (s, prefix) => {
-    const key = `${s.saturation}|${s.brightness}|${s.sharpen.amount}|${prefix ?? ''}`;
+    const key = `${s.saturation}|${s.brightness}|${s.shadows ?? 0}|${s.sharpen.amount}|${prefix ?? ''}`;
     let e = cache.get(key);
     if (!e) {
       const change = Math.abs(s.saturation - start.saturation) / bounds.saturation.step + Math.abs(s.brightness - start.brightness) / bounds.brightness.step
-        + Math.abs(s.sharpen.amount - start.sharpen.amount) / bounds.sharpen.step;
+        + Math.abs(s.sharpen.amount - start.sharpen.amount) / bounds.sharpen.step
+        + (bounds.shadows ? Math.abs((s.shadows ?? 0) - (start.shadows ?? 0)) / bounds.shadows.step : 0);
       e = { settings: s, measures: measure(adjust(pixels, width, height, s), prefix), change };
       cache.set(key, e);
     }
@@ -92,11 +95,18 @@ export function tuneProcessing({ pixels, width, height, start, neutral, bounds, 
     }
     return best;
   };
-  const sats = grid(bounds.saturation, start.saturation), bris = grid(bounds.brightness, start.brightness);
+  /** @type {[number[], (v: number) => Partial<AdjustSettings>][]} */
+  const axes = [
+    // the lift first: dark tones are lifted by the lift, not by more saturation or by lifting every tone (a greedy
+    // search keeps what an earlier axis took when it half-fixed the darkest tones)
+    ...(bounds.shadows ? [/** @type {[number[], (v: number) => Partial<AdjustSettings>]} */ ([grid(bounds.shadows, start.shadows ?? 0), v => ({ shadows: v })])] : []),
+    [grid(bounds.saturation, start.saturation), v => ({ saturation: v })],
+    [grid(bounds.brightness, start.brightness), v => ({ brightness: v })],
+  ];
   let colourBest = evaluate(start, bounds.saturation.serves);
   for (let round = 0; round < 4; round++) {
     const before = colourBest;
-    for (const [values, set] of /** @type {const} */ ([[sats, (/** @type {number} */ v) => ({ saturation: v })], [bris, (/** @type {number} */ v) => ({ brightness: v })]])) {
+    for (const [values, set] of axes) {
       const base = colourBest.settings;
       for (const v of values) {
         const e = evaluate({ ...base, ...set(v) }, bounds.saturation.serves);

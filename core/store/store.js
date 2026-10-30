@@ -5,12 +5,12 @@
 import { spawn as nodeSpawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { attemptCost, readCardFile } from '../card/card-file.js';
+import { attemptCost, attemptSpend, readCardFile } from '../card/card-file.js';
 import { exists, readJson, subdirs, writeJsonAtomic } from './files.js';
 import { checkId, reserveId, slugify } from './ids.js';
 import {
   CARDS_DIR, CARD_FILE, COLLECTIONS_DIR, COLLECTION_FILE, DEFAULT_STYLE, EXPORT_CARDS_FOLDER, EXPORT_DIR, FINAL_IMAGE, SETS_DIR,
-  SET_FILE, SLOT_COUNT, WINDOW_KINDS, WINDOW_TEMPLATES,
+  SET_FILE, SLOT_COUNT, SPEND_FILE, windowKinds, windowTemplates,
 } from './layout.js';
 import { watchStore } from './watch.js';
 import { writeZip } from './zip.js';
@@ -36,7 +36,8 @@ import { writeZip } from './zip.js';
 
 /**
  * The set window; other keys (e.g. core/set's `layout`) are kept as given. Checked when written.
- * @typedef {{kind: string, template: string} & Record<string, unknown>} SetWindow  kind: one of WINDOW_KINDS; template: one of WINDOW_TEMPLATES
+ * @typedef {{kind: string, template: string} & Record<string, unknown>} SetWindow  kind and template: of the style's
+ *   windows.json (layout.js windowKinds, windowTemplates)
  */
 
 /**
@@ -62,7 +63,9 @@ import { writeZip } from './zip.js';
  * @property {{blocking: number, warns: number, needsEyes: number, maskStatus: string}|null} checks  the chosen attempt's
  * @property {number} attempts
  * @property {number} cost  USD, sum of the known costs of the attempts: images and the vision model's calls (card-file.js attemptCost)
+ * @property {{images: number, vision: number}} spend  the same split by kind (card-file.js attemptSpend)
  * @property {number} costUnknown  attempts whose cost the provider did not report
+ * @property {string|null} model  the model that made the chosen version ("agent": an image handed in); null without one
  * @property {string|null} setId  the set the card sits in; null = in the pool
  * @property {number|null} slot  0-based index into that set's slots
  * @property {string|null} updatedAt  last change of card.json or card.png
@@ -82,6 +85,25 @@ import { writeZip } from './zip.js';
 /** @typedef {{setId: string, slot: number}} Place */
 
 /**
+ * @typedef {object} SpendEntry  one paid call that no card records: a line of the factory's spend ledger (SPEND_FILE)
+ * @property {string} at  ISO time
+ * @property {string|null} collectionId  the collection it was for; null = none yet (the text of a new collection)
+ * @property {'images'|'vision'|'text'} kind
+ * @property {string} what  what it was for, e.g. "plan", "text-help"
+ * @property {string} model
+ * @property {number} usd
+ */
+
+/**
+ * @typedef {object} Spend  USD by kind, known costs only
+ * @property {number} images  the image models (an imported image and a free provider count 0)
+ * @property {number} vision  the vision model: hero outlines and looks
+ * @property {number} text  the text model: plans, text help
+ * @property {number} total
+ * @property {number} unknown  calls whose price the provider did not report
+ */
+
+/**
  * tools/trash.mjs, the project's one way to delete (checks the paths, then the OS trash). Imported by a computed URL
  * so the type check of core/ does not take in the untyped tools/; this is its contract.
  * @typedef {(paths: string[], o: {root?: string, roots?: string[], move?: (paths: string[]) => string}) => {ok: boolean, lines: string[]}} TrashFn
@@ -95,6 +117,8 @@ const PROTECTED_SET_KEYS = ['id', 'createdAt', 'updatedAt'];
 /** @param {unknown} v @returns {v is Record<string, any>} */
 const isObject = v => typeof v === 'object' && v !== null && !Array.isArray(v);
 const now = () => new Date().toISOString();
+/** @param {number} v  USD rounded to a millionth: sums of floats stay readable */
+const round6 = v => Math.round(v * 1e6) / 1e6;
 
 /** @param {string} what @param {unknown} v */
 function text(what, v) {
@@ -118,12 +142,20 @@ function checkBrief(brief = {}, base = { theme: '', wishes: '', variants: 1 }) {
   return out;
 }
 
-/** @param {unknown} window @param {Partial<SetWindow>} [base] @returns {SetWindow} */
-function checkWindow(window = {}, base = { kind: 'large', template: WINDOW_TEMPLATES[0] }) {
+/**
+ * The window of a set by its style's windows (layout.js windowKinds, windowTemplates). The kind defaults to the
+ * style's main window; a template not given that does not belong to the kind (the kind changed, or the default)
+ * becomes the kind's first.
+ * @param {string} style @param {unknown} window @param {Partial<SetWindow>} [base] @returns {SetWindow}
+ */
+function checkWindow(style, window = {}, base = {}) {
   if (!isObject(window)) throw new Error('Окно набора (window) — объект { kind, template }.');
-  const out = /** @type {SetWindow} */ ({ ...base, ...window });
-  if (!(/** @type {readonly string[]} */ (WINDOW_KINDS)).includes(out.kind)) throw new Error(`Вид окна «${out.kind}» неизвестен: ${WINDOW_KINDS.join(', ')}.`);
-  if (!(/** @type {readonly string[]} */ (WINDOW_TEMPLATES)).includes(out.template)) throw new Error(`Шаблон окна «${out.template}» неизвестен: ${WINDOW_TEMPLATES.join(', ')}.`);
+  const kinds = windowKinds(style);
+  const out = /** @type {SetWindow} */ ({ kind: kinds[0], ...base, ...window });
+  if (!kinds.includes(out.kind)) throw new Error(`Вид окна «${out.kind}» неизвестен: ${kinds.join(', ')}.`);
+  const templates = windowTemplates(style, out.kind);
+  if (!('template' in window) && !templates.includes(out.template)) out.template = templates[0];
+  if (!templates.includes(out.template)) throw new Error(`Шаблон окна «${out.template}» у окна ${out.kind} неизвестен: ${templates.join(', ')}.`);
   return out;
 }
 
@@ -221,7 +253,7 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
     const latest = Math.max(...times);
     /** @type {CardSummary} */
     const out = {
-      id: k, title: k, image: null, status: 'new', checks: null, attempts: 0, cost: 0, costUnknown: 0,
+      id: k, title: k, image: null, status: 'new', checks: null, attempts: 0, cost: 0, spend: { images: 0, vision: 0 }, costUnknown: 0, model: null,
       setId: place?.setId ?? null, slot: place?.slot ?? null, updatedAt: latest ? new Date(latest).toISOString() : null,
     };
     let card;
@@ -229,9 +261,17 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
     if (!card) return out;
     out.title = card.order?.title || card.order?.object || k;
     out.attempts = card.attempts.length;
-    for (const a of card.attempts) { if (a.cost == null) out.costUnknown++; out.cost += attemptCost(a); }
-    out.cost = Math.round(out.cost * 1e6) / 1e6;
+    for (const a of card.attempts) {
+      if (a.cost == null) out.costUnknown++;
+      out.cost += attemptCost(a);
+      const sp = attemptSpend(a);
+      out.spend.images += sp.images;
+      out.spend.vision += sp.vision;
+    }
+    out.cost = round6(out.cost);
+    out.spend = { images: round6(out.spend.images), vision: round6(out.spend.vision) };
     const chosen = card.attempts.find(a => a.n === card.chosen);
+    out.model = chosen?.model ?? null;
     if (chosen && exists(png)) {
       out.status = 'made';
       out.image = png;
@@ -239,6 +279,23 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
       if (ch) out.checks = { blocking: ch.blocking, warns: ch.warns, needsEyes: ch.needsEyes ?? ch.fails.length - ch.blocking, maskStatus: ch.maskStatus };
     } else if (card.attempts.length) out.status = 'failed';
     return out;
+  }
+
+  const ledger = () => path.join(root, SPEND_FILE);
+  /** @returns {SpendEntry[]} the ledger; a line that does not read is skipped */
+  function readLedger() {
+    let text = '';
+    try { text = fs.readFileSync(ledger(), 'utf8'); } catch { return []; }
+    return text.split('\n').flatMap(l => { try { return l.trim() ? [JSON.parse(l)] : []; } catch { return []; } });
+  }
+  /** @param {string} c @param {Spend} into */
+  function addCollectionSpend(c, into) {
+    for (const k of cardIds(c)) {
+      const sum = summary(c, k, undefined);
+      into.images += sum.spend.images;
+      into.vision += sum.spend.vision;
+      into.unknown += sum.costUnknown;
+    }
   }
 
   /** @param {string} p */
@@ -365,7 +422,7 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
       for (const key of PROTECTED_SET_KEYS) if (key in extra) throw new Error(`Набор: поле «${key}» задаёт хранилище.`);
       const name = title(t);
       const b = checkBrief(brief);
-      const w = checkWindow(window);
+      const w = checkWindow(col.style, window);
       const sets = allSets(collectionId, col);
       const n = number === undefined ? Math.max(0, ...sets.map(s => s.number)) + 1 : checkNumber(number);
       const id = reserveId(path.join(collectionDir(collectionId), SETS_DIR), slugify(name, 'set'));
@@ -402,7 +459,7 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
       const next = { ...set, ...rest, updatedAt: now() };
       if ('title' in rest) next.title = title(rest.title);
       if ('brief' in rest) next.brief = checkBrief(rest.brief, set.brief);
-      if ('window' in rest) next.window = checkWindow(rest.window, set.window);
+      if ('window' in rest) next.window = checkWindow(col.style, rest.window, set.window);
       if ('number' in rest) checkNumber(rest.number);
       if ('variantGroup' in rest) text('Группа вариантов', rest.variantGroup);
       writeSet(collectionId, next);
@@ -497,6 +554,42 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
         return set.slots.flatMap((k, slot) => (k && exists(cardDir(collectionId, k)) ? [summary(collectionId, k, { setId, slot })] : []));
       }
       return cardIds(collectionId).filter(k => !pool || !places.has(k)).map(k => summary(collectionId, k, places.get(k)));
+    },
+
+    /**
+     * Records a paid call that no card records (a plan, a text help) in the factory's spend ledger (SPEND_FILE): one
+     * line appended, so writers in several processes do not overwrite each other. A cost of 0 or an unknown one
+     * (null) is recorded too: the latter counts as unknown.
+     * @param {string|null} collectionId
+     * @param {{kind: SpendEntry['kind'], what: string, model: string, usd: number|null}} entry
+     */
+    async recordSpend(collectionId, { kind, what, model, usd }) {
+      if (collectionId != null) readCollection(collectionId);
+      if (!['images', 'vision', 'text'].includes(kind)) throw new Error(`Вид расхода «${kind}» неизвестен: images, vision или text.`);
+      fs.mkdirSync(root, { recursive: true });
+      fs.appendFileSync(ledger(), JSON.stringify({ at: now(), collectionId: collectionId ?? null, kind, what: String(what), model: String(model), usd }) + '\n');
+    },
+
+    /**
+     * What was spent, by kind: for one collection — its cards' attempts (card.json) and its lines of the ledger; with
+     * no collection — the factory: every collection there is now, and the ledger's lines of none. A deleted
+     * collection's spend is not counted.
+     * @param {{collectionId?: string}} [o] @returns {Promise<Spend>}
+     */
+    async spend({ collectionId } = {}) {
+      /** @type {Spend} */
+      const out = { images: 0, vision: 0, text: 0, total: 0, unknown: 0 };
+      const ids = collectionId != null ? (readCollection(collectionId), [collectionId]) : subdirs(root).filter(c => exists(path.join(root, c, COLLECTION_FILE)));
+      for (const c of ids) addCollectionSpend(c, out);
+      const counted = new Set(ids);
+      for (const e of readLedger()) {
+        if (collectionId != null ? e.collectionId !== collectionId : e.collectionId != null && !counted.has(e.collectionId)) continue;
+        if (typeof e.usd !== 'number') { out.unknown++; continue; }
+        if (e.kind === 'images' || e.kind === 'vision' || e.kind === 'text') out[e.kind] += e.usd;
+      }
+      for (const k of /** @type {const} */ (['images', 'vision', 'text'])) out[k] = round6(out[k]);
+      out.total = round6(out.images + out.vision + out.text);
+      return out;
     },
 
     /**

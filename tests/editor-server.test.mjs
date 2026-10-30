@@ -36,6 +36,7 @@ test('редактор: API только с токеном запуска, чу�
   const ok = await op('health', { 'x-ccf-token': ed.token });
   assert.equal(ok.status, 200);
   assert.equal(JSON.parse(ok.body).result.ok, true);
+  assert.deepEqual(Object.keys(JSON.parse(ok.body).result.key).sort(), ['envVar', 'source'], 'о ключе — только его статус, ни одного его символа');
   assert.equal((await op('noSuchOp', { 'x-ccf-token': ed.token })).status, 404);
   const missing = await op('getCollection', { 'x-ccf-token': ed.token });
   assert.equal(missing.status, 400);
@@ -130,4 +131,7 @@ test('агент через редактор: с ключом здесь или 
   } finally {
     delete process.env.CCF_TEST_HERE_KEY;
   }
+  // without a key here and without an editor: an operation that can do without the key runs here, the others stop
+  assert.equal(await hereOrInEditor({ needsKey: true, optional: true, envVar: 'CCF_TEST_NO_KEY', op: 'x', args: fail, here: async () => 'здесь' }), 'здесь');
+  await assert.rejects(hereOrInEditor({ needsKey: true, envVar: 'CCF_TEST_NO_KEY', op: 'x', args: fail, here: async () => 'здесь' }), /Нет ключа CCF_TEST_NO_KEY/);
 });

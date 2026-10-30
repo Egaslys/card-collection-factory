@@ -52,8 +52,8 @@ function keyBlock(k) {
   const state = k.source === 'none'
     ? `<p class="keystate keystate--fail"><i class="dot dot--fail"></i><span><b>Ключа нет.</b> Генерация через OpenRouter и план набора не работают. Codex CLI работает без ключа.</span></p>`
     : k.source === 'temporary'
-      ? `<p class="keystate"><i class="dot dot--done"></i><span><b>Временный ключ</b> …${esc(k.hint)} — живёт, пока открыт редактор.</span></p>`
-      : `<p class="keystate"><i class="dot dot--done"></i><span><b>Постоянный ключ</b> …${esc(k.hint)} — из файла .env или переменной ${esc(k.envVar)}.</span></p>`;
+      ? `<p class="keystate"><i class="dot dot--done"></i><span><b>Временный ключ</b> — живёт, пока открыт редактор.</span></p>`
+      : `<p class="keystate"><i class="dot dot--done"></i><span><b>Постоянный ключ</b> — из файла .env или переменной ${esc(k.envVar)}.</span></p>`;
   return `${state}
     <label class="field"><span class="field__label">${k.source === 'none' ? 'Временный ключ' : 'Заменить на временный'}</span>
       <span class="input-wrap"><input class="input" type="password" name="key" autocomplete="off" spellcheck="false" placeholder="sk-or-…" data-key-input><button type="button" class="btn btn--text btn--icon btn--s" data-key-toggle aria-label="Показать ключ" aria-pressed="false">${I.eye}</button></span>

@@ -24,7 +24,7 @@ The box is in card pixels (the card size: `styles/<style>/README.md`), drawn by 
 
 ## 3. Look at the card
 
-With a key the vision model has already looked (`check.look`, the full answer in `attempts/<n>/look.json`): take its issues as leads, not as the review — on the trial set it caught a wrong backdrop every time but a missing costume item only in about half of the runs and no fine texture at all. Open `card.png` and answer every item with pass or fail and a reason:
+With a key the vision model has already looked (`check.look`, the full answer in `attempts/<n>/look.json`): take its issues as leads, not as the review — measured on 22 cards (`CHANGELOG.md`, 2026-10-30): it caught a wrong backdrop or wall colour and a missing costume item, but never a subject drawn as a near kind (a pier that reads as a bench) or fine texture (mesh), so an empty list does not mean the card is right. Open `card.png` and answer every item with pass or fail and a reason:
 
 - each entry of `chosenVisual` (document and check number): read that check in the document's checks section;
 - the card order of `styles/<style>/CHECKLIST.md`: format and category, staging and backdrop, composition, colour, rendering, characters;
@@ -38,12 +38,13 @@ An order of kind `character-sheet` has no pixel checks: its `chosenVisual` list 
 | What is wrong | Fix | Cost |
 |---|---|---|
 | the order's staging does not describe the card, which is fine | correct `order.staging` in `card.json`, then `card check CARD_DIR` | free |
-| only brightness, saturation or sharpness | `card adjust CARD_DIR [--saturation X] [--brightness Y] [--sharpen A]` (bounds: `styles/<style>/processing.json`) | free |
+| only brightness, saturation or sharpness | `card adjust CARD_DIR [--saturation X] [--brightness Y] [--sharpen A] [--shadows S]` (bounds: `styles/<style>/processing.json`); `card adjust CARD_DIR --reset` gives back the processing the program tuned | free |
+| an earlier version was better | `card choose CARD_DIR --attempt N`: version N (attempt N) becomes the card; kept on recheck | free |
 | one local defect (a face on a fish, a wrong detail) | `card edit CARD_DIR --wish TEXT` — the card's model image goes back with the wish | one generation |
 | subject, staging or composition wrong | `card regenerate CARD_DIR --wish TEXT`, or fix the order and `card make ORDER.json --collection ID --card CARD_ID` | generations |
 | you draw with your own image tool | draw again, then `card import CARD_DIR IMAGE` | free |
 
-`--wish` carries the person's words as they are; a fix of your own is one plain English sentence. `edit`, `regenerate` and `import` make the new attempt the card even when an earlier one passes more checks (a request outranks the rules); `card make` picks the best attempt by checks. After any fix, repeat steps 1–3. Paid fixes stay inside the cap the person agreed (ccf-make-cards step 1).
+`--wish` carries the person's words as they are; a fix of your own is one plain English sentence. `edit`, `regenerate` and `import` make the new attempt the card even when an earlier one passes more checks (a request outranks the rules); `card make` picks the best attempt by checks. Every attempt stays as a version: when a fix came out worse, `card choose` the better version back — never re-import an old `model.png` for that. After any fix, repeat steps 1–3. Paid fixes stay inside the cap the person agreed (ccf-make-cards step 1).
 
 ## 5. Report
 

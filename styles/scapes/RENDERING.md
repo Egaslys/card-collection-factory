@@ -398,19 +398,19 @@
 <!-- fragment: render.style -->
 ```
 Stylized 3D render look: simplified, rounded, slightly chunky toy-like forms with soft bevelled edges; thin parts (handles, ropes, rods, cables) are drawn thicker than in reality, small parts slightly enlarged.
-No outlines and no linework anywhere. Every edge is defined only by a change of tone and colour: lit top edges carry a thin soft light rim, undersides roll into a darker, richer shade of the same colour.
+Every edge is defined only by a change of tone and colour, as in a soft 3D render: lit top edges carry a thin soft light rim, undersides roll into a darker, richer shade of the same colour.
 Bright, soft lighting from the upper left: a large soft key light from the upper left and slightly in front, strong fill so shaded sides stay rich and colourful, and a thin soft rim light along the top edges. Shading falls to the lower right.
 [low sun or stage spots] A warm rim light from the low sun or a coloured rim from stage spots may come from any side; the key light still comes from the upper left, the subject's front stays fully lit, and cast shadows still fall to the lower right.
-Shadows are soft and coloured, never grey or black, with soft blurred edges.
+Shadows are soft and coloured, a deeper, richer shade of the colour they fall on, with soft blurred edges.
 [resting] A soft dark contact shadow exactly where the object touches the surface, plus a short soft cast shadow falling to the right.
-[floating] The object floats and casts no shadow.
-Glossy surfaces: a broad soft highlight band following the form plus one small hotspot, tinted with the material colour, not pure white. Matte materials show form through soft light-to-shade gradients only.
-Large readable forms with clearly readable small parts (buttons, rivets, badges, single leaves), all slightly enlarged and rounded. No fine surface texture: no mesh, terry, fine weave, frost, soot, pores, hairline lines or filigree, and no grime: no rust, stains, dirt spots or scratched-up paint; even old things look clean and well kept, with at most one or two simple paint chips drawn as bold shapes; repeated small elements are simplified into a few bold shapes.
+[floating] The object floats; the backdrop below it shows only its even glow.
+Glossy surfaces: a broad soft highlight band following the form plus one small hotspot, tinted with the material colour. Matte materials show form through soft light-to-shade gradients only.
+Large readable forms with clearly readable small parts (buttons, rivets, badges, single leaves), all slightly enlarged and rounded. Surfaces are smooth and clean: nets, meshes, terry, weaves, frost, soot and filigree become a few bold, thick, rounded shapes, pores and hairline lines melt into smooth gradients; even old things look clean and well kept, freshly painted, with at most one or two simple paint chips drawn as bold shapes; repeated small elements are simplified into a few bold shapes.
 [thin flat object] Give the flat object real thickness and depth: a visible edge, a curl, a fold, a stack of sheets, and a soft shadow behind or under it.
 [scene] The hero stays smooth and crisp like a polished stylized 3D render; foliage is clumps of simple glossy leaves; the far background is softer, lighter, lower in contrast and slightly hazy, with a gently painted feel.
-[dusk or night] The hero is fully and brightly lit from the front; night is shown only by the sky, stars and small warm glowing lights, not by darkening the subject.
+[dusk or night] The hero is fully and brightly lit from the front; night is shown only by the sky, stars and small warm glowing lights, while the subject itself stays bright.
 [effects] Effects are soft, simplified and semi-transparent: a few smooth wisps of steam, puffy rounded smoke and foam, lens-like droplets with a white glint, soft translucent light cones; glowing things have a soft halo.
-Clean image: no film grain, no noise, no vignette, no heavy sharpening halos.
+Clean image: smooth clean tones like a polished digital render, even brightness out to the corners, soft natural edges.
 ```
 
 Материалы — по одному фрагменту на материал героя:
@@ -422,12 +422,12 @@ Clean image: no film grain, no noise, no vignette, no heavy sharpening halos.
 [gold] Gold or brass: warm yellow-orange shading into brown, broad smooth reflections, pale-yellow highlights.
 [glass] Glass: clear with a pale cyan tint, contents visible, brighter edges and thick base, thin white glints.
 [wood] Wood: warm smooth gradients, only a few broad soft grain stripes, rounded plank edges.
-[fabric] Fabric: soft thick volumes, big folds, seams and pockets as simple shapes, no weave texture.
+[fabric] Fabric: soft thick volumes, big folds, seams and pockets as simple shapes, smooth cloth.
 [rubber] Rubber or silicone: like plastic but more matte, wider and weaker highlights.
 [paper] Paper: cream or white with visible thickness, curled corners, folds or stacked sheets.
 [stone] Stone or marble: smooth polished surface, rare soft veins, large sculpted forms.
-[fleece or fur] Fleece or fur: round cloud-like curls, no individual hairs.
-[ice] Ice: rounded translucent pale-blue cubes with bright edges, no frost.
+[fleece or fur] Fleece or fur: round cloud-like curls, each curl one smooth soft shape.
+[ice] Ice: rounded translucent pale-blue cubes with bright edges, clear and glossy.
 [water] Water: saturated turquoise or blue, soft caustic light network, ripple rings around objects, foam as puffy white clouds.
 [inflatable] Inflatable: very glossy and puffy, with seam lines and strong highlights.
 [skin] Skin: warm peach or pink with soft gradients, rosy nose and cheeks, glossy eyes with white glints.

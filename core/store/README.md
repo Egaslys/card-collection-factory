@@ -6,7 +6,7 @@ For agents. The one description of the factory folder's layout and of `collectio
 
 - `index.js` — the Store API over the factory's `collections/`: `import { listCollections, createSet, … } from './core/store/index.js'`. Also re-exports `createStore`, `slugify` and the layout constants.
 - `store.js` — `createStore({ root, trashMove?, spawn?, platform? })`: the same operations over another folder (tests use a temporary one).
-- `layout.js` — file and folder names, `SLOT_COUNT`, `WINDOW_KINDS`, `WINDOW_TEMPLATES`, `DEFAULT_STYLE`: the one place for these values.
+- `layout.js` — file and folder names, `SLOT_COUNT`, `DEFAULT_STYLE`: the one place for these values; `windowKinds(style)` and `windowTemplates(style, kind)` read the window kinds and their colour templates from the style's `windows/windows.json`, their one source.
 - `ids.js` (readable ids), `files.js` (atomic writes), `zip.js` (ZIP writer, no dependency), `watch.js` (live events).
 
 ## Layout
@@ -67,7 +67,7 @@ An id is the folder name: a slug of the title (Cyrillic transliterated, lower ca
 
 - `number` — the set's number in the collection; default: the largest so far + 1. Variants of one set may share it.
 - `brief` — the producer's input in free text; defaults `""`, `""`, `1`. `updateSet({ brief })` merges key by key.
-- `window` — `kind` one of `WINDOW_KINDS`, `template` one of `WINDOW_TEMPLATES` (the window of the Scapes style: `styles/scapes/SETS.md` §4). Defaults: `large` (SETS.md §4.3: a single set goes in the large window by default) and `blue` (the first template; which template is the default is not decided by the author). Other keys inside `window` are kept. `updateSet({ window })` merges key by key.
+- `window` — `kind` one of the style's window kinds, `template` one of that kind's colour templates (both from `styles/<style>/windows/windows.json` through `layout.js`; for Scapes: `large`, `small`, `grand`; `blue`, `violet`, `crimson`, `orange` for the large and small windows, `crystal` for the grand one — `styles/scapes/SETS.md` §4). Defaults: the style's main window (`large`; SETS.md §4.3: a single set goes in the large window by default) and the kind's first template (which template is the default is not decided by the author); a template that does not fit a changed kind and was not given becomes the new kind's first. Other keys inside `window` are kept. `updateSet({ window })` merges key by key.
 - `slots` — `SLOT_COUNT` (10) card ids or `null`, in window order: row by row, left to right. In the API a slot is the **0-based index** into this array; export file names number slots from 01.
 - `variantGroup` — sets with the same group are variants of one set; a new set's group is its own id.
 - `plan` — optional, owned by `core/set`; the store keeps it as given.
@@ -75,17 +75,22 @@ An id is the folder name: a slug of the title (Cyrillic transliterated, lower ca
 
 ## Card summary (`listCards`, `getCollection().pool`, `moveCard`)
 
-`{ id, title, image, status, checks, attempts, cost, costUnknown, setId, slot, updatedAt, error? }`
+`{ id, title, image, status, checks, attempts, cost, spend, costUnknown, model, setId, slot, updatedAt, error? }`
 
 - `title` — the order's `title`, else its `object`, else the id.
 - `image` — absolute path of `card.png`, `null` while there is none.
 - `status` — `new` (no attempt yet, e.g. a reserved id), `made` (a chosen attempt and `card.png`), `failed` (attempts, none usable).
 - `checks` — of the chosen attempt: `{ blocking, warns, needsEyes, maskStatus }`; `needsEyes` = FAILs that rest on an unconfirmed hero outline. `null` when the attempt has no check summary.
-- `cost` — USD, the sum of attempts whose cost is known; `costUnknown` — how many attempts have no reported cost.
+- `cost` — USD, the sum of attempts whose cost is known (images and the vision model's calls); `spend` — the same split `{ images, vision }`; `costUnknown` — how many attempts have no reported cost.
+- `model` — the model that made the chosen version (`agent` for an image handed in); `null` without one.
 - `setId`, `slot` — where the card sits; `null` in the pool.
 - `error` — `card.json` could not be parsed (the rest of the list still works).
 
 `listCards(c)` — all cards, oldest folder first; `{ setId }` — that set's cards in slot order; `{ pool: true }` — cards in no set.
+
+## Spend
+
+`spend({ collectionId? })` → `{ images, vision, text, total, unknown }` (USD, known costs; `unknown` = calls without a reported price). Images and the vision model's calls are read from the cards' `card.json` (every attempt); the text model's calls (plans, text help), which no card records, from the factory's ledger `collections/spend.jsonl` (`SPEND_FILE`): one JSON line per call `{ at, collectionId, kind, what, model, usd }`, appended by `recordSpend(collectionId | null, { kind, what, model, usd })` — appending, so several processes never overwrite each other. With a collection: its cards and its ledger lines. Without: every collection there is now and the ledger lines of no collection (the text of a collection not yet created); a deleted collection's spend is not counted.
 
 ## Deleting
 

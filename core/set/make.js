@@ -10,7 +10,7 @@ import { loadSetRules } from './rules.js';
 /** @typedef {import('../store/index.js').CardSet} CardSet */
 /**
  * The Store API core/set uses (core/README.md).
- * @typedef {Pick<typeof import('../store/index.js'), 'getCollection'|'createCollection'|'createSet'|'getSet'|'updateSet'|'listCards'|'cardDir'|'newCardId'|'moveCard'>} SetStore
+ * @typedef {Pick<typeof import('../store/index.js'), 'getCollection'|'createCollection'|'createSet'|'getSet'|'updateSet'|'listCards'|'cardDir'|'newCardId'|'moveCard'|'recordSpend'>} SetStore
  */
 /** @typedef {typeof import('../card/make.js').makeCard} MakeCard */
 
@@ -298,6 +298,8 @@ export async function planSetInto({ collection, theme, wishes, variants, window,
     model: await planningModel({ settings, apiKey, model }),
     limits: { repairs: settings.set.plan.repairs, maxSpendUsd: maxSpendUsd ?? settings.set.plan.maxSpendUsd },
   });
+  // the planning calls are in no card: the factory's spend ledger keeps them (the collection's, or the factory's)
+  await (st ?? store ?? await defaultStore()).recordSpend(collection ?? null, { kind: 'text', what: 'plan', model: settings.set.plan.model, usd: r.spent });
   /** @type {PlannedSet[]} */
   const plans = [];
   for (const p of r.plans) {
@@ -339,6 +341,7 @@ export async function planCollectionInto({ collection, title, theme, wishes, var
     limits: { repairs: settings.set.plan.repairs, maxSpendUsd: maxSpendUsd ?? settings.set.plan.maxSpendUsd },
     progress: text => progress(text),
   });
+  await st.recordSpend(id, { kind: 'text', what: 'plan', model: settings.set.plan.model, usd: r.spent });
   /** @type {(PlannedSet & {number?: number})[]} */
   const out = [];
   for (const p of r.plans) {

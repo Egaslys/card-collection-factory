@@ -45,7 +45,7 @@ for (const name of Object.keys(style.assembly.cast)) {
 
 test('лист персонажа: костюм дописывается после описания', async () => {
   const r = await buildPrompt(sheet('man', { costume: 'Costume: a blue polo shirt and blue jeans.' }));
-  assert.match(r.prompt, /Do not redesign him\. Costume: a blue polo shirt and blue jeans\./);
+  assert.match(r.prompt, /Keep this exact design\. Costume: a blue polo shirt and blue jeans\./);
   assert.match(r.prompt, /Character reference sheet of the Man, alone/);
 });
 

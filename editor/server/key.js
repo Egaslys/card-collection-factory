@@ -1,7 +1,7 @@
 // The editor's API key (VISION «Ключ»): permanent — from the environment or the project's .env; temporary — typed
 // into the editor's settings and held only in this process's memory, gone when the editor stops. Core operations
 // read the key from process.env (core/providers/openrouter.js loadApiKey), so the temporary key is put there and
-// nowhere else: it is never written to disk or logged, and the browser sees only its last 4 characters.
+// nowhere else: it is never written to disk or logged, and the browser sees only whether there is one and of which kind.
 import { loadApiKey } from '../../core/providers/openrouter.js';
 
 /** @type {{envVar: string, permanent: string|null, temporary: string|null}} */
@@ -34,14 +34,9 @@ export function clearTemporaryKey() {
   else delete process.env[state.envVar];
 }
 
-/** @returns {{source: 'temporary'|'permanent'|'none', envVar: string, hint: string|null}} hint: the last 4 characters */
+/** @returns {{source: 'temporary'|'permanent'|'none', envVar: string}} no part of the key itself */
 export function keyStatus() {
-  const key = state.temporary ?? state.permanent;
-  return {
-    source: state.temporary ? 'temporary' : state.permanent ? 'permanent' : 'none',
-    envVar: state.envVar,
-    hint: key ? key.slice(-4) : null,
-  };
+  return { source: state.temporary ? 'temporary' : state.permanent ? 'permanent' : 'none', envVar: state.envVar };
 }
 
 /** The key in use, for the operations of this process only. @returns {string|null} */

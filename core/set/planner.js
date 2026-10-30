@@ -145,6 +145,7 @@ export function planFromAnswer(answer, o) {
     /** @type {SlotPlan} */
     const slot = { stars: sk.stars, frame: sk.frame, kind: c.kind, order: /** @type {any} */ (order) };
     for (const k of /** @type {const} */ (['facet', 'subkind', 'hue'])) if (typeof c[k] === 'string' && c[k]) slot[k] = c[k];
+    if (typeof c.wishes === 'string') slot.wishes = c.wishes;
     if (Array.isArray(c.props)) slot.props = c.props;
     // hue and palette name a backdrop colour: kept only where the backdrop is abstract (SETS.md 3.7)
     const staging = expandStaging(/** @type {any} */ (order.staging), rules).staging;

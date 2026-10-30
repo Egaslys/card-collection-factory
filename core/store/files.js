@@ -29,12 +29,14 @@ export const writeJsonAtomic = (file, data) => writeFileAtomic(file, JSON.string
 /** @param {string} p */
 export const exists = p => fs.existsSync(p);
 
-/** Sub-folder names of a folder; none when it does not exist. @param {string} dir @returns {string[]} */
+/** Sub-folder names of a folder; none when it does not exist or is a file. @param {string} dir @returns {string[]} */
 export function subdirs(dir) {
   try {
     return fs.readdirSync(dir, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name).sort();
   } catch (e) {
-    if (/** @type {NodeJS.ErrnoException} */ (e).code === 'ENOENT') return [];
+    // a file where the watcher expects a collection folder (the spend ledger, a .DS_Store) holds no folders
+    const code = /** @type {NodeJS.ErrnoException} */ (e).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return [];
     throw e;
   }
 }

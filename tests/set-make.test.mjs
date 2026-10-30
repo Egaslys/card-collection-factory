@@ -112,6 +112,7 @@ test('planSetInto и planCollectionInto: план от модели сохран
   // the same plan again clashes with the saved set: not saved, errors returned
   const again = await planSetInto({ collection, theme: 'Рыбалка', scenes: 2, settings, store, model: async () => ({ text: answer, cost: 0.002 }) });
   assert.ok(!again.plans[0].set && again.plans[0].errors.some(e => /уже есть в наборе/.test(e)));
+  assert.equal((await store.spend({ collectionId: collection })).text, 0.004, 'оба плана записаны в расходы коллекции');
 
   const themes = Array.from({ length: 16 }, (_, i) => ({ title: `Theme ${i + 1}`, kind: 'place', angle: `angle ${i + 1}`, examples: [] }));
   let n = 0;
@@ -123,4 +124,73 @@ test('planSetInto и planCollectionInto: план от модели сохран
   const saved = await store.getSet(c.collection, /** @type {string} */ (c.sets[0].set));
   assert.equal(saved.number, 10);
   assert.equal((await store.getCollection(c.collection)).collection.description, 'Summer');
+  assert.equal((await store.spend({ collectionId: c.collection })).text, 0.002, 'план коллекции — в её расходах');
+});
+
+// ---------- loose cards into the pool (core/set/cards.js) ----------
+
+/** The lake plan's cards as a loose-card answer: the first `items` item cards and the scenes. */
+function looseAnswer(/** @type {number} */ items, /** @type {number} */ scenes) {
+  const plan = lakePlan();
+  const pick = [...plan.slots.slice(0, items), ...plan.slots.slice(8, 8 + scenes)];
+  return JSON.stringify({ cards: pick.map((/** @type {any} */ s, /** @type {number} */ i) => ({ slot: i + 1, kind: s.kind, caption: s.order.title, hue: s.hue, props: s.props, ...Object.fromEntries(Object.entries(s.order).filter(([k]) => !['title', 'style'].includes(k))) })) });
+}
+
+test('planCards: запрос без окна из фрагментов SETS.md; число карточек и сцен проверяется, ошибки уходят модели', async () => {
+  const { planCards, validateCards, cardsFromAnswer } = await import('../core/set/cards.js');
+  /** @type {any[][]} */
+  const seen = [];
+  const answers = [looseAnswer(3, 0), looseAnswer(4, 1)];
+  const model = async (/** @type {any[]} */ m) => { seen.push(structuredClone(m)); return { text: /** @type {string} */ (answers.shift()), cost: 0.001 }; };
+  const r = await planCards({ style: 'scapes', theme: 'Рыбалка', wishes: 'утро', count: 5, scenes: 1, model, limits: { repairs: 1, maxSpendUsd: 1 } });
+  assert.deepEqual(r.errors, []);
+  assert.equal(r.calls, 2);
+  assert.equal(r.spent, 0.002);
+  assert.equal(r.cards.length, 5);
+  assert.equal(r.cards[0].order.id, 'fishing-bobber', 'id карточки — из английского имени предмета');
+  assert.equal(r.cards[0].order.staging.backdrop, 'field', 'заготовка постановки раскрыта');
+  const prompt = seen[0][1].content;
+  assert.match(prompt, /Plan 5 loose collectible cards on the theme "Рыбалка"/);
+  assert.match(prompt, /4 of them are item cards without characters, then 1 scenes/);
+  assert.match(prompt, /Assign each non-character card a staging category/);
+  assert.match(prompt, /Write 1 short scenes/);
+  assert.match(prompt, /утро\nCarry them into the cards/);
+  assert.doesNotMatch(prompt, /\[(set theme|registry|N|language)\]|\{(count|theme|items|scenes)\}/);
+  assert.match(seen[1].at(-1).content, /нужно ровно 5 карточек, а их 3/);
+  assert.ok(r.warnings.some(w => /пожелания набора/.test(w)), 'пожелания без wishes у карточек — предупреждение');
+  // the same kind twice and a category the staging does not give are errors, a missing category only a warning
+  const two = JSON.parse(looseAnswer(2, 0)).cards;
+  const twice = validateCards(cardsFromAnswer({ cards: [...two, two[0]] }, { style: 'scapes' }), { style: 'scapes', count: 3, scenes: 0 });
+  assert.ok(twice.errors.some(e => /вид предмета «fishing bobber» повторяется/.test(e)), twice.errors.join('\n'));
+  const lake = JSON.parse(looseAnswer(8, 0)).cards;
+  const mix = validateCards(cardsFromAnswer({ cards: [0, 1, 4, 5].map(i => lake[i]) }, { style: 'scapes' }), { style: 'scapes', count: 4, scenes: 0 });
+  assert.deepEqual(mix.errors, []);
+  assert.ok(mix.warnings.some(w => /нет категори/.test(w)), mix.warnings.join('\n'));
+  await assert.rejects(planCards({ style: 'scapes', theme: 't', count: 2, scenes: 3, model, limits: { repairs: 0, maxSpendUsd: 1 } }), /Сцен с персонажами/);
+  await assert.rejects(planCards({ style: 'scapes', theme: 't', count: 2, model: async () => ({ text: '{}', cost: null }), limits: { repairs: 0, maxSpendUsd: 1 } }), /не сообщила цену/);
+});
+
+test('makeCardsInto: план от модели, карточки — в хранилище коллекции, расход плана записан как текст', async t => {
+  const { makeCardsInto } = await import('../core/set/cards.js');
+  const { store } = tempStore(t);
+  const settings = /** @type {any} */ ({ ...SETTINGS, set: { ...SETTINGS.set, plan: { repairs: 0, maxSpendUsd: 1, model: 'text-model' } } });
+  const collection = (await store.createCollection({ title: 'Лето', description: 'Summer' })).id;
+  /** @type {any[]} */
+  const calls = [];
+  const make = /** @type {any} */ (async (/** @type {any} */ o) => { calls.push(o); return { id: o.order.id, spent: 0, attempts: [], chosenCheck: { blocking: 0 }, image: null, stop: 'passed' }; });
+  let prompt = '';
+  const r = await makeCardsInto({
+    collection, theme: 'Рыбалка', count: 2, settings, store, makeCard: make, provider: /** @type {any} */ ({ model: 'codex-cli', free: true }),
+    model: async (/** @type {any[]} */ m) => { prompt = m[1].content; return { text: looseAnswer(2, 0), cost: 0.003 }; },
+  });
+  assert.deepEqual(r.plan.errors, []);
+  assert.match(prompt, /within the collection "Summer"/);
+  assert.deepEqual(r.cards.map(c => c.result), ['made', 'made']);
+  assert.ok(calls.every(c => c.collection === collection && c.place === undefined), 'в хранилище, не в набор');
+  assert.equal(r.planSpent, 0.003);
+  assert.equal((await store.spend({ collectionId: collection })).text, 0.003);
+  // a plan with errors makes nothing
+  const bad = await makeCardsInto({ collection, theme: 'Рыбалка', count: 3, settings, store, makeCard: make, provider: /** @type {any} */ ({ model: 'codex-cli', free: true }), model: async () => ({ text: looseAnswer(2, 0), cost: 0.001 }) });
+  assert.ok(bad.plan.errors.length && !bad.cards.length);
+  assert.equal(calls.length, 2);
 });

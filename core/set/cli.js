@@ -3,6 +3,7 @@
 // exit code. Heavy modules (sharp, the card loop) load on demand, so --help works before the packages are installed.
 import fs from 'node:fs';
 import path from 'node:path';
+import { runProvider } from '../providers/models.js';
 import { loadSettings } from '../settings.js';
 import { validatePlan } from './plan.js';
 
@@ -10,6 +11,7 @@ const JSON_OPTION = { type: 'boolean', help: 'print the result as JSON (for an a
 const PROVIDER = { type: 'string', value: 'NAME', help: 'openrouter | codex-cli: the image provider of this run (default: settings provider.use)' };
 const MAKE_OPTIONS = {
   provider: PROVIDER,
+  model: { type: 'string', value: 'ID', help: 'the OpenRouter image model of this run (default: settings provider.openrouter.model);\nimplies --provider openrouter' },
   parallel: { type: 'string', value: 'N', help: 'cards made at the same time (default: settings set.parallel)' },
   'max-spend': { type: 'string', value: 'USD', help: 'spend cap in USD (set make: of the set, default settings set.maxSpendUsd;\ncollection make: of the whole run, each set also keeps set.maxSpendUsd)' },
   attempts: { type: 'string', value: 'N', help: 'attempt limit of each card (default: settings card.attempts)' },
@@ -32,7 +34,8 @@ const listOk = v => v === undefined || /^\d+(,\d+)*$/.test(v);
 const makeError = v => !whole(v.parallel) ? '--parallel must be a whole number above 0'
   : !whole(v.attempts) ? '--attempts must be a whole number above 0'
   : v['max-spend'] !== undefined && !(+v['max-spend'] >= 0) ? '--max-spend must be a number of USD, 0 or more'
-  : v.provider !== undefined && !['openrouter', 'codex-cli'].includes(v.provider) ? '--provider must be openrouter or codex-cli' : null;
+  : v.provider !== undefined && !['openrouter', 'codex-cli'].includes(v.provider) ? '--provider must be openrouter or codex-cli'
+  : v.model !== undefined && v.provider === 'codex-cli' ? '--model goes with the openrouter provider (Codex draws with its own model)' : null;
 
 /** The settings with the `set` key (settings/defaults.json). */
 const settingsOf = () => /** @type {import('../settings.js').Settings & {set: import('./planner.js').SetSettings}} */ (loadSettings());
@@ -44,7 +47,7 @@ const limitsOf = v => ({ parallel: v.parallel && +v.parallel, maxSpendUsd: v['ma
 async function providerOf(v) {
   const settings = settingsOf();
   const { providerFrom } = await import('../card/make.js');
-  return { settings, provider: providerFrom({ ...settings.provider, use: v.provider ?? settings.provider.use }) };
+  return { settings, provider: providerFrom({ ...settings.provider, use: runProvider(settings.provider.use, v) }, { model: v.model }) };
 }
 
 /**
@@ -59,7 +62,7 @@ async function paid(o) {
   return hereOrInEditor({ ...o, envVar: settingsOf().provider.openrouter.keyEnvVar });
 }
 /** @param {any} v the image provider of the run needs the OpenRouter key */
-const imagesNeedKey = v => (v.provider ?? settingsOf().provider.use) === 'openrouter';
+const imagesNeedKey = v => runProvider(settingsOf().provider.use, v) === 'openrouter';
 
 /** @param {string} msg */
 const progress = msg => console.error(`… ${msg}`);
@@ -179,7 +182,7 @@ async function setMake(v, files) {
   const signal = interruptible();
   const r = await paid({
     needsKey: imagesNeedKey(v), signal, op: 'makeSet',
-    args: () => ({ collectionId: v.collection, ...(plan ? { plan } : { setId: v.set }), provider: v.provider, only: list(v.slots), redo: !!v.redo, limits: limitsOf(v) }),
+    args: () => ({ collectionId: v.collection, ...(plan ? { plan } : { setId: v.set }), provider: v.provider, model: v.model, only: list(v.slots), redo: !!v.redo, limits: limitsOf(v) }),
     here: async () => makeSet({
       collection: v.collection, ...(plan ? { plan } : { set: v.set }), ...await providerOf(v), only: list(v.slots), redo: !!v.redo, progress, signal, limits: limitsOf(v),
     }),
@@ -222,7 +225,7 @@ async function collectionMake(v) {
   const signal = interruptible();
   const r = await paid({
     needsKey: imagesNeedKey(v), signal, op: 'makeCollection',
-    args: () => ({ collectionId: v.collection, numbers: list(v.sets), provider: v.provider, limits: limitsOf(v) }),
+    args: () => ({ collectionId: v.collection, numbers: list(v.sets), provider: v.provider, model: v.model, limits: limitsOf(v) }),
     here: async () => makeCollection({ collection: v.collection, numbers: list(v.sets), ...await providerOf(v), progress, signal, limits: limitsOf(v) }),
   });
   if (v.json) console.log(JSON.stringify(r, null, 2));

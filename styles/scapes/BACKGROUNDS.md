@@ -351,7 +351,7 @@ between the bands and only a small step in lightness between them (two neighbour
 colour, barely different), much smaller than the contrast
 between the hero and the backdrop. A soft radial glow sits directly behind the hero, so the backdrop is
 lightest there and gently darker toward the corners. The pattern runs off all four edges of the frame.
-No horizon, no scenery, no frame or border.
+The whole frame is this pattern: a pure abstract backdrop from edge to edge.
 ```
 
 Лучи:
@@ -377,8 +377,7 @@ close tones of one hue, lighter toward the centre.
 <!-- fragment: bg.stripes -->
 ```
 Backdrop: a few broad straight stripes, {vertical | diagonal, rising to the right at about 40 degrees}:
-only six to eight stripes across the whole frame, each stripe about one seventh of the frame width — wide
-bands, never thin pinstripes — alternating two close tones of one hue, crisp edges. Never horizontal stripes.
+only six to eight stripes across the whole frame, each stripe about one seventh of the frame width — wide bands — alternating two close tones of one hue, crisp edges. Every stripe runs in that one direction.
 ```
 
 Повторяющиеся значки:
@@ -443,7 +442,7 @@ toward the corners, meeting a floor plane.
 <!-- fragment: bg.floating -->
 ```
 Placement: the hero floats in the middle of the frame in front of the patterned backdrop, fully inside
-the frame, with no ground, no floor and no shadow on the backdrop below it.
+the frame, with only the patterned backdrop around and below it.
 ```
 
 Гладкая плоскость:
@@ -484,7 +483,7 @@ square-on, its depth must still be clearly visible.
 
 <!-- fragment: bg.on-wall -->
 ```
-Placement: the hero hangs on the wall and faces the viewer, with no support below; it shows its own
+Placement: the hero hangs on the wall and faces the viewer, with only the wall behind and below it; it shows its own
 thickness and depth (a visible rim, side or frame edge), and its soft shadow falls on the wall right next
 to its outline. The wall is {wallpaper with vertical stripes | vertical wooden planks with thin dark gaps |
 brick | a plain wall painted in one colour | plaster with ivy}.
@@ -494,10 +493,9 @@ brick | a plain wall painted in one colour | plaster with ivy}.
 
 <!-- fragment: bg.no-backdrop -->
 ```
-No backdrop: seen from above at an angle of about 30–50 degrees (never straight down), the hero lies on a surface that
+The surface is the whole picture: seen from above at an angle of about 30–50 degrees (an oblique view), the hero lies on a surface that
 fills the whole frame ({wooden boards running diagonally | a wooden deck or pier edge against water | a
-lawn with a white pitch line | pool tiles and water | smooth sand}); a diagonal edge or line crosses the frame (a deck edge against water, a court line); no sky,
-no wall, no horizon. Soft contact shadow; on water, a reflection and ripple rings instead of a shadow.
+lawn with a white pitch line | pool tiles and water | smooth sand}); a diagonal edge or line crosses the frame (a deck edge against water, a court line); the surface reaches every edge of the frame. Soft contact shadow; on water, a reflection and ripple rings instead of a shadow.
 ```
 
 Обстановка:
@@ -505,7 +503,7 @@ no wall, no horizon. Soft contact shadow; on water, a reflection and ripple ring
 <!-- fragment: bg.setting -->
 ```
 Setting: a real place ({environment}) with three or four planes of depth; the far plane softer and less
-detailed than the hero but not blurred, no bokeh. The horizon passes behind the hero; its height follows
+detailed than the hero, yet crisp and in focus. The horizon passes behind the hero; its height follows
 the camera ({eye level: at half to three quarters of the frame height | high camera: in the top third or
 out of frame | low camera: low, at about four fifths of the frame height, so the sky fills most of the
 frame}). Clouds and foliage stay near the frame edges, leaving clean sky or a simple area right
@@ -518,7 +516,7 @@ behind the hero's silhouette; tufts of grass or leaves may frame the bottom edge
 ```
 Setting: open {sky | water}: a smooth {blue sky gradient, lighter toward the bottom, with a few soft
 clouds only along the bottom and side edges | blue underwater gradient, darker toward the bottom, with
-soft light shafts from the top and a few bubbles}; nothing else, no ground, no horizon. The hero floats
+soft light shafts from the top and a few bubbles}; the gradient fills the whole frame around the hero. The hero floats
 in the centre.
 ```
 

@@ -13,11 +13,13 @@ export * from './layout.js';
 /** @typedef {import('./store.js').CardSummary} CardSummary */
 /** @typedef {import('./store.js').CollectionSummary} CollectionSummary */
 /** @typedef {import('./watch.js').StoreEvent} StoreEvent */
+/** @typedef {import('./store.js').Spend} Spend */
+/** @typedef {import('./store.js').SpendEntry} SpendEntry */
 
 const store = createStore();
 
 export const {
   listCollections, createCollection, getCollection, updateCollection, deleteCollection,
   createSet, getSet, updateSet, deleteSet, setSlots, moveCard, deleteCard,
-  newCardId, cardDir, listCards, exportItems, openFolder, watch,
+  newCardId, cardDir, listCards, exportItems, openFolder, watch, recordSpend, spend,
 } = store;

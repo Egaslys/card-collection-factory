@@ -1,11 +1,11 @@
-// A set: its window in one of the four template colours, cards dragged between slots and from the pool, a card
+// A set: its window (the window of its kind, in one of that window's template colours), cards dragged between slots and from the pool, a card
 // opened by a click; the set's variants side by side, one of them chosen.
 import { call, jobs } from '../api.js';
 import { attempt, badge, esc, I, jobline, verdict } from '../ui.js';
-import { templateSwitch, windowHtml, windowsOf } from '../window.js';
+import { templateSwitch, windowFor, windowHtml, windowsOf } from '../window.js';
 import { openExport } from '../panels/export.js';
 import { app } from '../state.js';
-import { poolHtml, poolView } from './pool.js';
+import { poolClick, poolHtml, poolView } from './pool.js';
 
 /** @param {string} collectionId @param {string} setId */
 export async function load(collectionId, setId) {
@@ -16,14 +16,13 @@ export async function load(collectionId, setId) {
   const byId = new Map(cards.map((/** @type {any} */ c) => [c.id, c]));
   const total = Math.max(16, ...sets.map((/** @type {any} */ s) => s.number ?? 0));
   const variants = sets.filter((/** @type {any} */ s) => (s.variantGroup ?? s.id) === (set.variantGroup ?? set.id));
-  const template = set.window?.template in g.templates ? set.window.template : Object.keys(g.templates)[0];
+  const w = windowFor(g, set.window?.kind);
+  const template = set.window?.template in w.templates ? set.window.template : Object.keys(w.templates)[0];
   const href = (/** @type {string} */ s) => `#/c/${encodeURIComponent(collectionId)}/s/${encodeURIComponent(s)}`;
 
   const made = set.slots.filter((/** @type {string|null} */ c) => c && byId.get(c)?.status === 'made').length;
   const running = [...jobs.values()].filter(j => j.status === 'running' && j.scope?.collectionId === collectionId && (!j.scope.setId || j.scope.setId === setId));
   const progress = running.map(jobline).join('');
-  const kindNote = set.window?.kind && set.window.kind !== g.kind
-    ? `<p class="note ink-2">${I.alert}<span>Этот набор — для ${set.window.kind === 'grand' ? 'гранд-окна' : 'малого окна'}: его звёзды и рамки другие, а шаблона такого окна пока нет, поэтому он показан в большом окне.</span></p>` : '';
   const canMake = !!set.plan && made < 10 && !running.length;
 
   const brief = [set.brief?.theme && `Тема: ${set.brief.theme}`, set.brief?.wishes && `Пожелания: ${set.brief.wishes}`].filter(Boolean).join(' · ');
@@ -55,9 +54,8 @@ export async function load(collectionId, setId) {
     primary: { label: 'Экспорт', icon: I.download, run: () => openExport({ collection: col, sets, set }) },
     html: `${head}${progress ? `<div class="joblines">${progress}</div>` : ''}<div class="cols">
       <section class="cols__main" aria-label="Окно набора">
-        <div class="sec-head"><span class="label">Окно · ${made}/10</span>${templateSwitch(g, template)}</div>
+        <div class="sec-head"><span class="label">Окно · ${made}/10</span>${templateSwitch(w, template)}</div>
         <div class="window"><div class="window__stage">${windowHtml(g, { set: { ...set, window: { ...set.window, template } }, cards: byId, style: col.style, total, drop: true })}</div></div>
-        ${kindNote}
         <p class="hint ink-3">Нажмите на карточку, чтобы поправить её. Перетащите, чтобы поменять местами или убрать в хранилище.</p>
         ${variantCols}
       </section>
@@ -74,6 +72,7 @@ export async function load(collectionId, setId) {
         }
         const pick = /** @type {HTMLElement|null} */ (t.closest('[data-pool]'));
         if (pick) { poolView.all = pick.dataset.pool === 'all'; app.refresh(); return; }
+        if (poolClick(t, col)) return;
         const ch = /** @type {HTMLElement|null} */ (t.closest('[data-choose]'));
         if (ch) {
           await attempt(async () => { for (const v of variants) await call('updateSet', { collectionId, setId: v.id, patch: { chosen: v.id === ch.dataset.choose } }); });
