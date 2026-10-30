@@ -9,7 +9,7 @@ Update this map in the same task when an area, an entry point, a system file or 
 - `AGENTS.md` — the agent's rules, what the project is, the task → skill table, commands.
 - `README.md` — the purpose of the project for a person.
 - `LICENSE` — MIT for the code and documents; the reference images in `styles/scapes/references/` are excluded.
-- `ccf.mjs` — the factory's commands for an agent in the terminal (`node ccf.mjs --help`): `card make`, `card regenerate`, `card wish`, `card edit`, `card adjust`, `card import`, `card choose`, `card prompt`, `card check`, `cards make`, `models`, `credits`, and from `core/set/cli.js` `set plan|check|save|make|sheet`, `collection plan|check|make`, and from `core/store/cli.js` `collection list|create|show`, `export`; thin calls of `core/` operations, `--json` for agents.
+- `ccf.mjs` — the factory's commands for an agent in the terminal (`node ccf.mjs --help`): `card make`, `card regenerate`, `card wish`, `card title`, `card edit`, `card adjust`, `card import`, `card choose`, `card prompt`, `card check`, `cards make`, `models`, `credits`, and from `core/set/cli.js` `set plan|check|save|make|sheet`, `collection plan|check|make`, and from `core/store/cli.js` `collection list|create|show`, `export`; thin calls of `core/` operations, `--json` for agents.
 - `docs/plans/VISION.md` — the author's accepted vision of the project (not a log).
 - `docs/plans/ROADMAP.md` — the directions of the work on the product: what is done and what is left, with links to plans.
 - `docs/plans/` also holds local working documents ignored by Git (handoff, brainstorm logs, source materials): see «Local working documents» in `AGENTS.md`.

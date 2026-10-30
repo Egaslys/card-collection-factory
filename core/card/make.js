@@ -948,6 +948,25 @@ async function autoProcessing({ order, attempt: a, adir, card, hero, settings })
 }
 
 /**
+ * Sets the card's caption — its order's `title`: the name printed in a set's window, the thumbnail's name and the
+ * export file's — by a person's word (the editor's place settings). Written under the card's lock; the attempts and
+ * their prompts stay as they were (a new picture is drawn from the order with the new caption). Nothing is generated
+ * or paid. The style's caption rules (SETS.md) do not bind a person's caption.
+ * @param {{dir: string, title: string}} o
+ * @returns {Promise<{title: string}>}
+ */
+export async function setCardTitle({ dir, title }) {
+  const text = typeof title === 'string' ? title.trim() : '';
+  if (!text) throw new Error('Подпись пустая: напишите, как назвать карточку.');
+  needCard(dir);
+  updateCardFile(dir, c => {
+    if (!c) throw new Error(`Нет карточки: ${dir} (нет card.json).`);
+    return { ...c, order: { ...c.order, title: text } };
+  });
+  return { title: text };
+}
+
+/**
  * Makes a version (an attempt) the card by the word of a person or an agent: its card.png becomes the card's, and the
  * choice (`chosenBy` "choice") is kept when the checks run again; a later request (regenerate, edit, import) or
  * `makeCard` chooses anew. Nothing is generated or paid.

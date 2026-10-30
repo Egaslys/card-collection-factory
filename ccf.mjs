@@ -164,6 +164,16 @@ Nothing is generated or paid.`,
     check: (/** @type {any} */ v) => v.attempt === undefined ? '--attempt is required' : attemptError(v),
     run: cardChoose,
   },
+  'card title': {
+    usage: [`${NAME} card title CARD_DIR --title TEXT [--json]`],
+    about: `Sets the card's caption (its order's title): the name printed in a set's window, the thumbnail's name and the
+export file's. The pictures stay as they are; a new picture is drawn from the order with the new caption. Nothing is
+generated or paid.`,
+    options: { title: { type: 'string', value: 'TEXT', help: 'the caption (required)' }, json: JSON_OPTION },
+    positionals: { min: 1, max: 1, label: 'CARD_DIR' },
+    check: (/** @type {any} */ v) => !v.title?.trim() ? '--title is required: the caption, in words' : null,
+    run: cardTitle,
+  },
   'card prompt': {
     usage: [`${NAME} card prompt ORDER.json [--json]`],
     about: `For an agent that draws with its own image tool: prints the prompt the program assembles for the order,
@@ -379,6 +389,14 @@ async function cardAdjust(v, [dir]) {
 async function cardChoose(v, [dir]) {
   const { chooseAttempt } = await import('./core/card/make.js');
   return finish(v, await chooseAttempt({ dir: path.resolve(dir), n: +v.attempt }), false);
+}
+
+/** @param {any} v @param {string[]} p */
+async function cardTitle(v, [dir]) {
+  const { setCardTitle } = await import('./core/card/make.js');
+  const r = await setCardTitle({ dir: path.resolve(dir), title: v.title });
+  console.log(v.json ? JSON.stringify(r, null, 2) : `Подпись карточки: «${r.title}».`);
+  return 0;
 }
 
 /** @param {any} v @param {string[]} p */

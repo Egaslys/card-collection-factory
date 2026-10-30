@@ -47,7 +47,7 @@ test('ccf.mjs: справка, неизвестная команда и неиз
   assert.match(help.stdout, /card make/);
   assert.match(help.stdout, /editor --stop/, 'общая справка — все формы команды');
   assert.match(help.stdout, /card adjust CARD_DIR \[--attempt N\] --reset/);
-  for (const c of [['card', 'make'], ['card', 'regenerate'], ['card', 'wish'], ['card', 'edit'], ['card', 'adjust'], ['card', 'import'], ['card', 'choose'], ['card', 'prompt'], ['card', 'check'], ['models'], ['credits']]) {
+  for (const c of [['card', 'make'], ['card', 'regenerate'], ['card', 'wish'], ['card', 'edit'], ['card', 'adjust'], ['card', 'import'], ['card', 'choose'], ['card', 'title'], ['card', 'prompt'], ['card', 'check'], ['models'], ['credits']]) {
     assert.equal(ccf(...c, '--help').status, 0, c.join(' '));
     const bad = ccf(...c, ...(c[0] === 'card' ? ['x'] : []), '--no-such-option');
     assert.equal(bad.status, 2, c.join(' '));
@@ -62,6 +62,7 @@ test('ccf.mjs: справка, неизвестная команда и неиз
   assert.equal(ccf('card', 'wish', 'x', '--attempt', 'a').status, 2);
   assert.equal(ccf('card', 'edit', 'x', '--wish', ' ').status, 2, 'пустое пожелание');
   assert.equal(ccf('card', 'adjust', 'x').status, 2, 'без значений');
+  assert.equal(ccf('card', 'title', 'x').status, 2, 'без --title');
   assert.equal(ccf('card', 'adjust', 'x', '--saturation', '-1').status, 2);
   assert.equal(ccf('card', 'import', 'x').status, 2, 'без картинки');
   assert.equal(ccf('card', 'check', 'x', '--mask', 'confirmed').status, 2, '--mask без --attempt');
@@ -577,6 +578,19 @@ test('урок неудачи: следующая попытка и «сдела
   assert.match(asked.at(-1), /in Russian/);
   assert.equal((await at.store.spend({ collectionId: at.collection })).text, 0.005, 'три поправки в попытках и подсказка в журнале');
   await assert.rejects(proposeCardWish({ dir: r.dir, n: 1, language: 'xx', settings: FIX, text: wishText }), /Язык «xx»/);
+});
+
+test('подпись карточки: человек меняет order.title под замком карточки; пустую — нельзя; попытки не трогаются', { skip: noSharp }, async () => {
+  const { makeCard, setCardTitle } = /** @type {any} */ (loop);
+  const made = await makeCard({ order: { ...ORDER, title: 'Bobber' }, ...await pool(), settings: SETTINGS, provider: fakeProvider(await grey(), 0.04), buildPrompt: fakePrompt, limits: { attempts: 1 } });
+  const before = cardOf(made.dir).attempts;
+  assert.deepEqual(await setCardTitle({ dir: made.dir, title: '  Поплавок  ' }), { title: 'Поплавок' });
+  const c = cardOf(made.dir);
+  assert.equal(c.order.title, 'Поплавок');
+  assert.equal(c.order.subject, ORDER.subject, 'остальной заказ как был');
+  assert.deepEqual(c.attempts, before);
+  await assert.rejects(setCardTitle({ dir: made.dir, title: ' ' }), /Подпись пустая/);
+  await assert.rejects(setCardTitle({ dir: path.join(made.dir, 'none'), title: 'x' }), /Нет карточки/);
 });
 
 test('правка картинки: картинка модели выбранной попытки уходит входной картинкой с пожеланием; новая попытка проходит обработку и проверки', { skip: noSharp }, async () => {
