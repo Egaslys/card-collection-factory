@@ -49,3 +49,6 @@ pnpm-debug.log*
 ._*
 Thumbs.db
 [Dd]esktop.ini
+
+# Lock file: not tracked, the install ignores it (tools/setup.mjs explains why).
+package-lock.json

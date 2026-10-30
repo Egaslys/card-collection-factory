@@ -14,7 +14,9 @@ Update this map in the same task when an area, an entry point, a system file or 
 
 ## Product
 
-- `styles/` — art styles the product generates in; one per folder. `styles/scapes/` — the first style: its style bible (`README.md` is the entry point and map of the bible documents); `references/` — all 160 reference cards with an index (`references/README.md`); `checks/` — the automated part of the bible's checks (`check-card.mjs` with `thresholds.json`, the control-run spec of the references, `adjust-trial.mjs` for post-generation adjustments; needs ffmpeg; entry point `checks/README.md`); `research/` inside is local, ignored by Git.
+- `styles/` — art styles the product generates in; one per folder. `styles/scapes/` — the first style: its style bible (`README.md` is the entry point and map of the bible documents); `references/` — all 160 reference cards with an index (`references/README.md`); `checks/` — the automated part of the bible's checks (`check-card.mjs` with `thresholds.json`, the control-run spec of the references, `adjust-trial.mjs` for post-generation adjustments; `check-card.mjs` reads images with `sharp`; `adjust-trial.mjs` still needs ffmpeg; entry point `checks/README.md`); `research/` inside is local, ignored by Git.
+
+- `core/providers/` — image provider: `openrouter.js` (`generateImage`, `listImageModels`, `getCredits`, `loadApiKey`; OpenRouter-compatible endpoint, set by the caller) and `defaults.js` (the one object of default endpoint/model/params until the settings file exists). Tests: `tests/provider-openrouter.test.mjs`, mocked fetch.
 
 ## Agent setup
 
@@ -24,9 +26,15 @@ Update this map in the same task when an area, an entry point, a system file or 
 - `.claude/` — `settings.json` (auto memory off, compaction at 500k, agent teams, no nested helpers, permissions, hooks), `hooks/` (`handoff.mjs`, `agent-run.mjs`, `regex-guard.sh`, `shared.mjs`), `statusline.mjs`; `runs/` — helper journals, ignored by Git.
 - `.codex/config.toml` — `project_doc_max_bytes` raised so `AGENTS.md` is not truncated.
 
+## Installation and launch
+
+- `run.command` (macOS, double-click), `run.sh` (Linux), `run.bat` (Windows) — the one-click launchers: check that Node exists, run `tools/setup.mjs`; the editor start goes after it once the editor exists.
+- `tools/setup.mjs` — first-run setup: Node version against `package.json` engines, `npm install --no-package-lock` when `node_modules` is missing or stale (stamp `node_modules/.ccf-install.json`), checks that `sharp` loads. `package-lock.json` is deliberately not tracked (see the header of the script and `CHANGELOG.md`).
+- `package.json` — the only dependencies (`sharp`; `typescript` as dev). `tsconfig.json` — the type check of the product code (`core/**/*.js`, JSDoc types, no build); run by `tools/check.mjs`.
+
 ## Tools and checks
 
-- `tools/check.mjs` — the project check: `agent-doctor`, `sync-agents --check`, `tests/*.test.mjs`.
+- `tools/check.mjs` — the project check: `agent-doctor`, `sync-agents --check`, `tests/*.test.mjs`, and the type check of `core/` (skipped while packages are not installed).
 - `tools/agent-doctor.mjs`, `tools/sync-agents.mjs` — diagnosis of the agent setup and generation of native skill copies.
 - `tools/trash.mjs` — the only sanctioned way to delete: to the OS trash, only inside the project and Claude Code's temporary folders.
 - `tools/cli-args.mjs` — the shared command line of the scripts (`--help`, refusing unknown options).

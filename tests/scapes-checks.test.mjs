@@ -9,7 +9,7 @@ import { ROOT } from './root.mjs';
 
 const DIR = path.join(ROOT, 'styles/scapes/checks');
 const run = (script, args) => spawnSync(process.execPath, [path.join(DIR, script), ...args], { cwd: ROOT, encoding: 'utf8' });
-const hasFfmpeg = ['ffmpeg', 'ffprobe'].every(bin => spawnSync(process.env[bin.toUpperCase()] || bin, ['-version']).status === 0);
+const hasSharp = fs.existsSync(path.join(ROOT, 'node_modules/sharp/package.json'));
 
 test('проверки Scapes: --help печатает справку, неизвестный ключ отклоняется до работы', () => {
   for (const script of ['check-card.mjs', 'adjust-trial.mjs']) {
@@ -30,7 +30,7 @@ test('проверки Scapes: у каждой проверки в thresholds.js
   for (const v of cfg.visual) assert.ok(fs.existsSync(path.join(ROOT, 'styles/scapes', v.doc)), v.id);
 });
 
-test('проверки Scapes: эталонные карточки с названными исключениями проходят контрольный прогон', { skip: !hasFfmpeg && 'нет ffmpeg/ffprobe' }, () => {
+test('проверки Scapes: эталонные карточки с названными исключениями проходят контрольный прогон', { skip: !hasSharp && 'нет node_modules/sharp (сначала npm install)' }, () => {
   // #32 and #55 are named exceptions of COMPOSITION 5, #132 of COMPOSITION 5 and 11, #34 of COMPOSITION 2
   const r = run('check-card.mjs', ['--only', 'ref-001,ref-032,ref-034,ref-055,ref-132', '--quiet', '--no-visual']);
   assert.equal(r.status, 0, r.stdout + r.stderr);

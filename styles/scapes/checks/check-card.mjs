@@ -5,8 +5,7 @@
 // For every check from the «Проверка» sections that pixels can answer it prints PASS / WARN / FAIL with the
 // measured value, the threshold and the bible document and check number. Thresholds come only from
 // thresholds.json next to this script. Checks that need eyes are listed per card as «visual».
-// Measures: measures.mjs (the method that produced the bible's numbers). Needs ffmpeg and ffprobe on PATH
-// (or FFMPEG / FFPROBE in the environment).
+// Measures: measures.mjs (the method that produced the bible's numbers). Reads images with sharp (npm install).
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -83,7 +82,7 @@ const na = (id, why) => make(id, 'N/A', null, null, why);
 const nm = (id, why) => make(id, 'NOT_MEASURED', null, null, why);
 
 // ---------- one card ----------
-function checkCard(card) {
+async function checkCard(card) {
   const file = resolve(dirname(specFile), card.file);
   if (!existsSync(file)) throw new Error(`${card.id}: no such file ${file}`);
   const s = { category: card.category, backdrop: card.backdrop, pattern: card.pattern || 'n/a', placement: card.placement, support: card.support || 'none', camera: card.camera || 'eye_level', characters: +card.characters || 0, time: card.time || 'n/a', sky_top: !!card.sky_top };
@@ -92,7 +91,7 @@ function checkCard(card) {
   const floating = ['floating_field', 'hung_from_above', 'wall_mounted', 'floating_native'].includes(s.placement);
   const night = s.time === 'night' || s.time === 'dusk';
   const res = [], meas = {};
-  const dec = M.decode(file);
+  const dec = await M.decode(file);
   const t1 = T['BASE_RULES.1'];
   const sizeOk = dec.width === t1.size[0] && dec.height === t1.size[1];
   if (!sizeOk) {
@@ -110,7 +109,7 @@ function checkCard(card) {
 
   // hero
   const mask = M.heroMask(P);
-  if (opts.overlays && mask.box) M.writeOverlay(P, mask.fg, mask.box, join(resolve(opts.overlays), `${String(card.id).replace(/[^\w.-]+/g, '_')}.mask.png`));
+  if (opts.overlays && mask.box) await M.writeOverlay(P, mask.fg, mask.box, join(resolve(opts.overlays), `${String(card.id).replace(/[^\w.-]+/g, '_')}.mask.png`));
   const maskStatus = !mask.ok ? 'not found' : card.mask === 'rejected' ? 'rejected' : card.mask === 'confirmed' ? 'confirmed' : 'proposal';
   if (maskStatus === 'rejected') { mask.ok = false; mask.reason = 'the mask was rejected by a person (spec "mask": "rejected")'; }
   const box = card.hero_box || (mask.ok ? mask.box : null);
@@ -304,7 +303,7 @@ const out = [];
 const cards = SPEC.cards.filter(c => !only || only.has(String(c.id)));
 if (only && cards.length !== only.size) { console.error(`unknown id in --only: ${[...only].filter(i => !SPEC.cards.some(c => String(c.id) === i)).join(', ')}`); process.exit(2); }
 for (const card of cards) {
-  const r = checkCard(card); out.push(r);
+  const r = await checkCard(card); out.push(r);
   const s = r.staging;
   console.log(`\n== ${r.id}  (cat ${s.category}, ${s.backdrop}/${s.pattern}, ${s.placement} on ${s.support}, camera ${s.camera}, characters ${s.characters}, time ${s.time})`);
   console.log(r.hero ? `   hero: ${r.hero.box ? `${r.hero.box_source} box [${r.hero.box.join(', ')}], mask ${r.hero.mask_status}` : `not found — ${r.hero.mask_reason}`}` : '');

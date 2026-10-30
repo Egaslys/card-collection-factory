@@ -10,25 +10,37 @@
 //   overshoot            edge overshoot and edge width over the whole card (RENDERING.md check 17)
 //   traces               grain in flat areas, JPEG 8x8 grid (RENDERING.md check 16)
 //   nearWhite, lightCentroids, tonalRange   RENDERING.md checks 11, 2, 3
-// Added for the checks: decode with alpha, frame detection, pattern steps along lines (BACKGROUNDS.md check 4),
+// Image reading and writing: sharp. Added for the checks: decode with alpha, frame detection, pattern steps along lines (BACKGROUNDS.md check 4),
 // composition numbers from the mask, safe-zone counts.
 //
 // Coordinates: x right, y down, origin top-left, 430 x 480 px. Luma = 0.299R + 0.587G + 0.114B (0..255).
 // L*, C* = CIE Lab (D65, sRGB); C* = hypot(a*, b*). Hue = HSV hue in degrees.
-import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import sharp from 'sharp';
 
 export const W = 430, H = 480, N = W * H;
-const FFMPEG = process.env.FFMPEG || 'ffmpeg';
-const FFPROBE = process.env.FFPROBE || 'ffprobe';
 
 // ---------- decoding ----------
-export function decode(file) {
-  const meta = JSON.parse(execFileSync(FFPROBE, ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,pix_fmt', '-of', 'json', file]).toString()).streams[0];
-  const raw = execFileSync(FFMPEG, ['-v', 'error', '-i', file, '-f', 'rawvideo', '-pix_fmt', 'rgba', '-'], { maxBuffer: 1 << 28 });
-  const n = meta.width * meta.height, rgb = Buffer.alloc(n * 3);
+// Async (sharp). Returns { width, height, transparent, rgb }: rgb is 8-bit R,G,B per pixel, transparent counts pixels with alpha < 255.
+// The bible measured the stored pixel values and ignored colour profiles (ffmpeg does). sharp converts pixels by an
+// embedded ICC profile (even an sRGB one shifts some values by 1), so the iCCP chunk is cut out of the PNG first.
+function withoutIccChunk(buf) {
+  if (buf.length < 8 || buf.readUInt32BE(0) !== 0x89504e47) return buf;
+  const parts = [buf.subarray(0, 8)];
+  for (let o = 8; o + 12 <= buf.length;) {
+    const len = buf.readUInt32BE(o), end = o + 12 + len;
+    if (buf.toString('latin1', o + 4, o + 8) !== 'iCCP') parts.push(buf.subarray(o, end));
+    o = end;
+  }
+  return Buffer.concat(parts);
+}
+export async function decode(file) {
+  const { data: raw, info } = await sharp(withoutIccChunk(readFileSync(file))).toColourspace('srgb').ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  if (info.channels !== 4 || raw.length !== info.width * info.height * 4) throw new Error(`${file}: unexpected raw layout (${info.channels} channels)`);
+  const n = info.width * info.height, rgb = Buffer.alloc(n * 3);
   let transparent = 0;
   for (let p = 0; p < n; p++) { rgb[p * 3] = raw[p * 4]; rgb[p * 3 + 1] = raw[p * 4 + 1]; rgb[p * 3 + 2] = raw[p * 4 + 2]; if (raw[p * 4 + 3] < 255) transparent++; }
-  return { width: meta.width, height: meta.height, pix_fmt: meta.pix_fmt, transparent, rgb };
+  return { width: info.width, height: info.height, transparent, rgb };
 }
 
 // ---------- colour ----------
@@ -629,7 +641,7 @@ export function frame(P, dEmin) {
 
 // ---------- mask overlay for a person to confirm or reject the mask ----------
 // backdrop dimmed to 55 %, mask edge magenta inside / yellow outside, mask box dashed cyan.
-export function writeOverlay(P, fg, box, file) {
+export async function writeOverlay(P, fg, box, file) {
   const out = Buffer.from(P.rgb);
   const put = (x, y, c) => { if (x < 0 || y < 0 || x >= W || y >= H) return; const i = (y * W + x) * 3; out[i] = c[0]; out[i + 1] = c[1]; out[i + 2] = c[2]; };
   const edge = new Uint8Array(N);
@@ -640,5 +652,5 @@ export function writeOverlay(P, fg, box, file) {
   if (box) { const [x0, y0, x1, y1] = box;
     for (let x = x0; x <= x1; x++) if ((x >> 2) % 2 === 0) { put(x, y0, [0, 255, 255]); put(x, y1, [0, 255, 255]); }
     for (let y = y0; y <= y1; y++) if ((y >> 2) % 2 === 0) { put(x0, y, [0, 255, 255]); put(x1, y, [0, 255, 255]); } }
-  execFileSync(FFMPEG, ['-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', `${W}x${H}`, '-i', '-', file], { input: out });
+  await sharp(out, { raw: { width: W, height: H, channels: 3 } }).png().toFile(file);
 }

@@ -2,7 +2,7 @@
 //  card-collection-factory — the project check
 // ----------------------------------------------------------------------------
 //  node tools/check.mjs   agent setup (agent-doctor), native skills (sync-agents --check),
-//                         tests/*.test.mjs (node --test)
+//                         tests/*.test.mjs (node --test), types (tsc, when installed)
 //
 //  Every step runs even when an earlier one failed, so one run shows every problem.
 //  Exit code: 0 — all passed, 1 — something failed, 2 — a wrong command line.
@@ -19,7 +19,8 @@ await cli({
   name: 'tools/check.mjs',
   usage: ['tools/check.mjs'],
   about: 'The project check: agent setup (agent-doctor), native skills (sync-agents --check) and\n' +
-    'tests/*.test.mjs through node --test. Writes nothing to the project; tests use temporary folders.\n' +
+    'tests/*.test.mjs through node --test, and the type check of core/ (tsconfig.json; skipped\n' +
+    'while the packages are not installed). Writes nothing to the project; tests use temporary folders.\n' +
     'Exit code: 0 — all passed, 1 — something failed, 2 — a wrong command line (nothing done).',
   options: {},
 });
@@ -35,6 +36,13 @@ const STEPS = [
   { title: 'нативные скиллы', args: ['tools/sync-agents.mjs', '--check'] },
   { title: 'тесты', args: ['--test', ...tests] },
 ];
+
+// Type check of the product code (tsconfig.json). It needs the packages installed; before
+// `node tools/setup.mjs` it is skipped, so the rest of the check still works with zero dependencies.
+const tsc = path.join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc'); // a node script: runs the same on every OS
+if (!fs.existsSync(tsc)) console.log('\n— типы\n  пропущено: пакеты не установлены (запустите node tools/setup.mjs)');
+else if (!fs.existsSync(path.join(ROOT, 'core'))) console.log('\n— типы\n  пропущено: кода продукта (core/) ещё нет');
+else STEPS.push({ title: 'типы', args: [tsc, '--noEmit', '-p', 'tsconfig.json'] });
 
 const failed = [];
 for (const step of STEPS) {
