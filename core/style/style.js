@@ -47,10 +47,33 @@ export const ASSEMBLY_FILE = 'prompt-assembly.json';
  * @property {string[]} documents
  * @property {Record<string, FieldRule>} fields
  * @property {{when: ConditionObject, message: string}[]} forbid
- * @property {Record<string, {fragment: string, index_name: string}>} cast
+ * @property {Record<string, {fragment: string, index_name: string, anchor_frames?: number[]}>} cast
  * @property {Record<string, SlotSource>} slots
- * @property {SectionRule[]} sections
+ * @property {SectionRule[]} sections  the sections of an ordinary card
  * @property {ReferenceRules} references
+ * @property {Record<string, KindRules>} [kinds]  order kinds other than an ordinary card, by `order.kind`
+ * @property {UnseenRules} [unseen_stagings]  stagings the reference cards never show need the person's request
+ */
+/**
+ * @typedef {object} UnseenRules
+ * @property {string[]} fields  the staging fields whose combination must occur on a reference card
+ * @property {{field: string, values: unknown[], when?: Condition}[]} same  values counted as one
+ * @property {{field: string, when?: Condition}[]} any  fields that do not matter under the condition
+ * @property {{when: Condition, source: string}[]} allowed  stagings the author allowed without a reference
+ */
+/** @typedef {{doc: string, check: number, what: string}} VisualCheck */
+/**
+ * What the program does with an order's image after generation.
+ * @typedef {object} OrderOutput
+ * @property {boolean} crop  cut and scale to the card size (false: keep the model's frame)
+ * @property {boolean} checks  run the style's pixel checks
+ * @property {VisualCheck[]} visual  what to check by eye when the pixel checks do not run
+ */
+/**
+ * @typedef {object} KindRules
+ * @property {'anchor_frames'} references  where the reference cards come from: the order's character's anchor_frames
+ * @property {OrderOutput} output
+ * @property {SectionRule[]} sections
  */
 /** @typedef {{ref: number, path: string, staging: Record<string, unknown>, cast: string[]}} ReferenceCard */
 /**

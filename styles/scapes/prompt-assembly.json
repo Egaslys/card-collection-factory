@@ -28,6 +28,16 @@
     "brand_finish": { "values": ["embossed", "patch", "carved", "sticker", "stamp"], "required_when": [{ "brand": ["house", "cow"] }] }
   },
 
+  "unseen_stagings": {
+    "_about": "Author's decision (BACKGROUNDS.md «Какую постановку выбрать»): a staging that never occurs among the reference cards is not chosen by the agent on its own, only when a person explicitly asks; the order then carries `humanRequest` with the person's words. A staging is the combination of `fields`; it is seen when some reference card (checks/reference-spec.json) has the same values. `same`: values that count as one staging (BACKGROUNDS «Стена»: a floor in front of a field or a wall is one staging for generation). `any`: a field whose value does not matter under a condition (BACKGROUNDS «Опора и линия пола»: «Узор над куском поверхности — любой»). `allowed`: stagings the author allowed although the references have none, each with its source.",
+    "fields": ["backdrop", "placement", "support", "pattern"],
+    "same": [ { "field": "backdrop", "values": ["field", "wall"], "when": { "placement": ["resting"] } } ],
+    "any": [ { "field": "pattern", "when": { "support": ["fragment"] } } ],
+    "allowed": [
+      { "when": { "backdrop": ["wall"], "placement": ["wall_mounted"], "pattern": ["plain_gradient"] }, "source": "BACKGROUNDS.md «Категория как следствие постановки»: висит на стене ровного цвета — решение автора, в эталоне такого нет" }
+    ]
+  },
+
   "forbid": [
     { "when": { "placement": ["floating_field"], "pattern": ["plain_gradient"] }, "message": "висящий предмет на ровном градиенте без узора — то, чего избегать (BASE_RULES.md «Чего избегать»)" },
     { "when": { "characters": [1, 2], "backdrop": ["field"] }, "message": "персонаж на абстрактном поле — то, чего избегать (BASE_RULES.md «Чего избегать»)" },
@@ -36,11 +46,34 @@
   ],
 
   "cast": {
-    "man":     { "fragment": "char.man",     "index_name": "мужчина" },
-    "pig":     { "fragment": "char.pig",     "index_name": "свинья" },
-    "sheep":   { "fragment": "char.sheep",   "index_name": "овца" },
-    "rooster": { "fragment": "char.rooster", "index_name": "петух" },
-    "cow":     { "fragment": "char.cow",     "index_name": "корова" }
+    "man":     { "fragment": "char.man",     "index_name": "мужчина", "anchor_frames": [154, 128] },
+    "pig":     { "fragment": "char.pig",     "index_name": "свинья",  "anchor_frames": [153, 150] },
+    "sheep":   { "fragment": "char.sheep",   "index_name": "овца",    "anchor_frames": [155, 150] },
+    "rooster": { "fragment": "char.rooster", "index_name": "петух",   "anchor_frames": [99, 158] },
+    "cow":     { "fragment": "char.cow",     "index_name": "корова",  "anchor_frames": [156, 152] }
+  },
+
+  "kinds": {
+    "character-sheet": {
+      "_about": "An anchor portrait of one character (ROADMAP «Опорные портреты персонажей»): not a card. Order fields: character (a key of cast), costume (optional English sentence after the description). references: the character's «опорные кадры» named in its sheet in CHARACTERS.md (cast.<name>.anchor_frames). output: crop = cut to the card size; checks = run the style's pixel checks (they measure cards: backdrop, composition, so not here); visual = what to check by eye (CHARACTERS.md «Проверка»).",
+      "references": "anchor_frames",
+      "output": {
+        "crop": false,
+        "checks": false,
+        "visual": [
+          { "doc": "CHARACTERS.md", "check": 2, "what": "the character is recognised by its main features (moustache and round glasses, coral snout, spiral fleece balls, rounded red comb, orange muzzle)" },
+          { "doc": "CHARACTERS.md", "check": 3, "what": "colours against the samples of the character's sheet" },
+          { "doc": "CHARACTERS.md", "check": 4, "what": "clothes: rooster none, pig no top, sheep only hats, glasses, neck things, straps, man fully dressed" }
+        ]
+      },
+      "sections": [
+        { "name": "format", "parts": [ { "fragment": "base.clean-surfaces" } ] },
+        { "name": "sheet", "required": true, "parts": [ { "fragment": "char.sheet" } ] },
+        { "name": "cast", "parts": [ { "cast": true } ] },
+        { "name": "colour", "parts": [ { "fragment": "colour.palette" }, { "fragment": "colour.shadows-light" } ] },
+        { "name": "rendering", "parts": [ { "fragment": "render.style", "items": [ { "label": "resting" } ] } ] }
+      ]
+    }
   },
 
   "slots": {

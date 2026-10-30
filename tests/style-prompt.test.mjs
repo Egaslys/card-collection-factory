@@ -9,7 +9,7 @@ import { ROOT } from './root.mjs';
 import { PILOT_ORDERS } from './style-pilot-orders.mjs';
 import { fillSlots, findOption, parseFragments, slotsOf } from '../core/style/fragments.js';
 import { loadStyle } from '../core/style/style.js';
-import { checkOrder, validateOrder } from '../core/style/card-order.js';
+import { checkOrder, unseenStaging, validateOrder } from '../core/style/card-order.js';
 import { buildPrompt, OrderError } from '../core/style/prompt.js';
 import { pickReferences } from '../core/style/references.js';
 
@@ -259,8 +259,8 @@ test('валидатор: понятные ошибки на неверные и
   has(errorsOf('c5-gone-fishing', o => { o.scene.crop = 'ankles'; }), /не найден среди вариантов|не выбран вариант/);
   has(errorsOf('c2-tackle-box', o => { o.staging.placement = 'wall_mounted'; o.staging.backdrop = 'wall'; o.staging.support = 'wall_fixed'; o.staging.wall = 'curtain'; }), /bg\.on-wall.*не выбран вариант/);
   has(errorsOf('c3-catch-bucket', o => { o.staging.support = 'furniture'; delete o.staging.surface; }), /нужно поле staging\.furniture/);
-  has(errorsOf('c3-catch-bucket', o => { o.staging.placement = 'other'; o.staging.support = 'other'; delete o.staging.surface; }), /нет фрагмента раздела «staging»/);
-  assert.deepEqual(errorsOf('c3-catch-bucket', o => { o.staging.placement = 'other'; o.staging.support = 'other'; delete o.staging.surface; o.promptExtra = 'The bucket leans against a post.'; }), []);
+  has(errorsOf('c3-catch-bucket', o => { o.staging.placement = 'other'; o.staging.support = 'other'; delete o.staging.surface; o.humanRequest = 'lean it on a post'; }), /нет фрагмента раздела «staging»/);
+  assert.deepEqual(errorsOf('c3-catch-bucket', o => { o.staging.placement = 'other'; o.staging.support = 'other'; delete o.staging.surface; o.humanRequest = 'lean it on a post'; o.promptExtra = 'The bucket leans against a post.'; }), []);
   await assert.rejects(buildPrompt({ ...pilot('c1-bobber'), staging: { ...pilot('c1-bobber').staging, time: 'noon' } }), err => err instanceof OrderError && /time = "noon"/.test(err.errors.join('\n')));
 });
 
@@ -344,4 +344,24 @@ test('стены названы одними словами в «Стене» и
 test('кусок поверхности: варианты в BASE_RULES и BACKGROUNDS — те же слова в том же порядке', () => {
   const opts = id => slotsOf(frag(id).text).find(s => s.options?.includes('sand')).options;
   assert.deepEqual(opts('base.cat3'), opts('bg.surface-patch'));
+});
+
+test('постановки, которой нет в эталоне, агент сам не выбирает: нужна просьба человека (humanRequest)', () => {
+  const unseen = /нет ни на одной эталонной карточке.*humanRequest/;
+  const has = (errors, re) => assert.ok(errors.some(e => re.test(e)), `нет ошибки ${re}: ${JSON.stringify(errors)}`);
+  // floating on rhombi and hung from above on a patterned field: never in the references
+  has(errorsOf('c1-bobber', o => { o.staging.pattern = 'rhombi'; }), unseen);
+  has(errorsOf('c1-bobber', o => { o.staging.placement = 'hung_from_above'; o.staging.support = 'other'; }), unseen);
+  assert.deepEqual(errorsOf('c1-bobber', o => { o.staging.pattern = 'rhombi'; o.humanRequest = 'Хочу поплавок на ромбах.'; }), []);
+  has(errorsOf('c1-bobber', o => { o.staging.pattern = 'rhombi'; o.humanRequest = ''; }), /humanRequest должно быть непустой строкой/);
+  // the author allowed a hero on a plain-coloured wall although no reference shows it
+  assert.deepEqual(errorsOf('c2-tackle-box', o => { Object.assign(o.staging, { backdrop: 'wall', placement: 'wall_mounted', support: 'wall_fixed', wall: 'plain' }); }), []);
+  // the pattern over a surface patch may be any (BACKGROUNDS); a floor in front of a field or a wall is one staging
+  assert.deepEqual(errorsOf('c3-catch-bucket', o => { o.staging.pattern = 'motif_repeat'; delete o.staging.stripes; o.motif = 'fish'; }), []);
+  assert.deepEqual(errorsOf('c2-tackle-box', o => { o.staging.backdrop = 'wall'; o.staging.pattern = 'motif_repeat'; o.motif = 'hooks'; }), []);
+  // every reference card's own staging is seen
+  for (const card of style.references) {
+    const order = { staging: card.staging };
+    assert.equal(unseenStaging(order, style), null, `эталон №${card.ref}`);
+  }
 });

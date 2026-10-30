@@ -53,13 +53,33 @@ export function matches(cond, order, style) {
 }
 
 /**
- * Display names of the scene's characters, taken from their bible descriptions ("The Man: …").
+ * The characters an order draws: the scene's characters, or the one character of a character sheet.
+ * @param {CardOrder} order
+ * @returns {import('./card-order.js').SceneCharacter[]}
+ */
+export function castOf(order) {
+  if (order.kind === 'character-sheet') return order.character ? [{ name: order.character, ...(order.costume ? { costume: order.costume } : {}) }] : [];
+  return order.scene?.characters || [];
+}
+
+/**
+ * The section rules for an order: its kind's (`kinds` of the rules), or the ordinary card's.
+ * @param {CardOrder} order
+ * @param {Style} style
+ * @returns {import('./style.js').SectionRule[]}
+ */
+export function sectionRulesOf(order, style) {
+  return order.kind ? style.assembly.kinds?.[order.kind]?.sections ?? [] : style.assembly.sections;
+}
+
+/**
+ * Display names of the order's characters, taken from their bible descriptions ("The Man: …").
  * @param {CardOrder} order
  * @param {Style} style
  * @returns {string[]}  e.g. ["the Man", "the Pig"]
  */
 export function castNames(order, style) {
-  return (order.scene?.characters || []).map(c => {
+  return castOf(order).map(c => {
     const f = style.fragments.get(style.assembly.cast[c.name]?.fragment);
     const name = f ? f.text.split(':')[0].trim() : c.name;
     return name.charAt(0).toLowerCase() + name.slice(1);
@@ -79,7 +99,7 @@ export const joinNames = names => (names.length < 2 ? names.join('') : names.sli
 function namedValue(key, order, style) {
   const src = style.assembly.slots[key];
   if (src === undefined) return undefined;
-  if (src === '$cast') return order.scene?.characters?.length ? joinNames(castNames(order, style)) : undefined;
+  if (src === '$cast') return castOf(order).length ? joinNames(castNames(order, style)) : undefined;
   if (typeof src === 'string') {
     const v = orderValue(order, src);
     return v === undefined ? undefined : String(v);
@@ -108,7 +128,7 @@ export function assemble(order, style) {
   const errors = [];
   /** @type {Section[]} */
   const sections = [];
-  for (const rule of style.assembly.sections) {
+  for (const rule of sectionRulesOf(order, style)) {
     /** @type {string[]} */
     const texts = [];
     /** @type {UsedFragment[]} */
@@ -235,7 +255,7 @@ function renderCast(order, style, errors) {
   const texts = [];
   /** @type {UsedFragment[]} */
   const used = [];
-  for (const c of order.scene?.characters || []) {
+  for (const c of castOf(order)) {
     const id = style.assembly.cast[c.name]?.fragment;
     const f = id ? style.fragments.get(id) : undefined;
     if (!f) {

@@ -83,6 +83,15 @@ test('prepareCard: картинка другой формы масштабиру
   }
 });
 
+test('prepareCard без размера: картинка остаётся своего размера, без обрезки', { skip: noSharp }, async () => {
+  const { default: sharp } = await import('sharp');
+  const { prepareCard } = await import('../core/image/prepare.js');
+  const img = await sharp({ create: { width: 30, height: 50, channels: 3, background: { r: 10, g: 200, b: 90 } } }).png().toBuffer();
+  const out = await prepareCard(img);
+  assert.equal(out.width, 30); assert.equal(out.height, 50);
+  assert.deepEqual([...out.pixels.slice(0, 3)], [10, 200, 90]);
+});
+
 test('prepareCard: прозрачная картинка не становится карточкой', { skip: noSharp }, async () => {
   const { default: sharp } = await import('sharp');
   const { prepareCard } = await import('../core/image/prepare.js');

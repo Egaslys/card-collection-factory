@@ -1,7 +1,7 @@
 // Picks the style's reference cards to attach to a generation request: the cards whose staging is
 // closest to the order (weights, count and excluded cards: `references` of prompt-assembly.json),
 // or the cards the order names in `references`.
-import { castNames, joinNames, stagingValue } from './assembly.js';
+import { castNames, castOf, joinNames, stagingValue } from './assembly.js';
 import { fillSlots, sentence } from './fragments.js';
 
 /** @typedef {import('./style.js').Style} Style */
@@ -22,7 +22,7 @@ export function referenceScore(card, order, style) {
     if (k === 'cast') continue;
     if (card.staging[k] === stagingValue(order, style, k)) score += w;
   }
-  const cast = (order.scene?.characters || []).map(c => c.name);
+  const cast = castOf(order).map(c => c.name);
   score += (weights.cast || 0) * cast.filter(n => card.cast.includes(n)).length;
   return score;
 }
@@ -40,6 +40,13 @@ export function pickReferences(order, style) {
     return order.references.map(n => {
       const card = style.references.find(r => r.ref === n);
       if (!card) throw new Error(`references: нет эталонной карточки №${n}`);
+      return card;
+    });
+  }
+  if (order.kind && style.assembly.kinds?.[order.kind]?.references === 'anchor_frames') {
+    return castOf(order).flatMap(c => style.assembly.cast[c.name]?.anchor_frames ?? []).map(n => {
+      const card = style.references.find(r => r.ref === n);
+      if (!card) throw new Error(`cast: опорный кадр №${n} не найден среди эталонных карточек`);
       return card;
     });
   }
@@ -63,7 +70,7 @@ export function pickReferences(order, style) {
 export function referenceNote(order, style, cards) {
   if (!cards.length) return null;
   const rules = style.assembly.references;
-  const cast = (order.scene?.characters || []).map(c => c.name);
+  const cast = castOf(order).map(c => c.name);
   const showsCast = cast.length > 0 && cards.every(card => cast.every(n => card.cast.includes(n)));
   const images = cards.length === 1 ? 'Image 1' : `Images 1–${cards.length}`;
   /** @type {Record<string, string>} */

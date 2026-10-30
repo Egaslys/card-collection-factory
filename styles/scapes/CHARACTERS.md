@@ -344,6 +344,11 @@
 <!-- fragment: char.scene-frame -->
 > A simple everyday {theme} scene with {who} ({one or two of the cast}), set in a {place} with depth (foreground, characters, middle ground, far background), {time of day}. {Who} {does what} with {set item}. One gentle comic twist: {twist}. Show the twist through faces and gaze: {who reacts} looks straight at {the twist object} with a clear, readable expression, and the twist object is fully inside the frame, near the characters' head height. Medium shot at the characters' chest or eye level, characters centred and filling about three quarters of the frame, cut at the {hips / waist / knees} by the bottom edge, legs below that not shown; heads fully inside the frame, well below the top edge. No other characters; background extras only as a small soft crowd if the place needs one.
 
+Опорный портрет — не карточка, а образец персонажа для сцен: один персонаж во весь рост на простом фоне (ROADMAP, «Опорные портреты персонажей»). Подставляется вместе с полным описанием персонажа. Фрагмент написан по листам персонажей выше и генерацией ещё не проверен; мужчина стоя и корова во весь рост в эталоне не показаны, поэтому их рост в головах на портрете придумает модель.
+
+<!-- fragment: char.sheet -->
+> Character reference sheet of {who}, alone: the whole figure from the top of the head to the feet, standing upright in a relaxed neutral pose, turned three-quarters toward the viewer, looking at the viewer with a friendly smile, arms relaxed and hands empty. The figure is centred and fills about four fifths of the frame height, fully inside the frame with clear margins on every side, nothing cut by the edges. Plain smooth light-grey backdrop with a soft contact shadow under the feet; no props, no scenery, no other characters, no text, no border.
+
 ## Не решено и не измерено
 
 - **Листы персонажей во весь рост** — не решено. Мужчина стоя и корова ни разу не показаны во весь рост; их пропорции (рост в головах) не измерить. Чистые опорные изображения на нейтральном фоне можно получить только генерацией или ретушью.

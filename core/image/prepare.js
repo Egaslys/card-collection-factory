@@ -16,17 +16,18 @@ import sharp from 'sharp';
 
 /**
  * @param {string | Uint8Array} input  file path or encoded image
- * @param {{width: number, height: number}} size  the card size of the style
+ * @param {{width: number, height: number}} [size]  the card size of the style; without it the image keeps its own
+ *   size (an order whose output is not a card, e.g. a character sheet)
  * @returns {Promise<Card>}
  */
-export async function prepareCard(input, { width, height }) {
-  const image = sharp(input).autoOrient();
+export async function prepareCard(input, size) {
+  let image = sharp(input).autoOrient();
   const meta = await image.metadata();
   if (meta.hasAlpha && !(await sharp(input).stats()).isOpaque) {
     throw new Error('prepareCard: у картинки есть прозрачные пиксели, а карточка — непрозрачный прямоугольник');
   }
+  if (size) image = image.resize(size.width, size.height, { fit: 'cover', position: 'centre', kernel: 'lanczos3', fastShrinkOnLoad: false });
   const { data, info } = await image
-    .resize(width, height, { fit: 'cover', position: 'centre', kernel: 'lanczos3', fastShrinkOnLoad: false })
     .toColourspace('srgb')
     .removeAlpha()
     .raw()

@@ -26,8 +26,23 @@ The JSDoc typedefs in `card-order.js` are the reference; allowed staging values 
 | `promptExtra` | appended at the end; also lets a staging the bible has no fragment for pass validation |
 | `promptOverride` | the prompt, verbatim; nothing is assembled (references are still picked) |
 | `references` | reference card numbers to attach instead of the picked ones |
+| `humanRequest` | the person's words when they asked for a staging no reference card shows; without it such a staging is an error (author's decision: the agent does not choose it on its own). What counts as one staging: `unseen_stagings` of `prompt-assembly.json` |
 
 `staging`: the nine fields of the style's checks spec (`category`, `backdrop`, `pattern`, `placement`, `support`, `camera`, `characters`, `time`, `sky_top` — same names and values as `styles/scapes/checks/check-card.mjs --help`, all required) plus prompt-only fields that pick a variant inside a fragment: `stripes`, `surface`, `medium`, `setting`, `wall`, `floor`, `furniture`, `shape` (default `boxy`), `material` (one label or a list: the labels of the bible's material fragments, e.g. `glossy plastic`, `metal`, `wood`), `effects`, `stage_lights`, `brand`, `brand_finish`. A field is required when its `required_when` in `fields` matches. Strip the prompt-only fields before handing `staging` to the checks.
+
+## Character sheet (`kind: "character-sheet"`)
+
+An anchor portrait of one character, full length on a plain backdrop, the sample that keeps the characters alike from scene to scene (ROADMAP «Опорные портреты персонажей»). Not a card: no staging.
+
+| Field | Meaning |
+|---|---|
+| `kind` | `"character-sheet"` |
+| `id`, `style`, `title` | as for a card |
+| `character` | a key of `cast` (`man`, `pig`, `sheep`, `rooster`, `cow`) |
+| `costume` | optional English sentence after the character's description (the Man is always dressed: give him one) |
+| `promptExtra`, `promptOverride`, `references` | as for a card |
+
+Rules: `kinds["character-sheet"]` of `prompt-assembly.json` — its own `sections` (the bible's `char.sheet` frame, the full description, colour and rendering), `references: "anchor_frames"` (the character's «опорные кадры» from CHARACTERS.md, `cast.<name>.anchor_frames`) and `output`: `orderOutput(order, style)` in `card-order.js` tells the card loop whether to crop to the card size and whether to run the style's pixel checks (for a sheet: neither; `visual` lists the checks for eyes).
 
 ## Fragment markers in the bible
 
