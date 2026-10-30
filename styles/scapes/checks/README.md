@@ -4,7 +4,7 @@ For agents. `check-card.mjs` runs every check of the Scapes bible (`../*.md`, se
 
 ## Requirements
 
-Node and the `sharp` package from the project root (`npm install`); `check-card.mjs` reads and writes images with it and needs no ffmpeg. Colour profiles embedded in a PNG are ignored when reading, as the bible's numbers were measured on the stored pixel values. `adjust-trial.mjs` still applies ffmpeg filters and needs `ffmpeg` on `PATH` (or `FFMPEG`) until it is moved to the product's own processing. Both scripts take `--help` and refuse an unknown option before doing anything (`tools/cli-args.mjs`).
+Node and the `sharp` package from the project root (`npm install`); `check-card.mjs` reads and writes images with it and needs no ffmpeg. Colour profiles embedded in a PNG are ignored when reading, as the bible's numbers were measured on the stored pixel values. `adjust-trial.mjs` applies the product's own post-processing (`core/image/adjust.js`) and needs no ffmpeg either. Both scripts take `--help` and refuse an unknown option before doing anything (`tools/cli-args.mjs`).
 
 ## Files
 
@@ -14,7 +14,7 @@ Node and the `sharp` package from the project root (`npm install`); `check-card.
 | `measures.mjs` | The pixel measures. Each repeats the method that produced the bible's numbers, so a value is comparable with the bible's. |
 | `thresholds.json` | Every number the checker compares against, by check id (`COLOUR.8a`, `COMPOSITION.3`, …), each citing its bible document and check number; the `visual` list; `method` parameters of the measurement, each with its source. |
 | `reference-spec.json` | The control run: the 160 reference cards (`../references/card-NNN.png`) with their staging, whether the proposed hero outline was confirmed by eye, and the hero box confirmed by eye where it was not. Generated once from the analysis of the references; edit by hand only to fix an error. |
-| `adjust-trial.mjs` | Tries post-generation adjustments (ffmpeg filters, for now) on copies of cards and prints the measures the adjustment step aims at. |
+| `adjust-trial.mjs` | Tries post-generation adjustments on copies of cards with the product's own post-processing (`core/image/adjust.js`, settings from `../processing.json`) and prints the measures the adjustment step aims at. |
 
 ## Running
 
@@ -64,11 +64,11 @@ Visual, printed per card from `thresholds.json` → `visual` plus every `NOT_MEA
 
 ## Tuning the adjustment step
 
-The starting settings per model and the targets are in the bible (RENDERING.md «Резкость при обработке: цель и начальные настройки» and COLOUR.md «5. Насыщенность и яркость после генерации»). To try them on cards:
+The settings are the settings object of `core/image/adjust.js` (brightness, saturation, sharpen amount and radius); their numbers live only in `../processing.json` (`neutral`, `start` per model, `sharpen_amount_max`). What the starting settings give and the targets are in the bible (RENDERING.md «Резкость при обработке: цель и начальные настройки» and COLOUR.md «5. Насыщенность и яркость после генерации»). Without `--trials` the script tries no adjustment, each model's starting settings, and each with sharpening at `sharpen_amount_max`; other trials start from `neutral` and override keys:
 
 ```
 node styles/scapes/checks/adjust-trial.mjs --spec my-cards.json --out /tmp/adj \
-  --filters 'none=null;us5-0.3=unsharp=5:5:0.3;sat1.3+us5-0.3=eq=saturation=1.3,unsharp=5:5:0.3'
+  --trials 'none;sh0.3=sharpen=0.3;s1.3+sh0.3=saturation=1.3,sharpen=0.3'
 ```
 
 It writes the adjusted copies to `--out` (the cards themselves are not changed) and prints overshoot, edge width, chroma, lightness, grey and white shares, grain and the backdrop colour per copy; `--ref-json` with a `check-card.mjs --json` output of the control run adds the reference spread of the same measures. Check the chosen copy with `check-card.mjs` afterwards.

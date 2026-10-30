@@ -11,7 +11,7 @@ const DIR = path.join(ROOT, 'styles/scapes/checks');
 const run = (script, args) => spawnSync(process.execPath, [path.join(DIR, script), ...args], { cwd: ROOT, encoding: 'utf8' });
 const hasSharp = fs.existsSync(path.join(ROOT, 'node_modules/sharp/package.json'));
 
-test('проверки Scapes: --help печатает справку, неизвестный ключ отклоняется до работы', () => {
+test('проверки Scapes: --help печатает справку, неизвестный ключ отклоняется до работы', { skip: !hasSharp && 'нет node_modules/sharp (сначала npm install)' }, () => {
   for (const script of ['check-card.mjs', 'adjust-trial.mjs']) {
     const help = run(script, ['--help']);
     assert.equal(help.status, 0, script);
