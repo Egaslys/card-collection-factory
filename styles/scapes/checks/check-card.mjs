@@ -75,13 +75,11 @@ const isNight = staging => staging.time === 'night' || staging.time === 'dusk';
 const isEvening = staging => staging.time === 'golden' || staging.time === 'dusk';
 // COLOUR.15a and 15b at night or dusk, 15c at golden hour or dusk
 const timeFits = (id, staging) => !id.startsWith('COLOUR.15') || (id === 'COLOUR.15c' ? isEvening(staging) : isNight(staging));
-/** The norm of a check for this staging: its time-of-day norm (`norm_by_time`) where the staging's time is one of its times. */
-const normFor = (id, staging) => (T[id].norm_by_time?.times.includes(staging.time) ? T[id].norm_by_time.norm : T[id].norm);
 const isAbstract = staging => staging.backdrop === 'field' || staging.backdrop === 'wall';
 
 /**
  * The checks `ids` (of VALUE_OF) that apply to this staging, measured on RGB pixels of the card size, each with the
- * range post-processing aims at: the bible's adjustment target where it gives one, else the norm (its time-of-day norm where it has one), else the limit.
+ * range post-processing aims at: the bible's adjustment target where it gives one, else the norm, else the limit.
  * COLOUR.15a–b only at night or dusk, 15c at golden hour or dusk; COLOUR.8 only on an abstract backdrop and with `fg`, a
  * hero outline confirmed by eye.
  * @returns {{id: string, value: number, aim: {min?: number, max?: number}}[]}
@@ -95,7 +93,7 @@ export function processingMeasures(rgb, { staging, ids, fg }) {
     bg: { get: once('bg', () => (fg && isAbstract(staging) ? M.heroBackdrop(P, fg).bg?.dominant : null)) },
   });
   const applies = id => VALUE_OF[id] && timeFits(id, staging) && (!id.startsWith('COLOUR.8') || m.bg);
-  return ids.filter(applies).map(id => ({ id, value: VALUE_OF[id](m), aim: T[id].target ?? normFor(id, staging) ?? T[id].limit }));
+  return ids.filter(applies).map(id => ({ id, value: VALUE_OF[id](m), aim: T[id].target ?? T[id].norm ?? T[id].limit }));
 }
 
 /** The proposed hero outline of RGB pixels of the card size (the one card.mask.png shows), or null when none is found. */
@@ -203,7 +201,7 @@ export async function checkCard(card, { baseDir, overlaysDir, outline } = {}) {
 
   // ---------- COLOUR, whole card ----------
   const wc = M.wholeCard(P); meas.whole = wc;
-  res.push(range('COLOUR.1', VALUE_OF['COLOUR.1']({ wc }), { norm: normFor('COLOUR.1', s) }));
+  res.push(range('COLOUR.1', VALUE_OF['COLOUR.1']({ wc })));
   res.push(range('COLOUR.2', VALUE_OF['COLOUR.2']({ wc })));
   res.push(range('COLOUR.3a', VALUE_OF['COLOUR.3a']({ wc })));
   res.push(range('COLOUR.3b', VALUE_OF['COLOUR.3b']({ wc })));

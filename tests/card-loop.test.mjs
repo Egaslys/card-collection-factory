@@ -297,6 +297,14 @@ test('подбор обработки: из начальных настроек 
   assert.ok(s.settings.shadows > 0, `тени ${s.settings.shadows}`);
   assert.ok(s.tuning.measures.find(m => m.id === 'COLOUR.D').chosen >= 40);
   assert.equal(tuneProcessing({ pixels: dark, width: 2, height: 1, start: neutral, neutral, bounds, measure: shade, basis: 'test' }).settings.shadows, undefined, 'без оси теней — их не трогают');
+
+  // an evening darkened: brightness down takes the darkest tone out of its aim, a larger lift brings it back —
+  // brightness and the lift move together (one axis at a time refused every darker step)
+  const evening = Uint8Array.of(40, 40, 40, 160, 160, 160);
+  const dusk = rgb => [{ id: 'COLOUR.D', value: rgb[0], aim: { min: 36, max: 50 } }, { id: 'COLOUR.M', value: rgb[3], aim: { max: 148 } }];
+  const e = tuneProcessing({ pixels: evening, width: 2, height: 1, start: neutral, neutral, bounds: { ...withShadows, brightness: { min: -20, max: 20, step: 4, serves: 'COLOUR.' } }, measure: dusk, basis: 'test' });
+  assert.ok(e.settings.brightness < 0, `яркость ${e.settings.brightness}`);
+  assert.ok(e.tuning.measures.every(m => m.chosen >= (m.aim.min ?? -Infinity) && m.chosen <= (m.aim.max ?? Infinity)), JSON.stringify(e.tuning.measures));
 });
 
 test('подъём теней: только для постановок из processing.json (сцены), с целью оттуда', { skip: noSharp }, () => {

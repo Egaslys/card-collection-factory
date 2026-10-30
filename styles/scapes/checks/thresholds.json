@@ -20,14 +20,6 @@
         "min": 33,
         "max": 78
       },
-      "norm_by_time": {
-        "times": ["golden", "dusk", "night"],
-        "norm": {
-          "min": 26,
-          "max": 78
-        },
-        "source": "COLOUR.md check 1: at golden hour, dusk and night the reference cards run from C* 26.4 (#160) to 54.1, 13 cards without #100 (measured 2026-10-30); the day norm's lower bound 33 would keep post-processing from darkening an evening (COLOUR.md check 15)"
-      },
       "limit": {
         "min": 21
       },
