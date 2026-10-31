@@ -102,14 +102,15 @@ export function pickClick(e, collectionId) {
   return true;
 }
 
-/** Marks the picked cards of a drawn screen and keeps them marked while it is shown. @param {HTMLElement} el */
-export function bindPicked(el) {
+/**
+ * Marks the picked cards of a drawn screen and keeps them marked while it is shown: the pool's thumbs here, the
+ * windows by the screen's `redraw` (their rings are drawn with them).
+ * @param {HTMLElement} el @param {() => void} redraw
+ */
+export function bindPicked(el, redraw) {
   const mark = () => {
-    for (const c of /** @type {NodeListOf<HTMLElement>} */ (el.querySelectorAll('[data-card]'))) {
-      const on = app.selection.has(/** @type {string} */ (c.dataset.card));
-      if (c.classList.contains('thumb')) c.setAttribute('aria-selected', String(on));
-      else c.classList.toggle('is-picked', on);
-    }
+    for (const c of /** @type {NodeListOf<HTMLElement>} */ (el.querySelectorAll('.thumb[data-card]'))) c.setAttribute('aria-selected', String(app.selection.has(/** @type {string} */ (c.dataset.card))));
+    redraw();
   };
   const off = app.selection.onChange(() => { if (el.isConnected) mark(); else off(); });
 }

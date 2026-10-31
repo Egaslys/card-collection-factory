@@ -473,3 +473,27 @@ test('оплаченный, но бесполезный ответ тексто�
     model: async () => { if (m++) throw paid; return { text: '{"cards": []}', cost: 0.002 }; } }), /без текста/);
   assert.ok(Math.abs((await store.spend({ collectionId: other })).text - 0.032) < 1e-9);
 });
+
+test('шаги цикла карточки идут в ход работы набора и свободных карточек: попытка и её стадия у строки карточки', async t => {
+  const { makeSet } = await import('../core/set/make.js');
+  const { makeCardsInto } = await import('../core/set/cards.js');
+  const { store } = tempStore(t);
+  const collection = (await store.createCollection({ title: 'Лето' })).id;
+  // a card loop that fails once and makes it on the second attempt
+  const makeCard = /** @type {any} */ (async (/** @type {any} */ o) => {
+    o.onProgress?.({ stage: 'generate', n: 1, done: 0, of: 3, spent: 0 });
+    o.onProgress?.({ stage: 'generate', n: 2, done: 1, of: 3, spent: 0.04 });
+    return { id: o.place ? `c-${o.place.slot}` : 'loose', spent: 0.08, attempts: [{ cost: 0.04 }, { cost: 0.04 }], chosenCheck: { blocking: 0 }, image: 'x.png', stop: 'passed' };
+  });
+  const provider = /** @type {any} */ ({ model: 'm', free: true, generate: async () => { throw new Error('не должен вызываться'); } });
+  /** @type {any[]} */
+  const events = [];
+  await makeSet({ collection, plan: lakePlan(), settings: SETTINGS, provider, store, makeCard, only: [1], limits: { parallel: 1 }, progress: (_, e) => { if (e) events.push(e); } });
+  const second = events.find(e => e.attempt?.n === 2);
+  assert.deepEqual({ slot: second.slot, status: second.status, spent: second.spent, attempt: second.attempt }, { slot: 1, status: 'start', spent: 0.04, attempt: { stage: 'generate', n: 2, done: 1, of: 3 } });
+  assert.equal(typeof second.title, 'string');
+  /** @type {any[]} */
+  const loose = [];
+  await makeCardsInto({ collection, theme: 'Рыбалка', count: 1, settings: PLAN_SETTINGS, store, makeCard, provider, model: async () => ({ text: looseAnswer(1, 0), cost: 0.001 }), progress: (_, e) => { if (e) loose.push(e); } });
+  assert.ok(loose.some(e => e.attempt?.n === 2 && e.status === 'start' && e.title), JSON.stringify(loose));
+});

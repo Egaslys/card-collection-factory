@@ -4,6 +4,7 @@
 // a planned set is still made by it. What the window shows: the place's own, else the plan's slot, else the kind's
 // default — the skeleton of its base layout in set-rules.json. A value the window kind cannot show (a crystal frame
 // outside the grand window, a gold one in it) is not used, so switching the window kind back brings it back.
+import { normalizePlan } from './plan.js';
 import { loadSetRules, windowSkeleton } from './rules.js';
 
 /**
@@ -94,9 +95,32 @@ export async function setPlace({ collection, set: setId, slot, stars, frame, sto
 }
 
 /**
- * Makes one card for an empty place of a set, by the set's rules for that place: a planned set makes its plan's order
- * of the slot (makeSet with that slot only); a set without a plan for the slot (a set gathered by hand) has the text
- * model write one order on the set's theme and wishes — or on `about`, what the person wants on the card — a scene
+ * Which order of the set's plan each empty place gets when it is filled: the plan's order of that very slot while no
+ * card of the set was made from it; else one of the plan's orders no card of the set was made from (the person moved
+ * cards around, or took one out), in the plan's order. A card is known by its order's id (CardSummary `orderId`,
+ * kept when its caption changes). Null: a filled place, a set without a plan, or no plan order left — such a place is
+ * filled like a set gathered by hand.
+ * @param {{slots: (string|null)[], plan?: any}} set @param {Map<string, string|null>} orderIds  card id → its order id
+ * @returns {(number|null)[]}  per place, the 0-based plan slot whose order it gets
+ */
+export function planFor(set, orderIds) {
+  const out = /** @type {(number|null)[]} */ (set.slots.map(() => null));
+  if (!set.plan?.slots?.length) return out;
+  const ids = normalizePlan(set.plan).plan.slots.map((/** @type {any} */ s) => s?.order?.id ?? null);
+  const made = new Set(set.slots.flatMap(c => (c ? [orderIds.get(c)] : [])));
+  const missing = ids.flatMap((id, j) => (id && !made.has(id) ? [j] : []));
+  const empty = set.slots.flatMap((c, i) => (c ? [] : [i]));
+  const own = new Set(empty.filter(i => missing.includes(i)));
+  for (const i of own) out[i] = i;
+  const rest = missing.filter(j => !own.has(j));
+  for (const i of empty.filter(i => !own.has(i))) out[i] = rest.shift() ?? null;
+  return out;
+}
+
+/**
+ * Makes one card for an empty place of a set, by the set's rules for that place: a planned set makes the plan's order
+ * planFor gives the place (its own slot's: makeSet with that slot only; another's: that order with makeCard into this
+ * place); a place no plan order is left for, or a set gathered by hand, has the text model write one order on the set's theme and wishes — or on `about`, what the person wants on the card — a scene
  * with characters when the place is one (placesOf), and makes it into the place (makeCardsInto). The place must be
  * empty.
  * @param {object} o
@@ -116,11 +140,26 @@ export async function fillPlace({ collection, set: setId, slot, about, settings,
   const set = await st.getSet(collection, setId);
   if (!Number.isInteger(slot) || slot < 0 || slot >= set.slots.length) throw new Error(`Место — целое от 1 до ${set.slots.length}.`);
   if (set.slots[slot]) throw new Error(`Место ${slot + 1} занято: сначала уберите карточку из него.`);
-  if (set.plan?.slots?.[slot]) {
+  const cards = await st.listCards(collection, { setId });
+  const j = planFor(set, new Map(cards.map((/** @type {any} */ c) => [c.id, c.orderId ?? null])))[slot];
+  if (j === slot) {
     const { makeSet } = await import('./make.js');
     const r = await makeSet({ collection, set: setId, only: [slot + 1], settings, provider, signal, store: st, makeCard, progress });
     const s = r.slots[0];
     return { spent: r.spent, card: s?.card ?? null, warnings: r.warnings, errors: s?.error ? [s.error] : [] };
+  }
+  if (j != null) {
+    const order = normalizePlan(/** @type {any} */ (set.plan)).plan.slots[j].order;
+    const make = makeCard ?? (await import('../card/make.js')).makeCard;
+    progress(`место ${slot + 1}: «${order.title}» — генерация`, { set: setId, slot: slot + 1, title: order.title, status: 'start', spent: 0 });
+    try {
+      const { cardSteps } = await import('./make.js');
+      const r = await make({ order, collection, place: { setId, slot }, settings, provider, store: st, ...(signal ? { signal } : {}), onProgress: cardSteps(progress, { set: setId, slot: slot + 1, cardId: null, title: String(order.title) }) });
+      progress(`место ${slot + 1}: «${order.title}» — ${r.image ? 'готово' : 'картинки нет'}`, { set: setId, slot: slot + 1, cardId: r.id, title: order.title, status: 'made', spent: r.spent ?? 0 });
+      return { spent: r.spent ?? 0, card: r.id, warnings: r.stop === 'key' && r.keyProblem ? [r.keyProblem.message] : [], errors: [] };
+    } catch (/** @type {any} */ e) {
+      return { spent: 0, card: null, warnings: [], errors: [String(e?.message ?? e)] };
+    }
   }
   const { makeCardsInto } = await import('./cards.js');
   const place = placesOf(set, col.style)[slot];

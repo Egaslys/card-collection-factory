@@ -112,12 +112,12 @@ export async function load(id) {
       <div class="cols"><section class="cols__main" aria-label="${esc(t('aria'))}" data-main ${drawn(main)}>${main}</section>${poolHtml(d.cards, d.sets)}</div>`,
     mount: (/** @type {HTMLElement} */ el) => {
       root = el;
-      bindPicked(el);
+      bindPicked(el, () => patchList(el.querySelector('.setgrid--tiles'), tiles(d)));
       el.addEventListener('click', e => {
         const target = /** @type {HTMLElement} */ (e.target);
         if (pickClick(e, id)) return;
         if (poolClick(target, el, d.col)) return;
-        if (target.closest('[data-edit]')) { openEditCollection(d.col, d.cards); return; }
+        if (target.closest('[data-edit]')) { openEditCollection(d.col, d.cards, d.sets); return; }
         if (target.closest('[data-create-set]')) { openCreateSet(d.col); return; }
         if (target.closest('[data-build]')) { openBuildCollection(d.col, placesHeld(d.sets)); return; }
         const card = /** @type {HTMLElement|null} */ (target.closest('.pool [data-card]'));

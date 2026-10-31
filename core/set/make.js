@@ -121,7 +121,8 @@ export async function saveSetPlan({ collection, plan: input, set, store, keepVer
 /**
  * A progress event of making a set, next to its text. status: start = the card loop began on the slot; made / failed
  * / skipped (the set's spend cap) / kept (already made) / cancelled (the signal stopped the queue before the slot).
- * @typedef {{set: string, slot: number, cardId: string|null, title: string, status: 'start'|'made'|'failed'|'skipped'|'kept'|'cancelled', spent: number}} SetProgressEvent
+ * @typedef {{set: string, slot: number, cardId: string|null, title: string, status: 'start'|'made'|'failed'|'skipped'|'kept'|'cancelled', spent: number, attempt?: CardStep}} SetProgressEvent
+ *   attempt: while the card is made (status start), the step of its card loop
  */
 /**
  * A progress event of planning. status: planning = the model is asked for the set; planned = its plan has no
@@ -130,6 +131,18 @@ export async function saveSetPlan({ collection, plan: input, set, store, keepVer
  */
 /** The spend of a run outside its cards (the planning), once it is known. @typedef {{total: number}} RunSpendEvent */
 /** @typedef {(text: string, event?: SetProgressEvent|PlanProgressEvent|RunSpendEvent) => void} Progress */
+/** A step of one card's loop (core/card's onProgress without its spend): attempt `n` generating or processing, or `done` of at most `of`. @typedef {Omit<import('../card/make.js').Progress, 'spent'>} CardStep */
+
+/**
+ * A card loop's progress as a set's progress line of that card (its row stays «start»; `spent` is the card's so far).
+ * @param {Progress} progress @param {{set: string, slot: number, cardId: string|null, title: string}|{title: string}} row
+ * @returns {(e: import('../card/make.js').Progress) => void}
+ */
+export const cardSteps = (progress, row) => ({ spent, ...attempt }) => {
+  const where = 'slot' in row ? `слот ${row.slot}: ` : '';
+  const step = attempt.stage === 'generate' ? `попытка ${attempt.n}: генерация` : attempt.stage === 'process' ? `попытка ${attempt.n}: обработка и проверки` : `попыток сделано ${attempt.done} из ${attempt.of}`;
+  progress(`${where}«${row.title}» — ${step}`, /** @type {any} */ ({ ...row, status: 'start', spent, attempt }));
+};
 
 /**
  * Makes the cards of a set from its plan. With `plan`, the plan is saved as a new set first (saveSetPlan); with
@@ -212,7 +225,7 @@ export async function makeSet({ collection, plan: input, set: setId, settings, p
       const r = await make({
         order: s.order, collection, ...(existing ? { card: existing } : {}), place: { setId: set.id, slot: i },
         settings, provider, store: st, limits: { maxSpendUsd: capHere, ...(limits.attempts ? { attempts: limits.attempts } : {}) },
-        ...(signal ? { signal } : {}),
+        ...(signal ? { signal } : {}), onProgress: cardSteps(progress, { set: set.id, slot: i + 1, cardId: existing, title }),
       });
       used.spent = r.spent ?? 0;
       used.prices = r.attempts.map(x => x.cost ?? 0);

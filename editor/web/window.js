@@ -88,7 +88,7 @@ export function windowHtml(main, { set, cards, style, total, drop = false, selec
       : c ? `<span class="wslot__state">${c.status === 'failed' ? I.alert : I.image}</span>` : edit ? `<span class="wslot__plus">${I.plus}</span>` : '';
     const label = c ? t('place', { n: i + 1, title: c.title }) : t('empty', { n: i + 1 });
     const button = c || edit ? `role="button" tabindex="0" aria-label="${esc(label)}"` : `aria-label="${esc(label)}"`;
-    const cls = `wslot${c ? '' : ' is-empty'}${selected === i ? ' is-selected' : ''}${c && picked(c.id) ? ' is-picked' : ''}`;
+    const cls = `wslot${c ? '' : ' is-empty'}${c && picked(c.id) ? ' is-picked' : ''}`;
     return `<div class="${cls}" style="${box(s.card, size)}" data-slot="${i}" ${dropAttr} ${dragAttr} ${c ? `data-card="${esc(c.id)}"` : ''} ${button}>${inner}</div>`;
   }).join('');
   const captions = caption ? g.slots.map((/** @type {any} */ s, /** @type {number} */ i) => {
@@ -108,12 +108,19 @@ export function windowHtml(main, { set, cards, style, total, drop = false, selec
     const st = g.stars[n];
     return st ? img({ ...st, x: s.card.x + st.dx, y: s.card.y + st.dy }, 'wnd__stars', `data-stars="${n}"`) : '';
   }).join('') : '';
+  // the open place and the cards picked for the export: a ring over the template, so its frame does not hide it
+  const rings = g.slots.map((/** @type {any} */ s, /** @type {number} */ i) => {
+    const c = set.slots[i] ? cards.get(set.slots[i]) : null;
+    const cls = [selected === i && 'is-selected', c && picked(c.id) && 'is-picked'].filter(Boolean).join(' ');
+    return cls ? `<span class="wnd__ring ${cls}" style="${box(s.card, size)}"></span>` : '';
+  }).join('');
   const number = set.number ? (total ? t('of', { n: set.number, total }) : t('number', { n: set.number })) : '';
   return `<div class="wnd" data-template="${esc(templateKey)}" style="aspect-ratio:${size.width}/${size.height}">
     ${slots}
     <img class="wnd__tpl" src="/styles/${esc(style)}/windows/${esc(tpl.file)}" alt="" draggable="false">
     ${frames}
     ${stars}
+    ${rings}
     <span class="wtext wtext--title" style="${box(g.title, size)};${fontOf(g.title.height, size)};--fill:${g.title.color};--stroke:${g.title.stroke}">${esc(set.title)}</span>
     <span class="wtext wtext--progress" style="${box(g.progress, size)};${fontOf(g.progress.height, size)};--fill:${g.progress.color};--stroke:${tpl.progressStroke}">${filled}/${g.slots.length}</span>
     ${number ? `<span class="wtext wtext--number" style="${box(g.number, size)};${fontOf(g.number.height, size)};--fill:${g.number.color}${g.number.stroke ? `;--stroke:${g.number.stroke}` : ''}">${esc(number)}</span>` : ''}

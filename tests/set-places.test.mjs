@@ -110,6 +110,28 @@ test('fillPlace: у набора с планом пустое место дел�
   assert.equal(after.slots.filter(Boolean).length, 1, 'сделано только это место');
   const made = (await store.listCards(c, { setId: set.id }))[0];
   assert.equal(made.title, lakePlan().slots[4].order.title);
+  // the person moved that card to place 6: place 5 gets the order left without a place of its own — place 6's
+  await store.moveCard(c, made.id, { setId: set.id, slot: 5 });
+  const again = await fillPlace({ collection: c, set: set.id, slot: 4, settings: SETTINGS, provider, store });
+  assert.deepEqual(again.errors, []);
+  const now = await store.getSet(c, set.id);
+  assert.equal(now.slots[5], made.id);
+  assert.equal((await store.listCards(c, { setId: set.id })).find(x => x.id === now.slots[4])?.title, lakePlan().slots[5].order.title);
+});
+
+test('planFor: пустому месту — заказ своего слота, если по нему ещё нет карточки; иначе первый несделанный', async () => {
+  const { planFor } = await import('../core/set/places.js');
+  const { normalizePlan } = await import('../core/set/plan.js');
+  const plan = lakePlan();
+  const ids = normalizePlan(plan).plan.slots.map((/** @type {any} */ x) => x.order.id);
+  const orderIds = new Map(ids.map((id, j) => [`card-${j}`, id]));
+  // places 0 and 2 empty; place 1 holds the card of plan slot 0, place 3 an outside card
+  const slots = [null, 'card-0', null, 'own', ...ids.slice(4).map((_, k) => `card-${k + 4}`)];
+  assert.deepEqual(planFor({ slots, plan }, orderIds).slice(0, 4), [1, null, 2, null]);
+  assert.deepEqual(planFor({ slots: Array(10).fill(null) }, orderIds), Array(10).fill(null), 'набор без плана');
+  const full = ids.map((_, j) => `card-${j}`);
+  full[3] = null;
+  assert.equal(planFor({ slots: full, plan }, orderIds)[3], 3);
 });
 
 test('обложка коллекции: выбранная карточка, иначе первая; чужая карточка — отказ', async t => {

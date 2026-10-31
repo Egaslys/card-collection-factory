@@ -78,9 +78,10 @@ An id is the folder name: a slug of the title (Cyrillic transliterated, lower ca
 
 ## Card summary (`listCards`, `getCollection().pool`, `moveCard`)
 
-`{ id, title, image, status, checks, attempts, cost, spend, costUnknown, model, setId, slot, updatedAt, busy, error? }`
+`{ id, title, orderId, image, status, checks, attempts, cost, spend, costUnknown, model, setId, slot, updatedAt, busy, error? }`
 
 - `title` — the order's `title`, else its `object`, else the id.
+- `orderId` — the order's `id`, kept when the title changes: which order of a set plan the card was made from (`core/set/places.js`).
 - `image` — absolute path of `card.png`, `null` while there is none.
 - `status` — `new` (no attempt yet, e.g. a reserved id), `made` (a chosen attempt and `card.png`), `failed` (attempts, none usable).
 - `checks` — of the chosen attempt: `{ blocking, warns, needsEyes, maskStatus }`; `needsEyes` = FAILs that rest on an unconfirmed hero outline. `null` when the attempt has no check summary.

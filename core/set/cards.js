@@ -10,7 +10,7 @@ import { presetOf } from '../providers/preset.js';
 import { normalizePlan, slotLookErrors, wishWarnings } from './plan.js';
 import { answerParts, glue, parseAnswer, setFragment, slotFromAnswer } from './planner.js';
 import { cardBudget, kindKey, loadSetRules, rowCategories, stagingRow } from './rules.js';
-import { keyStopText } from './make.js';
+import { cardSteps, keyStopText } from './make.js';
 
 /** @typedef {import('./plan.js').SlotPlan} LooseCard  a planned card: kind, wishes, props, hue, order (no stars or frame) */
 /** @typedef {import('./planner.js').TextModel} TextModel */
@@ -257,7 +257,7 @@ export async function makeCardsInto({ collection, theme, wishes, count, scenes =
     const used = { spent: 0, prices: [] };
     progress(`«${title}» — генерация`, { title, status: 'start', spent: 0 });
     try {
-      const r = await make({ order, collection, ...(place ? { place } : {}), settings, provider, store: st, limits: { maxSpendUsd: capHere }, ...(signal ? { signal } : {}) });
+      const r = await make({ order, collection, ...(place ? { place } : {}), settings, provider, store: st, limits: { maxSpendUsd: capHere }, ...(signal ? { signal } : {}), onProgress: cardSteps(progress, { title }) });
       used.spent = r.spent ?? 0;
       used.prices = r.attempts.map(x => x.cost ?? 0);
       if (r.stop === 'key' && r.keyProblem) keyProblem ??= r.keyProblem;

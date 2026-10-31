@@ -124,7 +124,7 @@ function popHtml(d, i) {
       ${choices.frames.includes('crystal') ? '' : `<span class="field__hint">${esc(t('crystalHint'))}</span>`}</div>`
     : `<p class="lead">${esc(t('grandHint'))}</p>`;
   const busy = runningOf(d).some(j => j.op === 'fillPlace' && j.scope?.slot === i);
-  const planned = set.plan?.slots?.[i]?.order?.title;
+  const planned = set.shown.planned?.[i];
   const body = c
     ? `${stars}${frame}<label class="field"><span class="field__label">${esc(t('caption'))}</span><input class="input" data-caption value="${esc(c.title)}" maxlength="80">
         <span class="field__hint" data-caption-hint>${esc(c.title.length > CAPTION_MAX ? t('captionLong') : t('captionHint'))}</span></label>
@@ -199,7 +199,7 @@ export async function load(collectionId, setId) {
       </div>`,
     mount: (/** @type {HTMLElement} */ el) => {
       root = el;
-      bindPicked(el);
+      bindPicked(el, drawPlace);
       addEventListener('resize', () => { if (el.isConnected) placePop(el); });
       el.addEventListener('click', async e => {
         const target = /** @type {HTMLElement} */ (e.target);

@@ -70,6 +70,12 @@ const cardProgress = progress => (/** @type {{stage: string, n: number|null, don
     { total: e.spent, say: { k: 'attempt', stage: e.stage, n: e.n, done: e.done, of: e.of } });
 
 /**
+ * core/set's progress with each card's loop step (its `attempt`, core/set/make.js cardSteps) as data the page words
+ * («Не получилось, пробую ещё раз (2 из 3)»), in the format of cardProgress. @param {(t: string, o?: any) => void} progress
+ */
+const cardRows = progress => (/** @type {string} */ text, /** @type {any} */ o) => progress(text, o?.attempt ? { ...o, say: { k: 'attempt', ...o.attempt } } : o);
+
+/**
  * A path inside one collection's folder, or an error (nothing outside collections/ is opened).
  * @param {string} collectionId @param {string} [target]
  */
@@ -112,12 +118,19 @@ async function getCard(a) {
 const modelCache = new Map();
 
 /**
- * Sets with what their window shows: `shown.places` (each place's stars, frame, scene) and `shown.choices` (what a
- * person may set on that window kind), from core/set/places.js. @param {any[]} sets @param {string} style
+ * Sets with what their window shows: `shown.places` (each place's stars, frame, scene), `shown.choices` (what a
+ * person may set on that window kind) and `shown.planned` (the caption of the plan order an empty place gets when it
+ * is filled, or null), from core/set/places.js. @param {any[]} sets @param {string} style @param {string} collectionId
  */
-async function withPlaces(sets, style) {
-  const { placesOf, placeChoices } = await import('../../core/set/places.js');
-  return sets.map(s => ({ ...s, shown: { places: placesOf(s, style), choices: placeChoices(style, s.window.kind) } }));
+async function withPlaces(sets, style, collectionId) {
+  const { placesOf, placeChoices, planFor } = await import('../../core/set/places.js');
+  const { normalizePlan } = await import('../../core/set/plan.js');
+  const orderIds = new Map((await store.listCards(collectionId)).map(c => [c.id, c.orderId]));
+  return sets.map(s => {
+    const titles = s.plan?.slots?.length ? normalizePlan(s.plan).plan.slots.map((/** @type {any} */ x) => x?.order?.title ?? null) : [];
+    const planned = planFor(s, orderIds).map(j => (j == null ? null : titles[j] ?? null));
+    return { ...s, shown: { places: placesOf(s, style), choices: placeChoices(style, s.window.kind), planned } };
+  });
 }
 
 /** @type {Record<string, Op>} */
@@ -182,11 +195,11 @@ export const OPS = {
   // ---------- store ----------
   listCollections: { run: async () => store.listCollections() },
   createCollection: { run: async ({ title, description, fields, style }) => store.createCollection({ title: need('title', title), description: description ?? '', ...(fields ? { fields } : {}), ...(style ? { style } : {}) }) },
-  getCollection: { run: async ({ collectionId }) => { const r = await store.getCollection(need('collectionId', collectionId)); return { ...r, sets: await withPlaces(r.sets, r.collection.style) }; } },
+  getCollection: { run: async ({ collectionId }) => { const r = await store.getCollection(need('collectionId', collectionId)); return { ...r, sets: await withPlaces(r.sets, r.collection.style, collectionId) }; } },
   updateCollection: { run: async ({ collectionId, patch }) => store.updateCollection(need('collectionId', collectionId), need('patch', patch)) },
   deleteCollection: { run: async ({ collectionId }) => store.deleteCollection(need('collectionId', collectionId)) },
   createSet: { run: async ({ collectionId, ...set }) => store.createSet(need('collectionId', collectionId), set) },
-  getSet: { run: async ({ collectionId, setId }) => (await withPlaces([await store.getSet(need('collectionId', collectionId), need('setId', setId))], (await store.getCollection(collectionId)).collection.style))[0] },
+  getSet: { run: async ({ collectionId, setId }) => (await withPlaces([await store.getSet(need('collectionId', collectionId), need('setId', setId))], (await store.getCollection(collectionId)).collection.style, collectionId))[0] },
   updateSet: { run: async ({ collectionId, setId, patch }) => store.updateSet(need('collectionId', collectionId), need('setId', setId), need('patch', patch)) },
   deleteSet: { run: async ({ collectionId, setId }) => store.deleteSet(need('collectionId', collectionId), need('setId', setId)) },
   // a place of a set window: stars and frame (core/set/places.js); one card for an empty place
@@ -213,7 +226,7 @@ export const OPS = {
       const { fillPlace } = await import('../../core/set/places.js');
       return fillPlace({
         collection: need('collectionId', a.collectionId), set: need('setId', a.setId), slot: Number(need('slot', a.slot)), ...(a.about ? { about: String(a.about) } : {}),
-        settings: s, provider: await providerOf(s), apiKey: currentKey(presetOf(s.provider).keyEnvVar) ?? undefined, signal, progress,
+        settings: s, provider: await providerOf(s), apiKey: currentKey(presetOf(s.provider).keyEnvVar) ?? undefined, signal, progress: cardRows(progress),
       });
     },
   },
@@ -364,7 +377,7 @@ export const OPS = {
       const { makeSet } = await import('../../core/set/make.js');
       return makeSet({
         collection: need('collectionId', a.collectionId), ...(a.plan ? { plan: a.plan } : { set: need('setId', a.setId) }), settings: s, provider: await providerOf(s, a),
-        redo: !!a.redo, only: a.only, signal, progress, limits: { ...a.limits, ...(a.maxSpendUsd !== undefined ? { maxSpendUsd: a.maxSpendUsd } : {}) },
+        redo: !!a.redo, only: a.only, signal, progress: cardRows(progress), limits: { ...a.limits, ...(a.maxSpendUsd !== undefined ? { maxSpendUsd: a.maxSpendUsd } : {}) },
       });
     },
   },
@@ -390,7 +403,7 @@ export const OPS = {
       const s = settings();
       const { makeCollection } = await import('../../core/set/make.js');
       return makeCollection({
-        collection: need('collectionId', a.collectionId), numbers: a.numbers, settings: s, provider: await providerOf(s, a), signal, progress,
+        collection: need('collectionId', a.collectionId), numbers: a.numbers, settings: s, provider: await providerOf(s, a), signal, progress: cardRows(progress),
         limits: { ...a.limits, ...(a.maxSpendUsd !== undefined ? { maxSpendUsd: a.maxSpendUsd } : {}) },
       });
     },
@@ -406,7 +419,7 @@ export const OPS = {
       const { makeCardsInto } = await import('../../core/set/cards.js');
       return makeCardsInto({
         collection: need('collectionId', a.collectionId), theme: need('theme', a.theme), wishes: a.wishes, count: Number(need('count', a.count)),
-        scenes: Number(a.scenes ?? 0), maxSpendUsd: a.maxSpendUsd, settings: s, provider: await providerOf(s), apiKey: keyOrThrow(s.provider), signal, progress,
+        scenes: Number(a.scenes ?? 0), maxSpendUsd: a.maxSpendUsd, settings: s, provider: await providerOf(s), apiKey: keyOrThrow(s.provider), signal, progress: cardRows(progress),
       });
     },
   },
@@ -425,7 +438,7 @@ export const OPS = {
       return buildSet({
         collection: need('collectionId', a.collectionId), theme: need('theme', a.theme), wishes: a.wishes, variants: a.variants,
         window: a.window, scenes: a.scenes, template: a.template, settings: s, provider: await providerOf(s, a), apiKey: keyOrThrow(),
-        maxSpendUsd: a.maxSpendUsd, planMaxSpendUsd: a.planMaxSpendUsd, limits: a.limits, signal, progress,
+        maxSpendUsd: a.maxSpendUsd, planMaxSpendUsd: a.planMaxSpendUsd, limits: a.limits, signal, progress: cardRows(progress),
       });
     },
   },
@@ -440,7 +453,7 @@ export const OPS = {
       return buildCollection({
         collection: a.collectionId, title: a.title, theme: need('theme', a.theme), wishes: a.wishes, variants: a.variants, only: a.only, mode: a.mode,
         settings: s, provider: await providerOf(s, a), apiKey: keyOrThrow(),
-        maxSpendUsd: a.maxSpendUsd, planMaxSpendUsd: a.planMaxSpendUsd, limits: a.limits, signal, progress,
+        maxSpendUsd: a.maxSpendUsd, planMaxSpendUsd: a.planMaxSpendUsd, limits: a.limits, signal, progress: cardRows(progress),
       });
     },
   },

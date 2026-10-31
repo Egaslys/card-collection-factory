@@ -62,10 +62,10 @@ const t = words({
   en: {
     cancel: 'Cancel', save: 'Save', create: 'Create', title: 'Title',
     codex: 'Codex CLI (by subscription, no charge per image)', models: 'Images: {model}. The plan is written by {text}. Change it in the settings.',
-    noKey: 'No {service} key: {what} is written by the text model through {service}.', noKeyCards: 'the card orders', noKeyPlan: 'the set plan', enterKey: 'Enter a key',
+    noKey: 'No {service} key: the text model writes {what} through {service}.', noKeyCards: 'the card orders', noKeyPlan: 'the set plan', enterKey: 'Enter a key',
     variants: 'How many variants',
     newCollection: 'New collection', titlePh: 'For example, Summer holidays', about: 'What this collection is',
-    aboutPh: 'The theme, the mood, who it is for. Jot your thoughts as they come — «Draft» turns them into a description. Every set grows from this description',
+    aboutPh: 'The theme, the mood, who it is for. Jot your thoughts as they come — «Write it for me» turns them into a description. Every set grows from this description',
     wishes: 'Wishes', wishesPh: 'Optional: what must be there, or what to avoid',
     emptyNote: 'The collection starts empty. How to fill it — set by set, all at once or with cards — you choose inside it.', nameIt: 'Give the collection a title.',
     createSet: 'Create a set', tabGen: 'Generate', tabOwn: 'Gather it yourself',
@@ -420,9 +420,9 @@ export async function openBuildCollection(col, have) {
 /**
  * What the collection is: title, description, fields, the cover (the current one, and every card with a picture to
  * choose from in a list that opens and scrolls — a collection may hold hundreds), deleting.
- * @param {any} col @param {any[]} cards  the collection's cards (CardSummary with imageUrl)
+ * @param {any} col @param {any[]} cards  the collection's cards (CardSummary with imageUrl) @param {any[]} sets  its sets, in order
  */
-export function openEditCollection(col, cards) {
+export function openEditCollection(col, cards, sets) {
   const rows = Object.entries(col.fields ?? {});
   const row = (/** @type {string} */ k = '', /** @type {unknown} */ v = '') => `<div class="kv"><input class="input" name="k" value="${esc(k)}" placeholder="${esc(t('field'))}" aria-label="${esc(t('fieldName'))}"><input class="input" name="v" value="${esc(v)}" placeholder="${esc(t('value'))}" aria-label="${esc(t('value'))}"><button type="button" class="btn btn--secondary btn--icon" data-del-row aria-label="${esc(t('dropField'))}">${I.x}</button></div>`;
   const pictured = cards.filter(c => c.imageUrl);
@@ -430,7 +430,8 @@ export function openEditCollection(col, cards) {
   let cover = /** @type {string|null} */ (col.cover && pictured.some(c => c.id === col.cover) ? col.cover : null);
   const current = () => {
     const c = cover ? pictured.find(x => x.id === cover) : null;
-    const shown = c ?? pictured[0];
+    // without a chosen one, the list of collections shows the first card with a picture of the sets in order, else of the pool (store listCollections)
+    const shown = c ?? [...sets.flatMap(s => s.slots), ...cards.map(x => x.id)].map(id => id && pictured.find(x => x.id === id)).find(Boolean);
     return `<span class="cover__img">${shown ? `<img src="${esc(shown.imageUrl)}" alt="" width="430" height="480">` : I.image}</span>
       <span class="cover__text"><b>${esc(c ? c.title : t('coverFirst'))}</b><span class="field__hint">${esc(t('coverHint'))}</span></span>`;
   };

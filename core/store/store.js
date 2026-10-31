@@ -60,6 +60,8 @@ import { writeZip } from './zip.js';
  * @typedef {object} CardSummary
  * @property {string} id
  * @property {string} title  the order's title, else its object, else the id
+ * @property {string|null} orderId  the order's id (stays when the title is changed): which order of a set plan the card
+ *   was made from; null without card.json
  * @property {string|null} image  absolute path of card.png; null while there is none
  * @property {'new'|'made'|'failed'} status  new: no attempt yet; made: card.png chosen; failed: attempts, none usable
  * @property {{blocking: number, warns: number, needsEyes: number, maskStatus: string}|null} checks  the chosen attempt's
@@ -280,13 +282,14 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
     const latest = Math.max(...times);
     /** @type {CardSummary} */
     const out = {
-      id: k, title: k, image: null, status: 'new', checks: null, attempts: 0, cost: 0, spend: { images: 0, vision: 0, text: 0 }, costUnknown: 0, model: null,
+      id: k, title: k, orderId: null, image: null, status: 'new', checks: null, attempts: 0, cost: 0, spend: { images: 0, vision: 0, text: 0 }, costUnknown: 0, model: null,
       setId: place?.setId ?? null, slot: place?.slot ?? null, updatedAt: latest ? new Date(latest).toISOString() : null, busy: busyOf(dir).map(b => b.what),
     };
     let card;
     try { card = readCardFile(dir); } catch (e) { out.error = `card.json не читается: ${/** @type {Error} */ (e).message}`; return out; }
     if (!card) return out;
     out.title = card.order?.title || card.order?.object || k;
+    out.orderId = card.order?.id ?? null;
     out.attempts = card.attempts.length;
     for (const a of card.attempts) {
       if (a.cost == null) out.costUnknown++;
