@@ -76,6 +76,7 @@ The user and the author are the same person: the owner of the project, who deter
 - Ask when, without an answer, the work could go the wrong way: the intent, design or behavior is not given; different readings of the task lead to noticeably different work; the action is hard to undo. Pause the part of the work that depends on the answer and ask right away — before the files are written.
 - Do not ask what the author's message, the documents or the code already say — read first. Technical decisions, the way of working and the division of tasks, unless the author has set them, are yours: decide and briefly say what you chose.
 - Ask right away with the harness's question tool, with options, your recommended option listed first. Ask without options only when there are no reasonable options. Before a substantial decision, propose an approach and explain its consequences.
+- After a long dictated message from the author (voice input garbles words), first reply briefly: what you understood, what you are going to do, and your questions; start the work after the author's answer.
 - A question is to be answered, not acted on: "how do I do X?" and "why X?" are requests for an answer. While the author is asking or discussing, answer and propose; edit when asked to. Offer additional work in one line.
 - The author's question is not a statement: for "why did X break?", first check whether it broke.
 
