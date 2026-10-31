@@ -1,10 +1,15 @@
-// Choosing the best version of a card by eye (the author's decision, 2026-10-31): when a card has several versions,
+// Choosing the best version of a card by eye (the author's decisions, 2026-10-31): when a card has several versions,
 // the vision model sees them all at once, with what the style's checks and its earlier look found in each, and names
 // the best with a short reason. What can be seen in a picture — a drawing error, the wrong subject, a thing nobody
-// ordered — outweighs a measured style FAIL; the prompt says so (settings card.pick). The card loop asks after a run
+// ordered — outweighs a measured style FAIL; between versions without such problems it judges like an art director
+// which is better as a card — reads at once, more expressive, more appealing detail, closer to the style's reference
+// cards, which it is shown first (the ones the order's prompt picks: the same staging) — and small measured deviations
+// (colour, size by the bible) do not decide.
+// The prompt says so (settings card.pick). The card loop asks after a run
 // that made a new version (core/card/make.js), within the run's spend cap; without an answer the program's own order
 // (make.js rankAttempts) stands.
 import { findingsOf } from './fix.js';
+import { buildPrompt as styleBuildPrompt } from '../style/prompt.js';
 import { orderWords } from './look.js';
 
 /** @typedef {import('./card-file.js').Attempt} Attempt */
@@ -20,20 +25,26 @@ import { orderWords } from './look.js';
  * @property {string} version  one version's block: {n} {findings} {wish}
  * @property {string} wish  {wish}: the person's words a version was drawn with
  * @property {string} clean  what a version's block says when nothing was found in it
+ * @property {number} references  the most reference cards of the style shown before the versions
+ * @property {string} refsNote  {refsNote} of the template when reference cards are shown
+ * @property {string} refsLead  {refsLead} of the template when reference cards are shown
+ * @property {string} refLabel  said before each reference card
  */
 
 /**
  * The prompt of the choice.
- * @param {{title: string, order: string, versions: {n: number, attempt: Attempt}[], settings: PickSettings}} o
+ * @param {{title: string, order: string, versions: {n: number, attempt: Attempt}[], settings: PickSettings, references?: number}} o
+ *   references: how many reference cards come before the versions
  */
-export function pickPrompt({ title, order, versions, settings }) {
+export function pickPrompt({ title, order, versions, settings, references = 0 }) {
   const blocks = versions.map(({ n, attempt }) => {
     const found = findingsOf(attempt).map(f => `- ${f.text}`).join('\n') || settings.clean;
     return settings.version.replace('{n}', () => String(n)).replace('{findings}', () => found)
       .replace('{wish}', () => (attempt.wish ? settings.wish.replace('{wish}', () => String(attempt.wish)) : ''));
   }).join('\n\n');
   return settings.template.replace('{title}', () => title).replace('{order}', () => order)
-    .replace('{count}', () => String(versions.length)).replace('{versions}', () => blocks);
+    .replace('{count}', () => String(versions.length)).replace('{versions}', () => blocks)
+    .replace('{refsNote}', () => (references ? settings.refsNote : '')).replace('{refsLead}', () => (references ? settings.refsLead : ''));
 }
 
 /**
@@ -59,15 +70,20 @@ export function parsePick(text) {
  * @param {PickSettings} o.settings
  * @param {import('./look.js').LookSettings} o.look  the order's words are built as the look builds them
  * @param {(req: {prompt: string, images: (ImageRef & {label: string})[], maxTokens: number}) => Promise<{text: string, cost: number|null}>} o.ask
- * @param {Parameters<typeof orderWords>[0]['buildPrompt']} [o.buildPrompt]
+ * @param {typeof styleBuildPrompt} [o.buildPrompt]  the order's prompt: its words, and the style's reference cards it
+ *   picks (references with `ref`; character anchors are not shown)
  * @returns {Promise<{record: PickRecord, prompt: string, text: string|null}>}
  */
-export async function pickVersion({ versions, order, model, settings, look, ask, buildPrompt }) {
+export async function pickVersion({ versions, order, model, settings, look, ask, buildPrompt = styleBuildPrompt }) {
   const ns = versions.map(v => v.n);
   let prompt = '', r;
   try {
-    prompt = pickPrompt({ title: String(order.title ?? ''), order: await orderWords({ order, settings: look, ...(buildPrompt ? { buildPrompt } : {}) }), versions, settings });
-    r = await ask({ prompt, images: versions.map(v => ({ ...v.image, label: `Version ${v.n}:` })), maxTokens: settings.maxTokens });
+    // the order may no longer assemble (a rule changed since the card was made): then there is nothing to compare with
+    const built = await buildPrompt(order);
+    const refs = (built.references ?? []).filter(x => /** @type {any} */ (x).ref != null).slice(0, settings.references ?? 0);
+    prompt = pickPrompt({ title: String(order.title ?? ''), order: await orderWords({ order, settings: look, buildPrompt: async () => built }), versions, settings, references: refs.length });
+    const images = [...refs.map(x => ({ path: x.path, label: settings.refLabel })), ...versions.map(v => ({ ...v.image, label: `Version ${v.n}:` }))];
+    r = await ask({ prompt, images, maxTokens: settings.maxTokens });
   } catch (/** @type {any} */ e) {
     return { record: { ns, best: null, model, cost: typeof e?.cost === 'number' ? e.cost : 0, error: String(e?.message ?? e) }, prompt, text: null };
   }

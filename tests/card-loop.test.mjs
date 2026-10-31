@@ -939,10 +939,16 @@ test('лучшая версия на глаз: смотрящая модель �
   const p = fakeProvider(await grey(), 0.04, { vision });
   const r = await makeCard({ order: ORDER, ...await pool(), settings, provider: p, buildPrompt: fakePrompt });
   assert.equal(picks.length, 1);
-  assert.deepEqual(picks[0].images.map((/** @type {any} */ i) => [i.label, path.relative(r.dir, i.path)]), [['Version 1:', 'attempts/1/card.png'], ['Version 2:', 'attempts/2/card.png']]);
+  // the style's reference cards the order's prompt picks come first (the same staging), then the versions
+  const { buildPrompt } = await import('../core/style/prompt.js');
+  const refs = (await buildPrompt(ORDER)).references.filter((/** @type {any} */ x) => x.ref != null).slice(0, settings.card.pick.references).map(x => ['Reference card:', x.path]);
+  assert.ok(refs.length >= 1, 'образцы стиля той же постановки');
+  assert.deepEqual(picks[0].images.map((/** @type {any} */ i) => [i.label, i.label.startsWith('Version') ? path.relative(r.dir, i.path) : i.path]), [...refs, ['Version 1:', 'attempts/1/card.png'], ['Version 2:', 'attempts/2/card.png']]);
+  assert.match(picks[0].prompt, /better as a card/);
+  assert.ok(picks[0].prompt.includes(settings.card.pick.refsNote) && picks[0].prompt.includes(settings.card.pick.refsLead));
   assert.match(picks[0].prompt, /Version 1:\n(?:- .*\n)*- subject: a cup, not a mug\n\nVersion 2:/);
   assert.match(picks[0].prompt, /Version 2:\n(?:- .*\n)*- drawing: the hand has six fingers\n/);
-  assert.ok(!/\{(title|order|count|versions|n|wish|findings)\}/.test(picks[0].prompt), 'все слоты заполнены');
+  assert.ok(!/\{(title|order|count|versions|n|wish|findings|refsNote|refsLead)\}/.test(picks[0].prompt), 'все слоты заполнены');
   const card = cardOf(r.dir);
   assert.deepEqual([card.chosen, card.chosenBy], [1, 'look']);
   assert.deepEqual(card.attempts[1].pick, { ns: [1, 2], best: 1, reason: 'both hands are drawn right', model: p.vision.model ?? real.provider.openrouter.visionModel, cost: 0.01 });

@@ -513,7 +513,8 @@ async function pickByEye({ dir, card, ns, run, provider, settings, limits }) {
   const versions = rankAttempts(ns ? card.attempts.filter(a => ns.includes(a.n)) : card.attempts)
     .filter(a => fs.existsSync(path.join(attemptDir(dir, a.n), ATTEMPT_FILES.card))).slice(0, p.maxVersions);
   if (versions.length < 2 || !versions.some(a => run.ns.includes(a.n))) return null;
-  const hint = Math.max(0, ...versions.map(a => a.look?.cost ?? 0)) * versions.length;
+  // about one look per picture shown: the versions and the style's reference cards before them
+  const hint = Math.max(0, ...versions.map(a => a.look?.cost ?? 0)) * (versions.length + (p.references ?? 0));
   if (run.spent + hint > limits.maxSpendUsd + EPSILON_USD) {
     run.warnings.push(`Выбор лучшей версии смотрящей моделью пропущен: он не помещается в потолок расходов ($${limits.maxSpendUsd}); выбрано по проверкам.`);
     return null;
