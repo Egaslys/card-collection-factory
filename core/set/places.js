@@ -18,6 +18,10 @@ import { loadSetRules, windowSkeleton } from './rules.js';
  * @typedef {object} PlaceChoices  what a person may set on a window kind
  * @property {boolean} stars  false: the kind's every layout fixes the stars (the grand window: 5 on every place)
  * @property {string[]} frames  the frames the kind shows, its plain one first
+ * @property {number[]} goldScenes  the places (1-based) where a gold frame makes a place without a plan a scene with
+ *   characters; gold elsewhere is an item. The small window: set-rules.json `small_scene_slots` (the author's decision,
+ *   2026-10-31: its layouts disagree on gold, so the places decide); a kind whose base layout puts gold on scenes: every
+ *   place; else none
  */
 
 /** @typedef {{stars: number, frame: string}} OwnPlace  a place as set.json `places` keeps it */
@@ -40,7 +44,10 @@ export function placeChoices(style, kind) {
   const { all } = layoutsOf(rules, kind);
   const fixed = all.every(w => w.stars && new Set(w.stars).size === 1) && new Set(all.map(w => w.stars?.[0])).size === 1;
   const plain = [...new Set(all.map(w => w.frame))];
-  return { stars: !fixed, frames: all.some(w => w.gold !== 'none') ? [...plain, 'gold'] : plain };
+  const frames = all.some(w => w.gold !== 'none') ? [...plain, 'gold'] : plain;
+  const every = Array.from({ length: rules.set_size }, (_, i) => i + 1);
+  const goldScenes = !frames.includes('gold') ? [] : kind === 'small' ? [...rules.small_scene_slots] : layoutsOf(rules, kind).w.gold === 'scenes' ? every : [];
+  return { stars: !fixed, frames, goldScenes };
 }
 
 /**
@@ -62,7 +69,7 @@ export function placesOf(set, style) {
     const planned = set.plan?.slots?.[i];
     if (fits(own)) {
       const o = /** @type {OwnPlace} */ (own);
-      return { stars: choices.stars ? o.stars : d.stars, frame: o.frame, scene: allScenes || (w.gold === 'scenes' && o.frame === 'gold') };
+      return { stars: choices.stars ? o.stars : d.stars, frame: o.frame, scene: allScenes || (o.frame === 'gold' && choices.goldScenes.includes(i + 1)) };
     }
     if (fits(planned)) return { stars: choices.stars ? planned.stars : d.stars, frame: planned.frame, scene: Number(planned.order?.staging?.characters ?? 0) > 0 };
     return d;

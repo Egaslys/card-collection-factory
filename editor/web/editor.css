@@ -273,7 +273,10 @@ button.tb__text:hover { background: var(--color-surface-sunken); }
 .empty-sets { min-height: 420px; display: grid; place-content: center; }
 .joblines:empty { display: none; }
 .pool__filter { display: flex; width: 100%; margin-bottom: var(--spacing-s3); }
-.pool__filter > button { flex: 1; }
+.pool { min-width: 0; }
+.pool__filter > button { flex: 1; min-width: 0; }
+/* the three filter words with their counts fit a 320px phone only with tighter buttons */
+@media (max-width: 400px) { .pool__filter > button { padding-inline: var(--spacing-s2); gap: var(--spacing-s1); } }
 .pool__filter .n { color: var(--color-ink-3); font: var(--type-data-sm-weight) var(--type-data-sm-size)/var(--type-data-sm-line) var(--type-data-sm-family); }
 .pool__make { width: 100%; }
 

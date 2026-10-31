@@ -36,8 +36,8 @@ test('placesOf: окно без плана — по виду окна; своё 
   assert.deepEqual(large.map(p => p.stars), [1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
   assert.deepEqual(large.map(p => p.frame), [...Array(8).fill('silver'), 'gold', 'gold']);
   assert.deepEqual(large.map(p => p.scene), [...Array(8).fill(false), true, true]);
-  assert.deepEqual(placeChoices('scapes', 'large'), { stars: true, frames: ['silver', 'gold'] });
-  assert.deepEqual(placeChoices('scapes', 'grand'), { stars: false, frames: ['crystal'] });
+  assert.deepEqual(placeChoices('scapes', 'large'), { stars: true, frames: ['silver', 'gold'], goldScenes: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] });
+  assert.deepEqual(placeChoices('scapes', 'grand'), { stars: false, frames: ['crystal'], goldScenes: [] });
   const grand = placesOf({ window: { kind: 'grand' }, places: [{ stars: 2, frame: 'gold' }] }, 'scapes');
   assert.ok(grand.every(p => p.stars === 5 && p.frame === 'crystal' && p.scene), 'гранд: 5 звёзд, кристалл, сцены');
   const plan = lakePlan();
@@ -46,6 +46,18 @@ test('placesOf: окно без плана — по виду окна; своё 
   assert.deepEqual(own[1], { stars: plan.slots[1].stars, frame: plan.slots[1].frame, scene: false }, 'место плана');
   assert.equal(own[2].frame, plan.slots[2].frame, 'кристалл в большом окне не показывается: берётся план');
   assert.equal(placesOf({ window: { kind: 'small' } }, 'scapes').every(p => p.stars === 1 && p.frame === 'silver' && !p.scene), true);
+});
+
+test('малое окно без плана: золото на местах сцен малого окна (set-rules small_scene_slots) — сцена, золото на других местах и серебро — предмет', async () => {
+  const { placesOf, placeChoices } = await import('../core/set/places.js');
+  const { loadSetRules } = await import('../core/set/rules.js');
+  const sceneSlots = loadSetRules('scapes').rules.small_scene_slots;
+  assert.deepEqual(placeChoices('scapes', 'small').goldScenes, sceneSlots);
+  const places = Array.from({ length: 10 }, (_, i) => ({ stars: 1, frame: i % 2 ? 'silver' : 'gold' }));
+  const shown = placesOf({ window: { kind: 'small' }, places }, 'scapes');
+  shown.forEach((p, i) => assert.equal(p.scene, places[i].frame === 'gold' && sceneSlots.includes(i + 1), `место ${i + 1}`));
+  const gold = placesOf({ window: { kind: 'small' }, places: Array(10).fill({ stars: 2, frame: 'gold' }) }, 'scapes');
+  assert.deepEqual(gold.flatMap((p, i) => (p.scene ? [i + 1] : [])), sceneSlots, 'всё в золоте: сцены только на своих местах');
 });
 
 test('setPlace: звёзды и рамка одного места в set.json places; чего окно не умеет — отказ', async t => {

@@ -118,7 +118,7 @@ export async function load(id) {
         if (pickClick(e, id)) return;
         if (poolClick(target, el, d.col)) return;
         if (target.closest('[data-edit]')) { openEditCollection(d.col, d.cards, d.sets); return; }
-        if (target.closest('[data-create-set]')) { openCreateSet(d.col); return; }
+        if (target.closest('[data-create-set]')) { openCreateSet(d.col, d.sets); return; }
         if (target.closest('[data-build]')) { openBuildCollection(d.col, placesHeld(d.sets)); return; }
         const card = /** @type {HTMLElement|null} */ (target.closest('.pool [data-card]'));
         if (card) { app.openCard(id, /** @type {string} */ (card.dataset.card)); return; }

@@ -106,6 +106,13 @@ const t = words({
 
 /** Places in a collection: the style's set-rules.json collection.sets (Scapes: 16), which the page does not load. */
 export const PLACES = 16;
+
+/**
+ * A set's place in its collection, the text help's context `place` (settings text.help.context: it goes to the model,
+ * so in English): the set fields' text help proposes a theme that fits that place.
+ * @param {number} n  the set's number @param {{number?: number}[]} sets  the collection's sets
+ */
+const placeOf = (n, sets) => `${n} of ${Math.max(PLACES, n, ...sets.map(s => s.number ?? 0))}`;
 /** The collection field the wishes of «Новая коллекция» are kept in (the core reads fields as free text). */
 const WISHES_FIELD = 'Пожелания';
 
@@ -206,8 +213,11 @@ export async function openCreateCollection() {
   });
 }
 
-/** «Создать набор»: generated from a theme and wishes, or an empty window gathered by hand. @param {any} col */
-export async function openCreateSet(col) {
+/**
+ * «Создать набор»: generated from a theme and wishes, or an empty window gathered by hand.
+ * @param {any} col @param {any[]} sets  the collection's sets (the new one's place among them)
+ */
+export async function openCreateSet(col, sets) {
   const g = await windowsOf(col.style);
   const tabs = `<div class="sheet__tabs">${seg('tab', [['gen', `${I.spark}<span>${esc(t('tabGen'))}</span>`], ['own', `${I.grip}<span>${esc(t('tabOwn'))}</span>`]], 'gen', 'seg--full')}</div>`;
   const gen = `<form class="form" data-tab="gen">
@@ -237,7 +247,8 @@ export async function openCreateSet(col) {
     /** @type {HTMLInputElement} */ ((v === 'gen' ? genForm : ownForm).querySelector('input')).focus();
   });
   bindWindowControls(ownForm, g);
-  bindTextHelp(genForm, () => ({ collectionId: col.id, context: { collection: col.title, description: col.description, set: String(new FormData(genForm).get('theme') ?? '') } }));
+  const next = Math.max(0, ...sets.map(s => s.number ?? 0)) + 1;
+  bindTextHelp(genForm, () => ({ collectionId: col.id, context: { collection: col.title, description: col.description, set: String(new FormData(genForm).get('theme') ?? ''), place: placeOf(next, sets) } }));
   await bindCost(sheet, 'set');
   footEl.addEventListener('click', async e => {
     if (!(/** @type {HTMLElement} */ (e.target).closest('[data-submit]'))) return;
@@ -262,9 +273,9 @@ export async function openCreateSet(col) {
 
 /**
  * «Настройки набора»: title, theme and wishes, the window's kind and colour, one more variant, deleting.
- * @param {any} col @param {any} set @param {any[]} variants  the set's variant group
+ * @param {any} col @param {any} set @param {any[]} variants  the set's variant group @param {any[]} sets  the collection's sets
  */
-export async function openSetSettings(col, set, variants) {
+export async function openSetSettings(col, set, variants, sets) {
   const g = await windowsOf(col.style);
   const { sheet, close } = openSheet({
     title: t('setSettings'),
@@ -282,7 +293,7 @@ export async function openSetSettings(col, set, variants) {
   });
   const form = /** @type {HTMLFormElement} */ (sheet.querySelector('[data-form]'));
   bindWindowControls(form, g);
-  bindTextHelp(form, () => ({ collectionId: col.id, context: { collection: col.title, description: col.description, set: String(new FormData(form).get('theme') ?? '') } }));
+  bindTextHelp(form, () => ({ collectionId: col.id, context: { collection: col.title, description: col.description, set: String(new FormData(form).get('theme') ?? ''), place: placeOf(set.number, sets) } }));
   const where = { collectionId: col.id, setId: set.id };
   sheet.addEventListener('click', async e => {
     const target = /** @type {HTMLElement} */ (e.target);

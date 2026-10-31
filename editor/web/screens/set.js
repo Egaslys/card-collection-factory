@@ -26,6 +26,9 @@ const t = words({
     about: 'Что на карточке', aboutHint: 'Необязательно: без этого модель выберет предмет по теме набора.', aboutPh: 'Например, марсианская картошка фри',
     planned: 'По плану набора здесь — «{title}».', generate: 'Сгенерировать карточку', generating: 'Карточка для места {n} генерируется — она появится здесь сама.',
     scene: 'Здесь будет сцена с персонажами.', saved: 'Подпись сохранена.',
+    frameTipAll: 'Золотая рамка — сцена с персонажами, серебряная — предмет. Так генерируется пустое место; у набора по плану — как в плане.',
+    frameTipSome: 'Золотая рамка на местах {places} — сцена с персонажами; золото на других местах и серебро — предмет. Так генерируется пустое место; у набора по плану — как в плане.',
+    frameTipNone: 'Рамка не меняет, что на карточке: пустое место генерируется предметом.',
   },
   en: {
     collections: 'Collections', gone: 'The collection has no such set: perhaps it was deleted.', label: 'Set {n} of {total}', theme: 'Theme: {theme}',
@@ -41,6 +44,9 @@ const t = words({
     about: 'What the card shows', aboutHint: 'Optional: without it the model picks an item by the set’s theme.', aboutPh: 'For example, Martian potato fries',
     planned: 'The set plan puts «{title}» here.', generate: 'Generate a card', generating: 'The card for place {n} is being generated: it appears here by itself.',
     scene: 'A scene with characters goes here.', saved: 'Caption saved.',
+    frameTipAll: 'A gold frame is a scene with characters, a silver one an item. An empty place is generated so; a planned set follows its plan.',
+    frameTipSome: 'A gold frame on places {places} is a scene with characters; gold on other places and silver are items. An empty place is generated so; a planned set follows its plan.',
+    frameTipNone: 'The frame does not change what the card shows: an empty place is generated as an item.',
   },
 });
 
@@ -110,6 +116,12 @@ const windowOf = (d, place) => windowHtml(d.g, {
 });
 
 /** The panel of one place: its stars and frame, and the card's caption, or how to fill it. @param {Data} d @param {number} i */
+/** What a gold frame means on this window kind (core/set/places.js `goldScenes`). @param {{goldScenes: number[]}} choices @param {number} places  of the window */
+function frameTip({ goldScenes }, places) {
+  if (!goldScenes.length) return t('frameTipNone');
+  return goldScenes.length === places ? t('frameTipAll') : t('frameTipSome', { places: goldScenes.join(', ') });
+}
+
 function popHtml(d, i) {
   const { set } = d;
   const p = set.shown.places[i];
@@ -120,7 +132,7 @@ function popHtml(d, i) {
     ? `<div class="field"><span class="field__label">${esc(t('stars'))}</span><div class="stars" role="group" aria-label="${esc(t('stars'))}">${[1, 2, 3, 4, 5].map(n => `<button type="button" data-stars="${n}" class="${n <= p.stars ? 'is-on' : ''}" aria-label="${n}" aria-pressed="${n === p.stars}">${I.star}</button>`).join('')}</div></div>`
     : '';
   const frame = choices.frames.length > 1
-    ? `<div class="field"><span class="field__label">${esc(t('frame'))}</span><div class="seg" role="group" aria-label="${esc(t('frame'))}">${FRAMES.map(k => `<button type="button" data-frame="${k}" aria-pressed="${p.frame === k}" ${choices.frames.includes(k) ? '' : 'disabled'}>${esc(t(/** @type {'silver'} */ (k)))}</button>`).join('')}</div>
+    ? `<div class="field"><span class="field__label field__label--tip">${esc(t('frame'))}${tip(frameTip(choices, set.slots.length), { side: 'right' })}</span><div class="seg" role="group" aria-label="${esc(t('frame'))}">${FRAMES.map(k => `<button type="button" data-frame="${k}" aria-pressed="${p.frame === k}" ${choices.frames.includes(k) ? '' : 'disabled'}>${esc(t(/** @type {'silver'} */ (k)))}</button>`).join('')}</div>
       ${choices.frames.includes('crystal') ? '' : `<span class="field__hint">${esc(t('crystalHint'))}</span>`}</div>`
     : `<p class="lead">${esc(t('grandHint'))}</p>`;
   const busy = runningOf(d).some(j => j.op === 'fillPlace' && j.scope?.slot === i);
@@ -205,7 +217,7 @@ export async function load(collectionId, setId) {
         const target = /** @type {HTMLElement} */ (e.target);
         if (pickClick(e, collectionId)) return;
         if (poolClick(target, el, d.col)) return;
-        if (target.closest('[data-settings]')) { openSetSettings(d.col, d.set, d.variants); return; }
+        if (target.closest('[data-settings]')) { openSetSettings(d.col, d.set, d.variants, d.sets); return; }
         if (target.closest('[data-make]')) { if (await attempt(() => call('makeSet', { collectionId, setId }))) await refreshHere(); return; }
         const v = /** @type {HTMLElement|null} */ (target.closest('[data-variant]'));
         if (v) { const to = d.variants[Number(v.dataset.variant)]; if (to) app.go(href(collectionId, to.id)); return; }
