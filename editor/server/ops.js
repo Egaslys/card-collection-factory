@@ -146,7 +146,7 @@ export const OPS = {
   // ---------- status and settings ----------
   // key: the key of the settings' preset; keys: of every preset (the settings screen shows the one chosen there)
   health: { run: async () => { settings(); return { ok: true, key: keyStatus() }; } },
-  getSettings: { run: async () => { const s = settings(); return { settings: s, local: readLocalSettings(), key: keyStatus(), keys: keysOf(s) }; } },
+  getSettings: { run: async () => { const s = settings(); return { settings: s, local: readLocalSettings(), key: keyStatus(), keys: keysOf(s), platform: process.platform }; } },
   // reset: dotted paths back to their default (the page's emptied fields)
   saveSettings: { run: async ({ patch, reset }) => { saveLocalSettings(need('patch', patch), { reset: Array.isArray(reset) ? reset.map(String) : [] }); const s = settings(); return { settings: s, local: readLocalSettings(), key: keyStatus(), keys: keysOf(s) }; } },
   // preset: whose key (default: the settings'); the answer is that key's status

@@ -56,6 +56,29 @@ export function failureOf(text) {
  * @property {string} promptTemplate  {refs} = legend of attached images (empty without references), {brief} = the prompt
  */
 
+// Where npm puts the Codex entry point next to its `codex.cmd` shim in the global prefix (bin of @openai/codex,
+// checked 0.166.0); Node does not start a .cmd file without a shell (Node docs, «Spawning .bat and .cmd files on Windows»).
+const NPM_ENTRY = ['node_modules', '@openai', 'codex', 'bin', 'codex.js'];
+
+/**
+ * How to start the Codex command on this system. Elsewhere and for a path: the command as it is. On Windows a bare
+ * name is looked up on PATH as Windows does, first match wins: `codex.exe` (the standalone installer) runs as it is;
+ * `codex.cmd` of an npm install runs as its entry point through this Node, without a shell. Not found: the command
+ * as it is, so the start fails as «not found». Not tried on a real Windows machine.
+ * @param {string} command
+ * @param {{platform?: string, env?: NodeJS.ProcessEnv, exists?: (file: string) => boolean, node?: string}} [o]
+ * @returns {{file: string, prefix: string[]}}
+ */
+export function launchOf(command, { platform = process.platform, env = process.env, exists = fs.existsSync, node = process.execPath } = {}) {
+  if (platform !== 'win32' || /[\\/]/.test(command) || path.win32.extname(command)) return { file: command, prefix: [] };
+  for (const dir of (env.Path ?? env.PATH ?? '').split(';').filter(Boolean)) {
+    for (const ext of ['.exe', '.com']) if (exists(path.win32.join(dir, command + ext))) return { file: path.win32.join(dir, command + ext), prefix: [] };
+    const entry = path.win32.join(dir, ...NPM_ENTRY);
+    if (exists(path.win32.join(dir, `${command}.cmd`)) && exists(entry)) return { file: node, prefix: [entry] };
+  }
+  return { file: command, prefix: [] };
+}
+
 /**
  * Runs the command, feeds `input` to stdin, collects stdout and stderr. Kills the process on timeout.
  * @param {typeof spawn} spawnImpl @param {string} command @param {string[]} args @param {string} cwd @param {string} input @param {number} timeoutMs
@@ -64,7 +87,9 @@ export function failureOf(text) {
  */
 function run(spawnImpl, command, args, cwd, input, timeoutMs, env) {
   return new Promise((resolve, reject) => {
-    const child = spawnImpl(command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+    const { file, prefix } = launchOf(command, { env });
+    // windowsHide: an editor started in the background would flash a console window on every call
+    const child = spawnImpl(file, [...prefix, ...args], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     let stdout = '';
     let stderr = '';
     let done = false;

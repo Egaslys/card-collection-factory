@@ -43,6 +43,8 @@ In Settings → Generation you choose who draws:
 - **The service's model** — through your key; every picture is paid.
 - **Codex CLI** — free per picture under your Codex subscription (GPT Image only). Note: **with Codex CLI chosen, the factory itself starts Codex in the background on your computer** and gives it each picture to draw; you do not need to open Codex. It only has to be installed and signed in once. Set plans and the model's look at cards still go through the service and its key.
 
+  On Windows, drawing through Codex has not been tried. Install Codex with the installer from its site (the PowerShell command in [the Codex CLI docs](https://learn.chatgpt.com/docs/codex/cli)) rather than through npm. If something goes wrong, open the factory's folder in Codex and ask it to find the problem and fix it.
+
 ## The editor
 
 - **Collections** — the first screen. «New collection»: a title and what the collection is about; it starts empty.

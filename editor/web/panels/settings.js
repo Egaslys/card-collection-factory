@@ -28,6 +28,7 @@ const t = words({
     moreService: 'Дополнительные настройки сервиса', keyVar: 'Переменная ключа', keyVarHint: 'Имя строки в файле .env, где лежит постоянный ключ.',
     generation: 'Генерация', who: 'Кто рисует картинки',
     codexExplain: 'Фабрика сама запускает Codex CLI на этом компьютере, в фоне, и просит его нарисовать каждую картинку. Рисует по вашей подписке Codex — без оплаты за картинку, только модель GPT Image. Открывать Codex не нужно: он должен быть установлен, и в него нужно один раз войти. План набора и взгляд на карточки всё равно идут через {service}.',
+    codexWindows: 'На Windows работа через Codex не проверена. Если что-то не получится, откройте папку фабрики в Codex и попросите его разобраться и поправить.',
     apiHint: 'Картинки рисует модель {service} по ключу — оплата за каждую картинку.',
     imageModel: 'Модель картинок', imageNote: 'Модели сервиса, которые рисуют картинки.',
     attempts: 'Попыток на карточку', attemptsTip: 'Сколько раз карточку можно нарисовать заново, если она не прошла проверки стиля. Каждая попытка — оплата за картинку.',
@@ -62,6 +63,7 @@ const t = words({
     moreService: 'More service settings', keyVar: 'Key variable', keyVarHint: 'The name of the line in the .env file that holds the permanent key.',
     generation: 'Generation', who: 'Who draws the pictures',
     codexExplain: 'The factory itself starts Codex CLI on this computer, in the background, and asks it to draw each picture. It draws under your Codex subscription — no payment per picture, GPT Image only. You do not need to open Codex: it must be installed and signed in once. Set plans and the model’s look still go through {service}.',
+    codexWindows: 'Drawing through Codex has not been tried on Windows. If something goes wrong, open the factory’s folder in Codex and ask it to find the problem and fix it.',
     apiHint: 'A {service} model draws the pictures with the key — every picture is paid.',
     imageModel: 'Image model', imageNote: 'The service’s models that draw pictures.',
     attempts: 'Attempts per card', attemptsTip: 'How many times a card may be drawn again when it fails the style checks. Every attempt is a paid picture.',
@@ -152,7 +154,7 @@ export async function openSettings() {
       <div class="keyacts">${k.source !== 'none' ? `<button type="button" class="btn btn--text btn--s" data-key-check><span>${esc(t('keyCheck'))}</span></button>` : ''}${k.source === 'temporary' ? `<button type="button" class="btn btn--text btn--s" data-key-clear><span>${esc(t('keyForget'))}</span></button>` : ''}</div>
       <p class="field__hint" data-key-result></p>`;
   };
-  const whoHint = (/** @type {string} */ use) => (use === 'codex-cli' ? `<div class="explain">${I.info}<span>${esc(t('codexExplain', { service: titles[preset] }))}</span></div>` : `<span class="field__hint">${esc(t('apiHint', { service: titles[preset] }))}</span>`);
+  const whoHint = (/** @type {string} */ use) => (use === 'codex-cli' ? `<div class="explain">${I.info}<span>${esc(t('codexExplain', { service: titles[preset] }))}${r.platform === 'win32' ? ` ${esc(t('codexWindows'))}` : ''}</span></div>` : `<span class="field__hint">${esc(t('apiHint', { service: titles[preset] }))}</span>`);
   const use0 = s.provider.use;
   const theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
 

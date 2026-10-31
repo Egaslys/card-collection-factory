@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { generateImage } from '../core/providers/codex-cli.js';
+import { generateImage, launchOf } from '../core/providers/codex-cli.js';
 import { ProviderError } from '../core/providers/openrouter.js';
 import { ROOT } from './root.mjs';
 
@@ -181,4 +181,33 @@ test('generateImage: нет входа, лимит подписки — одна
   const limit = events({ type: 'thread.started', thread_id: THREAD }, { type: 'turn.failed', error: { message: "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), or try again at 5:04 PM." } });
   await assert.rejects(generateImage({ settings: CODEX, prompt: 'p', net: { spawnImpl: mock({ stdout: limit, code: 1 }).spawnImpl, codexHome } }),
     e => e.kind === 'billing' && /исчерпан лимит подписки/.test(e.message) && /try again at 5:04 PM/.test(e.message) && !e.message.includes('\n'));
+});
+
+test('launchOf: на Windows codex.exe — как есть, ярлык npm codex.cmd — его codex.js через Node, без оболочки; иначе команда как есть', () => {
+  const env = { Path: 'C:\\Tools;C:\\Users\\u\\AppData\\Roaming\\npm;C:\\Users\\u\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin' };
+  const has = (...files) => f => files.includes(f);
+  const npm = 'C:\\Users\\u\\AppData\\Roaming\\npm';
+  const exe = 'C:\\Users\\u\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe';
+  const entry = `${npm}\\node_modules\\@openai\\codex\\bin\\codex.js`;
+  // the standalone installer
+  assert.deepEqual(launchOf('codex', { platform: 'win32', env, exists: has(exe), node: 'N' }), { file: exe, prefix: [] });
+  // npm: the shim is not started, its entry point is
+  assert.deepEqual(launchOf('codex', { platform: 'win32', env, exists: has(`${npm}\\codex.cmd`, entry), node: 'N' }), { file: 'N', prefix: [entry] });
+  // both: the first on PATH wins, as in Windows
+  assert.deepEqual(launchOf('codex', { platform: 'win32', env, exists: has(exe, `${npm}\\codex.cmd`, entry), node: 'N' }), { file: 'N', prefix: [entry] });
+  // a shim without the package is not taken; nothing found: the name, so the start fails as «not found»
+  assert.deepEqual(launchOf('codex', { platform: 'win32', env, exists: has(`${npm}\\codex.cmd`), node: 'N' }), { file: 'codex', prefix: [] });
+  // a path or another system: as it is
+  assert.deepEqual(launchOf('D:\\codex\\codex.exe', { platform: 'win32', env, exists: () => true }), { file: 'D:\\codex\\codex.exe', prefix: [] });
+  assert.deepEqual(launchOf('codex', { platform: 'darwin', env, exists: () => true }), { file: 'codex', prefix: [] });
+});
+
+test('generateImage: Codex запускается со спрятанным окном консоли (Windows)', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ccf-codex-home-'));
+  const m = mock({ onSpawn: () => { const d = path.join(home, 'generated_images', THREAD); fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(path.join(d, 'a.png'), png); } });
+  try {
+    await generateImage({ settings: CODEX, prompt: 'p', net: { spawnImpl: m.spawnImpl, codexHome: home } });
+    assert.equal(m.calls[0].opts.windowsHide, true);
+    assert.equal(m.logins[0].opts.windowsHide, true);
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });
