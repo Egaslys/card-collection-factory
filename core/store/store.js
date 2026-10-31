@@ -5,11 +5,11 @@
 import { spawn as nodeSpawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { attemptCost, attemptSpend, busyOf, readCardFile } from '../card/card-file.js';
+import { attemptCost, attemptDir, attemptSpend, busyOf, readCardFile } from '../card/card-file.js';
 import { exists, readJson, subdirs, writeJsonAtomic } from './files.js';
 import { checkId, reserveId, slugify } from './ids.js';
 import {
-  CARDS_DIR, CARD_FILE, COLLECTIONS_DIR, COLLECTION_FILE, DEFAULT_STYLE, EXPORT_CARDS_FOLDER, EXPORT_DIR, EXPORT_POOL_FOLDER, FINAL_IMAGE, SETS_DIR,
+  CARDS_DIR, CARD_FILE, COLLECTIONS_DIR, COLLECTION_FILE, DEFAULT_STYLE, EXPORT_CARDS_FOLDER, EXPORT_DIR, EXPORT_POOL_FOLDER, FACTORY_EXPORT_DIR, FINAL_IMAGE, SETS_DIR,
   SET_FILE, SLOT_COUNT, SPEND_FILE, windowKinds, windowTemplates,
 } from './layout.js';
 import { watchStore } from './watch.js';
@@ -183,6 +183,17 @@ function uniqueName(/** @type {Set<string>} */ used, /** @type {string} */ name,
   }
 }
 
+/**
+ * The sets a whole collection shows: of each variant group its chosen variant, or every variant when none is chosen.
+ * @template {{id: string, variantGroup?: string, chosen?: boolean}} S @param {S[]} sets @returns {S[]}
+ */
+export function chosenVariants(sets) {
+  /** @type {Map<string, S[]>} */
+  const groups = new Map();
+  for (const s of sets) groups.set(s.variantGroup ?? s.id, [...(groups.get(s.variantGroup ?? s.id) ?? []), s]);
+  return [...groups.values()].flatMap(vs => (vs.some(v => v.chosen) ? vs.filter(v => v.chosen) : vs));
+}
+
 const pad = (/** @type {number} */ n) => String(n).padStart(2, '0');
 const stampName = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
 
@@ -247,6 +258,16 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
   };
   /** @param {string} p */
   const birth = p => { const s = fs.statSync(p); return s.birthtimeMs || s.ctimeMs; };
+
+  /** The model original of a card's chosen version, or null. @param {string} c @param {string} k */
+  function originalOf(c, k) {
+    const dir = cardDir(c, k);
+    let card;
+    try { card = readCardFile(dir); } catch { return null; }
+    const a = card?.attempts.find(x => x.n === card.chosen);
+    const file = a?.original ? path.join(attemptDir(dir, a.n), a.original) : null;
+    return file && exists(file) ? file : null;
+  }
 
   /** @param {string} c @param {string} k @param {Place|undefined} place @returns {CardSummary} */
   function summary(c, k, place) {
@@ -598,55 +619,67 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
     },
 
     /**
-     * Copies card images out under collections/<c>/export/: the collection's folder, in it a folder per set
+     * Copies card images out for a person: in the export folder a folder per collection, in it a folder per set
      * («03 Title», cards «01 Title.png» in slot order), «Хранилище» for the pool's cards (`pool`: the cards in no
-     * set) and «Карточки» for the chosen single cards. No setIds, no cardIds and no pool = every set of the
-     * collection and its pool. Cards without an image are skipped and listed.
-     * @param {{collectionId: string, setIds?: string[], cardIds?: string[], pool?: boolean, format?: 'png'|'zip', name?: string}} o
+     * set) and «Карточки» for the chosen single cards. A whole collection (no setIds, no cardIds, pool not `true`) is
+     * the chosen variant of each set (every variant of a set none of whose variants is chosen) and, unless `pool` is
+     * false, its pool; `pool: true` alone is the pool alone. No collectionId = every collection of the factory, each
+     * whole, into the factory's export folder (FACTORY_EXPORT_DIR); a collection's own export goes to its export/.
+     * `originals`: next to each card the image as its chosen version's model returned it («… (оригинал).<ext>»).
+     * Cards without an image are skipped and listed.
+     * @param {{collectionId?: string, setIds?: string[], cardIds?: string[], pool?: boolean, originals?: boolean, format?: 'png'|'zip', name?: string}} o
      * @returns {Promise<{path: string, files: number, skipped: {id: string, reason: string}[]}>}
      */
-    async exportItems({ collectionId, setIds, cardIds: chosen, pool, format = 'png', name }) {
+    async exportItems({ collectionId, setIds, cardIds: chosen, pool, originals = false, format = 'png', name }) {
       if (format !== 'png' && format !== 'zip') throw new Error(`Формат выгрузки «${format}» неизвестен: png или zip.`);
-      const col = readCollection(collectionId);
-      const sets = allSets(collectionId, col);
-      const all = !setIds && !chosen && pool === undefined;
-      const pickSets = setIds ?? (all ? sets.map(s => s.id) : []);
-      const top = fileName(col.title, col.id);
+      if (collectionId == null && (setIds || chosen)) throw new Error('Наборы и карточки выгружаются из одной коллекции: назовите её.');
+      const ids = collectionId != null ? [collectionId] : subdirs(root).filter(c => exists(path.join(root, c, COLLECTION_FILE)));
+      if (!ids.length) throw new Error('Коллекций пока нет: выгружать нечего.');
       /** @type {{name: string, source: string}[]} */
       const entries = [];
       /** @type {{id: string, reason: string}[]} */
       const skipped = [];
-      const folders = new Set();
-      /** @param {string} folder @param {Set<string>} used @param {string} k @param {string} prefix */
-      const add = (folder, used, k, prefix) => {
-        const s = summary(collectionId, k, undefined);
-        if (!s.image) { skipped.push({ id: k, reason: 'нет готовой картинки' }); return; }
-        entries.push({ name: `${top}/${folder}/${uniqueName(used, fileName(prefix + s.title, k), '.png')}`, source: s.image });
-      };
-      for (const s of pickSets) {
-        const set = sets.find(x => x.id === s) ?? readSet(collectionId, s);
-        const folder = uniqueName(folders, fileName(`${pad(set.number)} ${set.title}`, set.id));
-        const used = new Set();
-        set.slots.forEach((k, slot) => { if (k) add(folder, used, k, `${pad(slot + 1)} `); });
-      }
-      if (pool || all) {
-        const places = placesOf(sets);
-        const loose = cardIds(collectionId).filter(k => !places.has(k));
-        const folder = uniqueName(folders, EXPORT_POOL_FOLDER);
-        const used = new Set();
-        for (const k of loose) add(folder, used, k, '');
-      }
-      if (chosen?.length) {
-        const folder = uniqueName(folders, EXPORT_CARDS_FOLDER);
-        const used = new Set();
-        for (const k of chosen) {
-          if (!exists(cardDir(collectionId, k))) throw new Error(`Карточки «${k}» в коллекции «${collectionId}» нет.`);
-          add(folder, used, k, '');
+      const tops = new Set();
+      for (const c of ids) {
+        const col = readCollection(c);
+        const sets = allSets(c, col);
+        const whole = !setIds && !chosen && pool !== true;
+        const pickSets = setIds ?? (whole ? chosenVariants(sets).map(s => s.id) : []);
+        const top = uniqueName(tops, fileName(col.title, col.id));
+        const folders = new Set();
+        /** @param {string} folder @param {Set<string>} used @param {string} k @param {string} prefix */
+        const add = (folder, used, k, prefix) => {
+          const s = summary(c, k, undefined);
+          if (!s.image) { skipped.push({ id: k, reason: 'нет готовой картинки' }); return; }
+          entries.push({ name: `${top}/${folder}/${uniqueName(used, fileName(prefix + s.title, k), '.png')}`, source: s.image });
+          const original = originals ? originalOf(c, k) : null;
+          if (original) entries.push({ name: `${top}/${folder}/${uniqueName(used, fileName(`${prefix}${s.title} (оригинал)`, k), path.extname(original).toLowerCase())}`, source: original });
+        };
+        for (const s of pickSets) {
+          const set = sets.find(x => x.id === s) ?? readSet(c, s);
+          const folder = uniqueName(folders, fileName(`${pad(set.number)} ${set.title}`, set.id));
+          const used = new Set();
+          set.slots.forEach((k, slot) => { if (k) add(folder, used, k, `${pad(slot + 1)} `); });
+        }
+        if (pool === true || (whole && pool !== false)) {
+          const places = placesOf(sets);
+          const loose = cardIds(c).filter(k => !places.has(k));
+          const folder = uniqueName(folders, EXPORT_POOL_FOLDER);
+          const used = new Set();
+          for (const k of loose) add(folder, used, k, '');
+        }
+        if (chosen?.length) {
+          const folder = uniqueName(folders, EXPORT_CARDS_FOLDER);
+          const used = new Set();
+          for (const k of chosen) {
+            if (!exists(cardDir(c, k))) throw new Error(`Карточки «${k}» в коллекции «${c}» нет.`);
+            add(folder, used, k, '');
+          }
         }
       }
       if (!entries.length) throw new Error('Выгружать нечего: у выбранных карточек нет готовых картинок.');
 
-      const exportDir = path.join(collectionDir(collectionId), EXPORT_DIR);
+      const exportDir = collectionId != null ? path.join(collectionDir(collectionId), EXPORT_DIR) : path.join(root, FACTORY_EXPORT_DIR);
       fs.mkdirSync(exportDir, { recursive: true });
       const taken = new Set(fs.readdirSync(exportDir).map(f => f.toLowerCase().replace(/\.zip$/, '')));
       const base = uniqueName(taken, fileName(name ?? stampName(), 'export'));
@@ -662,6 +695,11 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
         fs.copyFileSync(e.source, dest);
       }
       return { path: out, files: entries.length, skipped };
+    },
+
+    /** Where exports go: a collection's export/, or the factory's export folder (no collectionId). @param {string} [collectionId] */
+    exportDir(collectionId) {
+      return collectionId != null ? path.join(collectionDir(collectionId), EXPORT_DIR) : path.join(root, FACTORY_EXPORT_DIR);
     },
 
     /** Opens a folder (or shows a file) in the OS file manager. @param {string} target */

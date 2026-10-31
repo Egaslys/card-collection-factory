@@ -1,4 +1,10 @@
 // The page's link to the editor server: operations (POST /api/op/<name>), jobs and live events (SSE).
+import { words } from './i18n.js';
+
+const t = words({
+  ru: { offline: 'Редактор не отвечает: возможно, его остановили. Запустите его снова и обновите страницу.', restarted: 'Редактор перезапущен: страница обновляется.', error: 'Ошибка {status}' },
+  en: { offline: 'The editor is not responding: it may have been stopped. Start it again and reload the page.', restarted: 'The editor was restarted: the page reloads.', error: 'Error {status}' },
+});
 
 const TOKEN = /** @type {HTMLMetaElement} */ (document.querySelector('meta[name="ccf-token"]')).content;
 const HEADERS = { 'x-ccf-token': TOKEN, 'content-type': 'application/json' };
@@ -13,11 +19,11 @@ export async function call(op, args = {}) {
   try {
     res = await fetch(`/api/op/${op}`, { method: 'POST', headers: HEADERS, body: JSON.stringify(args) });
   } catch {
-    throw new Error('Редактор не отвечает: возможно, его остановили. Запустите его снова и обновите страницу.');
+    throw new Error(t('offline'));
   }
-  if (res.status === 403) { reloadForNewToken(); throw new Error('Редактор перезапущен: страница обновляется.'); }
+  if (res.status === 403) { reloadForNewToken(); throw new Error(t('restarted')); }
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error ?? `Ошибка ${res.status}`);
+  if (!res.ok) throw new Error(body.error ?? t('error', { status: res.status }));
   return body.job ? { job: body.job } : body.result;
 }
 

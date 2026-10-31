@@ -50,8 +50,8 @@ async function collectionShow(v, [id]) {
 async function exportCmd(v) {
   const { exportItems, openFolder } = await store();
   const r = await exportItems({
-    collectionId: v.collection, setIds: v.set ? v.set.split(',') : undefined, cardIds: v.card ? v.card.split(',') : undefined,
-    ...(v.pool ? { pool: true } : {}), format: v.zip ? 'zip' : 'png',
+    ...(v.all ? {} : { collectionId: v.collection }), setIds: v.set ? v.set.split(',') : undefined, cardIds: v.card ? v.card.split(',') : undefined,
+    ...(v.pool ? { pool: true } : v['without-pool'] ? { pool: false } : {}), ...(v.originals ? { originals: true } : {}), format: v.zip ? 'zip' : 'png',
   });
   if (v.open) await openFolder(r.path);
   if (v.json) console.log(JSON.stringify(r, null, 2));
@@ -88,21 +88,33 @@ export const storeCommands = {
     run: collectionShow,
   },
   export: {
-    usage: ['ccf.mjs export --collection ID [--set ID,…] [--pool] [--card ID,…] [--zip] [--open] [--json]'],
-    about: `Copies card images out for the person under collections/<collection>/export/: a folder per set (cards in slot
-order), a folder for the pool's cards (those in no set) and one for single cards, or one ZIP with --zip. Without --set,
---pool and --card every set of the collection and its pool are exported. Cards without a finished image are skipped
-and listed. --open shows the result in the file manager.`,
+    usage: [
+      'ccf.mjs export --collection ID [--set ID,…] [--pool | --without-pool] [--card ID,…] [--originals] [--zip] [--open] [--json]',
+      'ccf.mjs export --all [--without-pool] [--originals] [--zip] [--open] [--json]',
+    ],
+    about: `Copies card images out for the person: a folder per collection, in it a folder per set (cards in slot order), a
+folder for the pool's cards (those in no set) and one for single cards, or one ZIP with --zip. A collection's export goes
+to collections/<collection>/export/, --all (every collection) to collections/_export/. Without --set, --pool and --card a
+collection is exported whole: the chosen variant of each set (every variant of a set with none chosen) and its pool
+(--without-pool leaves the pool out); --pool alone exports the pool alone. --originals adds, next to each card, the
+image as the model returned it. Cards without a finished image are skipped and listed. --open shows the result in the
+file manager.`,
     options: {
-      collection: { type: 'string', value: 'ID', help: 'the collection id (required)' },
+      collection: { type: 'string', value: 'ID', help: 'the collection id (or --all)' },
+      all: { type: 'boolean', help: 'every collection of the factory, each whole' },
       set: { type: 'string', value: 'ID,ID', help: 'only these sets' },
       pool: { type: 'boolean', help: "the pool's cards (with --set or --card: as well)" },
+      'without-pool': { type: 'boolean', help: 'a whole collection without its pool' },
       card: { type: 'string', value: 'ID,ID', help: 'single cards of the collection (the pool or any set)' },
+      originals: { type: 'boolean', help: "each card's model original next to it, full size" },
       zip: { type: 'boolean', help: 'one ZIP archive instead of folders' },
       open: { type: 'boolean', help: 'open the result in the file manager' },
       json: JSON_OPTION,
     },
-    check: (/** @type {any} */ v) => !v.collection ? '--collection is required' : !ids(v.set) || !ids(v.card) ? '--set and --card are ids separated by commas' : null,
+    check: (/** @type {any} */ v) => !v.collection === !v.all ? 'give --collection ID or --all'
+      : v.all && (v.set || v.card || v.pool) ? '--all exports whole collections: no --set, --card or --pool'
+        : v.pool && v['without-pool'] ? '--pool and --without-pool exclude each other'
+          : !ids(v.set) || !ids(v.card) ? '--set and --card are ids separated by commas' : null,
     run: exportCmd,
   },
 };

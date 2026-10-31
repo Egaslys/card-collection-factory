@@ -8,12 +8,14 @@
  * @typedef {object} Job
  * @property {string} id
  * @property {string} op
- * @property {string} title  for a person: what is being done
+ * @property {string} title  for a person: what is being done (Russian, for agents and the log; the page words it from
+ *   `op` and `about`)
+ * @property {JobAbout} [about]  what the job is about, for the page to say it in the person's language
  * @property {{collectionId?: string, setId?: string, cardId?: string}} scope
  * @property {'running'|'done'|'failed'|'cancelled'} status
  * @property {string} startedAt
  * @property {string|null} endedAt
- * @property {{at: string, text: string}[]} log  newest last
+ * @property {{at: string, text: string, say?: Say}[]} log  newest last; `say`: the same line as data the page words
  * @property {number|null} spent  USD so far, when the operation reports it
  * @property {boolean} cancellable
  * @property {JobItem[]} [items]  one row per card being made, when the operation reports cards
@@ -25,12 +27,30 @@
 /**
  * @typedef {object} JobItem
  * @property {string|null} set
- * @property {number} slot  1-based
+ * @property {number|null} slot  1-based; null for a card made into the pool (core/set/cards.js), its row keyed by title
  * @property {string|null} cardId
  * @property {string} title
  * @property {string} status  start | made | kept | skipped | failed | cancelled …, as core/set reports it
  * @property {number} spent
  */
+
+/**
+ * @typedef {object} JobAbout
+ * @property {string} [theme]  of a set, a collection or a batch of cards
+ * @property {string} [title]  of the card
+ * @property {string} [mode]  buildCollection: missing | variants
+ * @property {number} [count]  cards the job makes, when known before it starts
+ * @property {boolean} [codex]  Codex CLI draws the job's pictures, on this computer in the background
+ */
+
+/**
+ * A journal line as data: a step of a card's run (core/card's progress: generating or processing attempt `n` of at
+ * most `of`), or the job stopping on a person's request.
+ * @typedef {{k: 'attempt', stage: string, n: number|null, done: number, of: number} | {k: 'stopping'}} Say
+ */
+
+/** The statuses of a card row (core/set's progress); others (planning, planned, invalid) are lines of the plan. */
+const CARD_STATUSES = new Set(['start', 'made', 'kept', 'skipped', 'failed', 'cancelled']);
 
 const LOG_LIMIT = 200;
 const KEEP_FINISHED = 30;
@@ -47,29 +67,30 @@ export function createJobs(emit) {
   const send = job => emit({ type: 'job', job });
 
   /**
-   * @param {{op: string, title: string, scope?: Job['scope'], cancellable?: boolean,
+   * @param {{op: string, title: string, about?: JobAbout, scope?: Job['scope'], cancellable?: boolean,
    *   run: (ctx: {progress: (text: string, o?: any) => void, signal: AbortSignal}) => Promise<unknown>,
    *   spentOf?: (result: any) => number|null}} o
    * @returns {Job}
    */
-  function start({ op, title, scope = {}, cancellable = false, run, spentOf }) {
+  function start({ op, title, about, scope = {}, cancellable = false, run, spentOf }) {
     const id = `${Date.now().toString(36)}-${(++seq).toString(36)}`;
     /** @type {Job} */
-    const job = { id, op, title, scope, status: 'running', startedAt: new Date().toISOString(), endedAt: null, log: [], spent: null, cancellable };
+    const job = { id, op, title, ...(about ? { about } : {}), scope, status: 'running', startedAt: new Date().toISOString(), endedAt: null, log: [], spent: null, cancellable };
     const abort = new AbortController();
     /** @type {Map<string, JobItem>} */
     const items = new Map();
     /**
      * A line of the journal; `o.slot` (with `o.set`) updates the row of that card in the job's queue (core/set's
-     * progress data), `o.total` sets the spend of the whole job, `o.spent` of the row.
-     * @param {string} text @param {{set?: string, slot?: number, cardId?: string|null, title?: string, status?: string, spent?: number, total?: number}} [o]
+     * progress data) — a card made into the pool has no slot, its row is its title —, `o.total` sets the spend of the
+     * whole job, `o.spent` of the row, `o.say` is the line as data for the page.
+     * @param {string} text @param {{set?: string, slot?: number, cardId?: string|null, title?: string, status?: string, spent?: number, total?: number, say?: Say}} [o]
      */
     const progress = (text, o = {}) => {
-      job.log.push({ at: new Date().toISOString(), text: String(text) });
+      job.log.push({ at: new Date().toISOString(), text: String(text), ...(o.say ? { say: o.say } : {}) });
       if (job.log.length > LOG_LIMIT) job.log.splice(0, job.log.length - LOG_LIMIT);
-      if (o.slot != null) {
-        const key = `${o.set ?? ''}:${o.slot}`;
-        items.set(key, { ...items.get(key), set: o.set ?? null, slot: o.slot, cardId: o.cardId ?? items.get(key)?.cardId ?? null, title: o.title ?? '', status: o.status ?? '', spent: o.spent ?? 0 });
+      const key = o.slot != null ? `${o.set ?? ''}:${o.slot}` : o.title && CARD_STATUSES.has(o.status ?? '') ? `card:${o.title}` : null;
+      if (key) {
+        items.set(key, { ...items.get(key), set: o.set ?? null, slot: o.slot ?? null, cardId: o.cardId ?? items.get(key)?.cardId ?? null, title: o.title ?? '', status: o.status ?? '', spent: o.spent ?? 0 });
         job.items = [...items.values()];
         job.spent = (base ?? 0) + job.items.reduce((s, i) => s + (i.spent ?? 0), 0);
       }
@@ -110,7 +131,7 @@ export function createJobs(emit) {
     const j = jobs.get(id);
     if (!j) throw new Error('Такой задачи нет: возможно, редактор перезапускали.');
     if (!j.job.cancellable) throw new Error('Эту задачу нельзя остановить на ходу: дождитесь конца.');
-    if (j.job.status === 'running') { j.abort.abort(); j.job.log.push({ at: new Date().toISOString(), text: 'Остановка: доделываю начатый шаг…' }); send(j.job); }
+    if (j.job.status === 'running') { j.abort.abort(); j.job.log.push({ at: new Date().toISOString(), text: 'Остановка: доделываю начатый шаг…', say: { k: 'stopping' } }); send(j.job); }
     return j.job;
   }
 

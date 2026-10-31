@@ -2,7 +2,7 @@
 // For another folder (tests, an export elsewhere) use createStore({ root }).
 import { createStore } from './store.js';
 
-export { createStore } from './store.js';
+export { chosenVariants, createStore } from './store.js';
 export { slugify } from './ids.js';
 export * from './layout.js';
 
@@ -21,5 +21,5 @@ const store = createStore();
 export const {
   listCollections, createCollection, getCollection, updateCollection, deleteCollection,
   createSet, getSet, updateSet, deleteSet, setSlots, moveCard, deleteCard,
-  newCardId, cardDir, listCards, exportItems, openFolder, watch, recordSpend, spend,
+  newCardId, cardDir, listCards, exportItems, exportDir, openFolder, watch, recordSpend, spend,
 } = store;

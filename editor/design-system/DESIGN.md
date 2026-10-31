@@ -60,6 +60,13 @@ colors:
   error-ink-dark: "#FF7676"
   error-tint: "#FFE5E5"
   error-tint-dark: "#4A2B2E"
+  # export — violet, a second accent (agent's proposal, waiting for the author): the export action only
+  export: "#7A5AF8"
+  export-dark: "#7A5AF8"
+  export-ink: "#5B3FD6"
+  export-ink-dark: "#B3A1FF"
+  export-tint: "#ECE8FE"
+  export-tint-dark: "#2D2747"
 typography:
   display:
     fontFamily: Unbounded
@@ -396,6 +403,9 @@ ink (text and icons on the air) and a tint (the quiet background of a status bad
   "working" dot. A fill only, never under text (white on it is 3.68:1). **State ink (#1E66C3 · #5BA2FC)** — links
   and text buttons; **state tint** — a selected row, a drop zone.
 - **Warning (#F5B026):** amber, derived — the brand palette has no yellow. WARN badge (ink + tint), warning dot.
+- **Export (#7A5AF8):** violet, a second accent — the author asked the top bar's «Экспорт» to stand apart from the
+  one green action. Its button is the tint (#ECE8FE · #2D2747) with export ink (#5B3FD6 · #B3A1FF: 5.61:1 on the
+  tint, 6.34:1 dark) and an edge of the fill; never a fill under text, never on anything but the export action.
 - **Error (#FF5B5B):** the brand red — FAIL, a failed generation, a field error. As text always **error ink
   (#B83C3C · #FF7676)**; the fill alone fails as text on the light background (2.77:1).
 
@@ -564,6 +574,7 @@ Pills sit only in pill shells or free.
 | Action — one per screen | accent | one button |
 | State — selection, progress | state | rings, bars |
 | Attention — WARN, FAIL | warning, error | badges, messages |
+| Export — the export action | export | one button |
 
 ## Glass
 
@@ -617,3 +628,5 @@ Agent's calls in this adaptation, waiting for the author (the author's own decis
 4. **Second theme is called dark** (`-dark`, `data-theme="dark"`), as the author named it; Monolith said muted.
 5. **Fields have r 8**, buttons stay pills (concentric with the r 24 panel and p 16).
 6. **The Science Gothic label voice is kept for labels and badges only**; segment and control texts are Geist.
+7. **Export has its own violet accent** (#7A5AF8 with its ink and tint) — derived, the brand palette has none; asked
+   for by the author's note on the top bar («может быть, своим акцентным цветом»), the shade is the agent's.

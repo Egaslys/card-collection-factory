@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import * as store from '../../core/store/index.js';
-import { COLLECTIONS_DIR, EXPORT_DIR } from '../../core/store/index.js';
+import { COLLECTIONS_DIR } from '../../core/store/index.js';
 import { loadSettings, readLocalSettings, saveLocalSettings, ROOT } from '../../core/settings.js';
 import { readCardFile, attemptDir, attemptSpend, ATTEMPT_FILES } from '../../core/card/card-file.js';
 import { PRESETS, PRESET_TITLES, apiOf, presetOf, runSettings } from '../../core/providers/preset.js';
@@ -13,7 +13,7 @@ import { clearTemporaryKey, currentKey, initKey, keyStatus, setTemporaryKey } fr
 
 /**
  * @typedef {object} Op
- * @property {(args: any, ctx: {progress: (text: string, o?: any) => void, signal: AbortSignal}) => Promise<unknown>} run
+ * @property {(args: any, ctx: {progress: (text: string, o?: any) => void, signal: AbortSignal, editor?: {running: () => number, stop: () => void}}) => Promise<unknown>} run
  * @property {boolean} [job]  long: runs as a job
  * @property {(args: any) => string} [title]  the job's title for a person
  * @property {(args: any) => {collectionId?: string, setId?: string, cardId?: string}} [scope]
@@ -64,9 +64,10 @@ async function providerOf(s, run = {}) {
 /** A card's folder in a collection. @param {{collectionId: string, cardId: string}} a */
 const cardDirOf = a => store.cardDir(need('collectionId', a.collectionId), need('cardId', a.cardId));
 
-/** core/card's progress of a run as a journal line. @param {(t: string, o?: any) => void} progress */
+/** core/card's progress of a run as a journal line, with the step as data the page words. @param {(t: string, o?: any) => void} progress */
 const cardProgress = progress => (/** @type {{stage: string, n: number|null, done: number, of: number, spent: number}} */ e) =>
-  progress(e.stage === 'generate' ? `попытка ${e.n}: генерация` : e.stage === 'process' ? `попытка ${e.n}: обработка и проверки` : `попыток сделано ${e.done} из ${e.of}`, { total: e.spent });
+  progress(e.stage === 'generate' ? `попытка ${e.n}: генерация` : e.stage === 'process' ? `попытка ${e.n}: обработка и проверки` : `попыток сделано ${e.done} из ${e.of}`,
+    { total: e.spent, say: { k: 'attempt', stage: e.stage, n: e.n, done: e.done, of: e.of } });
 
 /**
  * A path inside one collection's folder, or an error (nothing outside collections/ is opened).
@@ -107,6 +108,9 @@ async function getCard(a) {
   return { summary, order: file.order, chosen: file.chosen, chosenBy: file.chosenBy ?? 'checks', attempts, dir, processing: { neutral: style.neutral, bounds: style.bounds, sharpenMax: style.sharpen_amount_max } };
 }
 
+/** The models of each service and endpoint, read once while the editor runs (listModels). @type {Map<string, Promise<any>>} */
+const modelCache = new Map();
+
 /** @type {Record<string, Op>} */
 export const OPS = {
   // ---------- status and settings ----------
@@ -137,6 +141,35 @@ export const OPS = {
     },
   },
 
+  // the service's models for the settings' dropdowns, by field (image, vision, text); read once per service and
+  // endpoint while the editor runs (refresh: read again). OpenRouter lists without a key; Google needs one.
+  listModels: {
+    run: async ({ preset, refresh } = {}) => {
+      const s = settings();
+      const o = presetOf(s.provider, preset ?? s.provider.preset);
+      const at = `${o.name} ${o.endpoint}`;
+      if (refresh || !modelCache.has(at)) {
+        const key = currentKey(o.keyEnvVar);
+        if (!key && o.name !== 'openrouter') throw new Error(`Список моделей ${PRESET_TITLES[o.name]} приходит только с ключом: введите ключ, а пока впишите id модели сами.`);
+        const { listModels, modelsFor } = await import('../../core/providers/catalog.js');
+        const all = listModels(o.name, { endpoint: o.endpoint, apiKey: key ?? '', net: { timeoutMs: 15000 } });
+        const slim = (/** @type {import('../../core/providers/catalog.js').CatalogModel[]} */ ms) => ms.map(m => ({ id: m.id, ...(m.name ? { name: m.name } : {}) }));
+        modelCache.set(at, all.then(ms => ({ image: slim(modelsFor(ms, 'image')), vision: slim(modelsFor(ms, 'vision')), text: slim(modelsFor(ms, 'text')) })));
+        modelCache.get(at)?.catch(() => modelCache.delete(at));
+      }
+      return { preset: o.name, ...(await modelCache.get(at)) };
+    },
+  },
+  // stops this editor cleanly (the page's «Выключить редактор»); with jobs running only when `force`
+  stopEditor: {
+    run: async ({ force } = {}, ctx) => {
+      const running = ctx.editor?.running() ?? 0;
+      if (running && !force) return { stopped: false, running };
+      ctx.editor?.stop();
+      return { stopped: true, running };
+    },
+  },
+
   // ---------- store ----------
   listCollections: { run: async () => store.listCollections() },
   createCollection: { run: async ({ title, description, fields, style }) => store.createCollection({ title: need('title', title), description: description ?? '', ...(fields ? { fields } : {}), ...(style ? { style } : {}) }) },
@@ -154,13 +187,19 @@ export const OPS = {
   },
   deleteCard: { run: async ({ collectionId, cardId }) => store.deleteCard(need('collectionId', collectionId), need('cardId', cardId)) },
   listCards: { run: async ({ collectionId, setId, pool }) => store.listCards(need('collectionId', collectionId), { ...(setId ? { setId } : {}), ...(pool ? { pool: true } : {}) }) },
+  // no collectionId: every collection; pool: true / false / absent (core/store exportItems)
   exportItems: {
-    run: async ({ collectionId, setIds, cardIds, pool, format, name }) => store.exportItems({ collectionId: need('collectionId', collectionId), setIds, cardIds, ...(pool ? { pool: true } : {}), format: format ?? 'png', ...(name ? { name } : {}) }),
+    run: async ({ collectionId, setIds, cardIds, pool, originals, format, name }) => store.exportItems({
+      ...(collectionId ? { collectionId } : {}), setIds, cardIds, ...(typeof pool === 'boolean' ? { pool } : {}), originals: !!originals, format: format ?? 'png', ...(name ? { name } : {}),
+    }),
   },
+  // exports: the export folder (of the collection, or of the factory without one); else a path inside the collection
   openFolder: {
     run: async ({ collectionId, path: target, exports }) => {
-      let p = insideCollection(collectionId, target);
-      if (exports) { p = path.join(insideCollection(collectionId), EXPORT_DIR); fs.mkdirSync(p, { recursive: true }); }
+      let p;
+      if (exports) { p = store.exportDir(collectionId || undefined); fs.mkdirSync(p, { recursive: true }); }
+      else if (!collectionId && target && path.resolve(target).startsWith(store.exportDir() + path.sep)) p = path.resolve(target);
+      else p = insideCollection(collectionId, target);
       if (fs.existsSync(p) && fs.statSync(p).isFile()) p = path.dirname(p);
       await store.openFolder(p);
       return { path: p };

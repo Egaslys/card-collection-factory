@@ -1,49 +1,71 @@
-// The queue: every long job of this editor (plans, sets, collections, cards) with its status, its journal and what
-// it has spent; a running job that supports it can be stopped.
+// The generation queue: every long job of this editor (plans, sets, collections, cards) in plain words — what it does,
+// its step now, how many cards are done, one row per card with its status —, its journal under a spoiler; no money
+// (the top bar shows what has been spent). One scroll: the sheet's own. A running job that supports it can be stopped.
 import { cancelJob, jobs, onEvent } from '../api.js';
-import { attempt, esc, I, openSheet, usd } from '../ui.js';
+import { lang, words } from '../i18n.js';
+import { attempt, esc, I, itemWords, jobCount, jobEnd, jobTitle, openSheet } from '../ui.js';
 
-const WORD = { running: 'идёт', done: 'готово', failed: 'ошибка', cancelled: 'остановлено' };
-const DOT = { running: 'work', done: 'done', failed: 'fail', cancelled: 'idle' };
-/** A card row's status from core/set: [word, status class, dot]. @type {Record<string, [string, string, string]>} */
-const ITEM = {
-  start: ['делается', 'is-work', 'work'], made: ['готово', 'is-done', 'done'], kept: ['уже была', 'is-done', 'done'],
-  skipped: ['пропущена: потолок расходов', '', 'warn'], failed: ['ошибка', 'is-fail', 'fail'], cancelled: ['остановлена', '', 'idle'],
-};
+const t = words({
+  ru: {
+    title: 'Генерация', stop: 'Остановить', codex: 'Картинки рисует Codex CLI на этом компьютере, в фоне.', log: 'Что происходило',
+    empty: 'Сейчас ничего не генерируется', emptyText: 'Здесь появятся карточки, наборы и коллекции, пока они генерируются.',
+  },
+  en: {
+    title: 'Generation', stop: 'Stop', codex: 'Codex CLI draws the pictures on this computer, in the background.', log: 'What happened',
+    empty: 'Nothing is being generated', emptyText: 'Cards, sets and collections show up here while they are generated.',
+  },
+});
+
+/** A card row's status: its dot and colour. @type {Record<string, string>} */
+const ITEM_DOT = { start: 'work', made: 'done', kept: 'done', skipped: 'warn', failed: 'fail', cancelled: 'idle' };
+const JOB_DOT = { running: 'work', done: 'done', failed: 'fail', cancelled: 'idle' };
 
 /** @param {string} iso */
-const time = iso => new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const time = iso => new Date(iso).toLocaleTimeString(lang() === 'ru' ? 'ru-RU' : 'en-GB', { hour: '2-digit', minute: '2-digit' });
 
 /** @param {any} j */
-function row(j) {
-  const st = /** @type {keyof typeof WORD} */ (j.status);
-  const cls = st === 'running' ? 'is-work' : st === 'done' ? 'is-done' : st === 'failed' ? 'is-fail' : '';
-  return `<details class="jobrow panel"${st === 'running' || st === 'failed' ? ' open' : ''}>
-    <summary class="jobrow__sum"><span class="queue-row__status ${cls}"><i class="dot dot--${DOT[st]}"></i>${WORD[st]}</span>
-      <span class="jobrow__title">${esc(j.title)}</span><span class="data ink-3">${j.spent != null ? usd(j.spent) : ''}</span><span class="data ink-3">${time(j.startedAt)}</span></summary>
-    ${j.error ? `<p class="jobrow__error">${esc(j.error)}</p>` : ''}
-    ${(j.warnings ?? []).map((/** @type {string} */ w) => `<p class="jobrow__error">${esc(w)}</p>`).join('')}
-    ${j.items?.length ? `<ol class="jobitems">${j.items.map((/** @type {any} */ i) => `<li class="queue-row__status ${ITEM[i.status]?.[1] ?? ''}"><span class="data ink-3">${String(i.slot).padStart(2, '0')}</span><i class="dot dot--${ITEM[i.status]?.[2] ?? 'idle'}"></i><span class="jobitems__title">${esc(i.title)}</span><span>${ITEM[i.status]?.[0] ?? esc(i.status)}</span><span class="data ink-3">${i.spent ? usd(i.spent) : ''}</span></li>`).join('')}</ol>` : ''}
-    ${j.log.length ? `<ol class="log">${j.log.map((/** @type {any} */ l) => `<li><time>${time(l.at)}</time><i class="dot dot--idle"></i><span>${esc(l.text)}</span></li>`).join('')}</ol>` : ''}
-    ${st === 'running' && j.cancellable ? `<button type="button" class="btn btn--secondary btn--s" data-cancel="${esc(j.id)}">${I.stop}Остановить</button>` : ''}
-  </details>`;
+function section(j) {
+  const st = /** @type {keyof typeof JOB_DOT} */ (j.status);
+  const count = jobCount(j);
+  const total = j.about?.count;
+  const done = (j.items ?? []).filter((/** @type {any} */ i) => i.status === 'made' || i.status === 'kept').length;
+  const items = j.items?.length ? `<ul class="qitems">${j.items.map((/** @type {any} */ i) => `<li class="qitem"><span class="qitem__img">${I.image}</span>
+      <span class="qitem__text"><span class="qitem__name">${i.slot != null ? `<span class="data ink-3">${String(i.slot).padStart(2, '0')}</span> ` : ''}${esc(i.title)}</span>
+      <span class="qitem__say qitem__say--${ITEM_DOT[i.status] ?? 'idle'}"><i class="dot dot--${ITEM_DOT[i.status] ?? 'idle'}"></i>${esc(itemWords(i.status))}</span></span></li>`).join('')}</ul>` : '';
+  return `<section class="qjob" data-job="${esc(j.id)}">
+    <div class="qjob__head"><span class="qjob__title">${esc(jobTitle(j))}</span>${st === 'running' && j.cancellable ? `<button type="button" class="btn btn--secondary btn--s" data-cancel="${esc(j.id)}">${I.stop}<span>${esc(t('stop'))}</span></button>` : ''}</div>
+    <p class="qjob__say qjob__say--${JOB_DOT[st]}"><i class="dot dot--${JOB_DOT[st]}"></i><span>${esc(jobEnd(j))}</span></p>
+    ${j.about?.codex ? `<p class="qjob__count">${esc(t('codex'))}</p>` : ''}
+    ${j.error ? `<p class="qjob__error">${esc(j.error)}</p>` : ''}
+    ${(j.warnings ?? []).map((/** @type {string} */ w) => `<p class="qjob__error">${esc(w)}</p>`).join('')}
+    ${total ? `<div class="progress${st === 'done' ? ' progress--done' : st === 'failed' ? ' progress--fail' : ''}"><i style="--p:${Math.round(100 * done / total)}%"></i></div>` : ''}
+    ${count ? `<p class="qjob__count">${esc(count)}</p>` : ''}
+    ${items}
+    ${j.log.length ? `<details class="disclose" data-log><summary>${I.chev}${esc(t('log'))}</summary><div><ol class="qlog">${j.log.map((/** @type {any} */ l) => `<li><time>${time(l.at)}</time> · ${esc(l.text)}</li>`).join('')}</ol></div></details>` : ''}
+  </section>`;
 }
 
 export function openJobs() {
-  const list = () => [...jobs.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  const list = () => [...jobs.values()].sort((a, b) => (a.status === 'running' ? 0 : 1) - (b.status === 'running' ? 0 : 1) || b.startedAt.localeCompare(a.startedAt));
   const body = () => {
     const all = list();
-    const spent = all.reduce((s, j) => s + (j.spent ?? 0), 0);
-    return all.length ? `<p class="ink-2 data">Потрачено в этом запуске редактора: ${usd(spent)}</p><div class="jobrows">${all.map(row).join('')}</div>`
-      : `<div class="state"><span class="state__icon">${I.check}</span><h3 class="type-headline-sm">Очередь пуста</h3><p>Здесь появится сборка наборов и коллекций, пока она идёт.</p></div>`;
+    return all.length ? all.map(section).join('')
+      : `<div class="state"><span class="state__icon">${I.check}</span><h3 class="type-headline-sm">${esc(t('empty'))}</h3><p>${esc(t('emptyText'))}</p></div>`;
   };
-  const { body: el } = openSheet({ title: 'Очередь', body: body(), onClose: () => off() });
+  const { body: el } = openSheet({ title: t('title'), body: body(), onClose: () => off() });
   for (const j of jobs.values()) j.seen = true;
+  // a job's event redraws that job's section only, keeping its open journal
   const off = onEvent(e => {
     if (e.type !== 'job' || !el.isConnected) return;
-    const open = new Set([...el.querySelectorAll('details[open]')].map(d => d.querySelector('.jobrow__title')?.textContent));
-    el.innerHTML = body();
-    for (const d of el.querySelectorAll('details')) if (open.has(d.querySelector('.jobrow__title')?.textContent)) d.open = true;
+    e.job.seen = true;
+    const old = el.querySelector(`[data-job="${CSS.escape(e.job.id)}"]`);
+    if (!old) { el.innerHTML = body(); return; }
+    const open = /** @type {HTMLDetailsElement|null} */ (old.querySelector('[data-log]'))?.open;
+    const fresh = document.createElement('template');
+    fresh.innerHTML = section(e.job).trim();
+    const node = /** @type {HTMLElement} */ (fresh.content.firstElementChild);
+    if (open) /** @type {HTMLDetailsElement|null} */ (node.querySelector('[data-log]'))?.setAttribute('open', '');
+    old.replaceWith(node);
   });
   el.addEventListener('click', async e => {
     const b = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-cancel]'));

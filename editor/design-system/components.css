@@ -20,6 +20,8 @@ a { color: var(--c-link-fg); }
 img { display: block; max-width: 100%; }
 :focus-visible { outline: var(--c-focus-ring-size) solid var(--c-focus-ring-bg); outline-offset: var(--c-focus-ring-size); }
 ::selection { background: var(--color-state-tint); }
+/* the hidden attribute wins over a component's display */
+[hidden] { display: none !important; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .ico { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .ink-2 { color: var(--color-ink-2); } .ink-3 { color: var(--color-ink-3); }
@@ -156,6 +158,11 @@ textarea.input { height: auto; min-height: calc(var(--c-field-height) * 2.4); pa
 .thumb__num { color: var(--color-ink-3); font: var(--type-data-sm-weight) var(--type-data-sm-size)/var(--type-data-sm-line) var(--type-data-sm-family); font-variant-numeric: tabular-nums; flex: none; }
 .thumb__name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font: var(--type-body-sm-weight) var(--type-body-sm-size)/var(--type-body-sm-line) var(--type-body-sm-family); }
 .thumb__check { display: none; color: var(--color-state-ink); }
+/* the verdict under a thumbnail in words; nothing when the card is fine */
+.thumb__say { display: inline-flex; align-items: center; gap: var(--spacing-s1); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font: var(--type-body-sm-weight) var(--type-body-sm-size)/var(--type-body-sm-line) var(--type-body-sm-family); }
+.thumb__say--fail { color: var(--color-error-ink); }
+.thumb__say--warn { color: var(--color-warning-ink); }
 .thumb__grip { display: inline-flex; margin-left: auto; color: var(--color-ink-3); cursor: grab; opacity: 0; transition: opacity var(--motion-t1) var(--motion-ease); }
 .thumb:hover .thumb__grip, .thumb:focus-within .thumb__grip, .thumb.is-dragging .thumb__grip { opacity: 1; }
 @media (hover: none) { .thumb__grip { opacity: 1; } }
@@ -275,3 +282,84 @@ textarea.input { height: auto; min-height: calc(var(--c-field-height) * 2.4); pa
 .variant__cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--spacing-s1); }
 .variant__cards .thumb__img { border-radius: var(--rounded-xs); }
 .variant__sum { display: flex; flex-wrap: wrap; gap: var(--spacing-s2); }
+
+/* ---------- actions that delete, and the export action (its own accent: DESIGN.md «export») ---------- */
+/* red is a tint with error ink, never text on the red fill */
+.btn--danger { background: var(--color-error-tint); color: var(--color-error-ink); box-shadow: inset 0 0 0 1px rgb(var(--color-error-rgb) / .35); }
+.btn--danger:hover { box-shadow: inset 0 0 0 1px var(--color-error-ink); }
+.btn--export { background: var(--color-export-tint); color: var(--color-export-ink); box-shadow: inset 0 0 0 1px rgb(var(--color-export-rgb) / .4), var(--shadow-raised); }
+.btn--export:hover { box-shadow: inset 0 0 0 1px var(--color-export), var(--shadow-raised); }
+
+/* ---------- «i» hint: a small round button, its bubble on hover and focus ---------- */
+.tip { position: relative; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; flex: none; cursor: help;
+  color: var(--color-ink-3); box-shadow: inset 0 0 0 1px var(--color-line-strong); font: 600 11px/1 var(--type-body-sm-family); }
+.tip:hover, .tip:focus-visible { color: var(--color-ink-1); box-shadow: inset 0 0 0 1px var(--color-ink-2); }
+.bubble { position: absolute; z-index: 80; top: calc(100% + var(--spacing-s2)); left: 50%; transform: translateX(-50%); width: max-content; max-width: 300px;
+  padding: var(--spacing-s2) var(--spacing-s3); border-radius: var(--rounded-sm); background: var(--color-surface); color: var(--color-ink-1);
+  border: 1px solid var(--color-line); box-shadow: var(--shadow-float); text-align: left; white-space: normal; letter-spacing: 0; text-transform: none;
+  font: var(--type-body-sm-weight) var(--type-body-sm-size)/var(--type-body-sm-line) var(--type-body-sm-family); font-variation-settings: normal;
+  opacity: 0; visibility: hidden; transition: opacity var(--motion-t1) var(--motion-ease); pointer-events: none; }
+.bubble--right { left: auto; right: 0; transform: none; }
+.bubble--left { left: 0; transform: none; }
+.has-bubble { position: relative; }
+.tip:hover .bubble, .tip:focus-visible .bubble, .has-bubble:hover > .bubble, .has-bubble:focus-visible > .bubble { opacity: 1; visibility: visible; }
+.bubble dl { display: grid; grid-template-columns: auto auto; gap: var(--spacing-s1) var(--spacing-s4); margin: var(--spacing-s1) 0 0; }
+.bubble dd { margin: 0; text-align: right; font: var(--type-data-md-weight) var(--type-data-md-size)/var(--type-data-md-line) var(--type-data-md-family); font-variant-numeric: tabular-nums; }
+
+/* ---------- confirmation dialog in the centre: «Да» (destructive) on the left, «Нет» on the right ---------- */
+.dialog-wrap { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: var(--spacing-s4); }
+.dialog { position: relative; width: min(440px, 100%); display: grid; gap: var(--spacing-s4); padding: var(--spacing-s5); border-radius: var(--rounded-lg);
+  background: var(--color-surface); border: 1px solid var(--color-line); box-shadow: var(--shadow-float); text-align: center; justify-items: center; outline: none;
+  animation: ds-fade var(--motion-t2) var(--motion-ease); }
+.dialog .state__icon { background: var(--color-error-tint); color: var(--color-error-ink); }
+.dialog p { color: var(--color-ink-2); }
+.dialog__acts { display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-s2); width: 100%; margin-top: var(--spacing-s2); }
+@media (prefers-reduced-motion: reduce) { .dialog { animation: none; } }
+
+/* ---------- searchable dropdown (the settings' model lists) ---------- */
+.combo { position: relative; }
+.combo__btn { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-s2); text-align: left; cursor: pointer; }
+.combo__btn > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combo__btn::after { content: ""; flex: none; width: 7px; height: 7px; margin-top: -4px; border-right: 1.5px solid var(--color-ink-2); border-bottom: 1.5px solid var(--color-ink-2); transform: rotate(45deg); }
+.combo__menu { position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + var(--spacing-s1)); display: grid; gap: var(--spacing-s1); padding: var(--spacing-s2);
+  border-radius: var(--rounded-md); background: var(--color-surface); border: 1px solid var(--color-line); box-shadow: var(--shadow-float); }
+.combo__menu[hidden] { display: none; }
+.combo__list { display: grid; gap: 2px; max-height: 280px; overflow: auto; overscroll-behavior: contain; }
+.combo__opt { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--spacing-s1) var(--spacing-s3); align-items: center; padding: var(--spacing-s2) var(--spacing-s3);
+  border-radius: var(--rounded-sm); text-align: left; width: 100%; }
+.combo__opt > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combo__opt:hover, .combo__opt.is-active { background: var(--color-surface-sunken); }
+.combo__opt[aria-selected="true"] { background: var(--color-state-tint); }
+.combo__tag { color: var(--color-state-ink); font: 500 var(--type-body-sm-size)/var(--type-body-sm-line) var(--type-body-sm-family); }
+.combo__foot { padding: var(--spacing-s1) var(--spacing-s3) 0; color: var(--color-ink-3); font: var(--type-body-sm-weight) var(--type-body-sm-size)/var(--type-body-sm-line) var(--type-body-sm-family); }
+
+/* a slider with its steps under it: 1 2 3 4 5 */
+.ticks { grid-column: 1 / -1; display: flex; justify-content: space-between; padding: 0 calc(var(--c-slider-thumb-size) / 2 - 4px);
+  color: var(--color-ink-3); font: var(--type-data-sm-weight) var(--type-data-sm-size)/var(--type-data-sm-line) var(--type-data-sm-family); }
+.ticks span { width: 8px; text-align: center; }
+
+/* one choice per row (export: what to export) */
+.choices { display: grid; gap: var(--spacing-s2); }
+.choice { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: var(--spacing-s1) var(--spacing-s3); align-items: center; padding: var(--spacing-s3) var(--spacing-s4);
+  border-radius: var(--rounded-md); border: 1px solid var(--color-line); cursor: pointer; }
+.choice input { width: 20px; height: 20px; margin: 0; accent-color: var(--color-state); }
+.choice__sub { grid-column: 2; color: var(--color-ink-3); font: var(--type-body-sm-weight) var(--type-body-sm-size)/var(--type-body-sm-line) var(--type-body-sm-family); }
+.choice:has(input:checked) { border-color: var(--color-state); background: var(--color-state-tint); }
+.choice:has(input:disabled) { cursor: not-allowed; opacity: .55; }
+
+/* a section's «more» spoiler, named after the section */
+.disclose > summary { list-style: none; display: inline-flex; align-items: center; gap: var(--spacing-s1); cursor: pointer; color: var(--color-state-ink);
+  font: var(--type-button-sm-weight) var(--type-button-sm-size)/var(--type-button-sm-line) var(--type-button-sm-family); }
+.disclose > summary::-webkit-details-marker { display: none; }
+.disclose > summary .ico { transition: transform var(--motion-t1) var(--motion-ease); }
+.disclose[open] > summary .ico { transform: rotate(90deg); }
+.disclose[open] > summary { margin-bottom: var(--spacing-s4); }
+.disclose > div { display: grid; gap: var(--spacing-s4); }
+
+/* a plain-words explanation box */
+.explain { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--spacing-s3); padding: var(--spacing-s3) var(--spacing-s4); border-radius: var(--rounded-md);
+  background: var(--color-surface-sunken); color: var(--color-ink-2); font: var(--type-body-sm-weight) var(--type-body-sm-size)/var(--type-body-sm-line) var(--type-body-sm-family); }
+.explain .ico { margin-top: 2px; color: var(--color-ink-3); }
+.spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgb(var(--color-state-rgb) / .25); border-top-color: var(--color-state); animation: ds-spin 0.8s linear infinite; flex: none; }
+@keyframes ds-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }

@@ -1,7 +1,46 @@
 // Shared pieces of the editor's page: escaping, icons, card thumbnails, check words, the sheet (a side panel over
-// the screen), toasts, dragging cards and the text help of free-text fields. The look comes only from
+// the screen), the confirmation dialog, the «i» hint, the line of a running job, toasts, dragging cards and the text
+// help of free-text fields. Texts come in both languages through words() (i18n.js). The look comes only from
 // design-system/components.css and editor.css.
 import { call } from './api.js';
+import { plural as forms, words } from './i18n.js';
+
+const t = words({
+  ru: {
+    agent: 'своя картинка', fail: 'Ошибка', failText: 'Карточка не получилась: ни одна попытка не дошла до проверки.',
+    newText: 'Карточка ещё не сделана.', noChecks: 'Проверок у этой карточки нет.', blocking: '{n} {w} по проверкам.',
+    eyes: '{n} {w} от контура предмета — посмотрите глазами.', warns: '{n} {w} — посмотрите глазами.', pass: 'Проверки стиля пройдены.',
+    sayFail: 'Есть проблемы', sayWarn: 'Стоит взглянуть', sayFailed: 'Не получилась',
+    close: 'Закрыть', more: 'Подробнее', starting: 'Начинаю…', planning: 'Пишу план', generating: 'Генерируется картинка «{title}»',
+    generatingMore: 'Генерируется картинка «{title}» и ещё {n}', generatingOne: 'Генерируется картинка', retry: 'Не получилось, пробую ещё раз ({n} из {of})',
+    processing: 'Обрабатываю и проверяю картинку', stopping: 'Останавливаю: доделываю начатый шаг', doneOf: 'Готово: {done} из {total}', doneN: 'Готово: {done}',
+    jobDone: 'Готово', jobWarn: 'Готово, но есть замечания', jobFailed: 'Не получилось', jobCancelled: 'Остановлено',
+    itemStart: 'Генерируется картинка', itemMade: 'Готово', itemKept: 'Уже была готова', itemSkipped: 'Пропущена: потолок расходов',
+    itemFailed: 'Не получилось', itemCancelled: 'Не начата',
+    op_makeCard: 'Карточка «{title}»', op_regenerateCard: 'Карточка заново', op_editCard: 'Правка картинки', op_planSet: 'План набора «{theme}»',
+    op_makeSet: 'Карточки набора', op_planCollection: 'План коллекции', op_makeCollection: 'Карточки всех наборов коллекции', op_makeCards: 'Карточки «{theme}»',
+    op_buildSet: 'Набор «{theme}»', op_makeCard_bare: 'Карточка', op_planSet_bare: 'План набора', op_makeCards_bare: 'Карточки', op_buildSet_bare: 'Новый набор',
+    op_buildCollection_variants: 'Коллекция: ещё по варианту каждого набора', op_buildCollection: 'Коллекция: недостающие наборы',
+    draft: 'Сформулировать', drafting: 'Формулирую…', draftUndo: 'Вернуть как было', draftTitle: 'Модель сделает из ваших мыслей готовый текст; проверьте его перед сохранением',
+  },
+  en: {
+    agent: 'own image', fail: 'Error', failText: 'The card did not work out: no attempt reached the checks.',
+    newText: 'The card is not made yet.', noChecks: 'This card has no checks.', blocking: '{n} {w} found by the checks.',
+    eyes: '{n} {w} on the object’s outline — have a look.', warns: '{n} {w} — have a look.', pass: 'The style checks passed.',
+    sayFail: 'Has problems', sayWarn: 'Worth a look', sayFailed: 'Did not work out',
+    close: 'Close', more: 'Details', starting: 'Starting…', planning: 'Writing the plan', generating: 'Drawing “{title}”',
+    generatingMore: 'Drawing “{title}” and {n} more', generatingOne: 'Drawing the picture', retry: 'Did not work, trying again ({n} of {of})',
+    processing: 'Processing and checking the picture', stopping: 'Stopping: finishing the step under way', doneOf: 'Done: {done} of {total}', doneN: 'Done: {done}',
+    jobDone: 'Done', jobWarn: 'Done, with remarks', jobFailed: 'Did not work', jobCancelled: 'Stopped',
+    itemStart: 'Drawing', itemMade: 'Done', itemKept: 'Was already done', itemSkipped: 'Skipped: spend cap',
+    itemFailed: 'Did not work', itemCancelled: 'Not started',
+    op_makeCard: 'Card “{title}”', op_regenerateCard: 'Card anew', op_editCard: 'Editing a picture', op_planSet: 'Set plan “{theme}”',
+    op_makeSet: 'Set cards', op_planCollection: 'Collection plan', op_makeCollection: 'Cards of every set', op_makeCards: 'Cards “{theme}”',
+    op_buildSet: 'Set “{theme}”', op_makeCard_bare: 'Card', op_planSet_bare: 'Set plan', op_makeCards_bare: 'Cards', op_buildSet_bare: 'New set',
+    op_buildCollection_variants: 'Collection: one more variant of every set', op_buildCollection: 'Collection: the missing sets',
+    draft: 'Write it for me', drafting: 'Writing…', draftUndo: 'Put mine back', draftTitle: 'The model turns your notes into a finished text; check it before saving',
+  },
+});
 
 /** @param {unknown} s */
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => /** @type {Record<string, string>} */ ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -30,28 +69,45 @@ export const I = {
   key: svg('<circle cx="5" cy="10.5" r="2.75"/><path d="M7 8.5l6-6M11 4.5l1.5 1.5M9.5 6l1.25 1.25"/>'),
   edit: svg('<path d="M10.5 2.75l2.75 2.75L6 12.75H3.25V10z"/>'),
   stop: svg('<rect x="4" y="4" width="8" height="8" rx="1.5"/>'),
+  star: svg('<path d="M8 1.9l1.85 3.8 4.15.6-3 2.9.7 4.1L8 11.35 4.3 13.3l.7-4.1-3-2.9 4.15-.6z" stroke-linejoin="round"/>'),
+  power: svg('<path d="M8 1.75v5.5"/><path d="M4.6 3.9a5 5 0 1 0 6.8 0"/>'),
+  info: svg('<circle cx="8" cy="8" r="6.25"/><path d="M8 7.25v4M8 4.75v.01"/>'),
+  chev: svg('<path d="M6 3.5L10.5 8 6 12.5"/>'),
+  search: svg('<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5l3.25 3.25"/>'),
 };
 
-/** Switches the theme and remembers it in this browser; the top bar's switch follows. @param {string} t  light | dark */
-export function setTheme(t) {
-  document.documentElement.dataset.theme = t;
-  try { localStorage.setItem('ccf-theme', t); } catch { /* private mode */ }
-  for (const b of document.querySelectorAll('[data-theme-pick]')) b.setAttribute('aria-pressed', String(/** @type {HTMLElement} */ (b).dataset.themePick === t));
+/** Switches the theme and remembers it in this browser; the top bar's switch follows. @param {string} theme  light | dark */
+export function setTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  try { localStorage.setItem('ccf-theme', theme); } catch { /* private mode */ }
+  for (const b of document.querySelectorAll('[data-theme-pick]')) b.setAttribute('aria-pressed', String(/** @type {HTMLElement} */ (b).dataset.themePick === theme));
 }
 
 /** The model that made a card's version, as a person reads it: without its provider prefix; "agent" = an image handed in. @param {string} model */
-export const modelName = model => (model === 'agent' ? 'своя картинка' : model.replace(/^[\w.-]+\//, ''));
+export const modelName = model => (model === 'agent' ? t('agent') : model.replace(/^[\w.-]+\//, ''));
 
 /** USD with cents, or a dash. @param {number|null|undefined} v */
 export const usd = v => (v == null ? '—' : `$${v < 0.01 && v > 0 ? v.toFixed(4) : v.toFixed(2)}`);
 
-/** Russian plural: plural(5, 'карточка', 'карточки', 'карточек'). @param {number} n @param {string} one @param {string} few @param {string} many */
+/**
+ * Russian plural: plural(5, 'карточка', 'карточки', 'карточек'). Russian only: a module with texts in both languages
+ * uses plural() of i18n.js.
+ * @param {number} n @param {string} one @param {string} few @param {string} many
+ */
 export function plural(n, one, few, many) {
   const a = Math.abs(n) % 100, b = a % 10;
   return a > 10 && a < 20 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many;
 }
-/** @param {number} n @param {string} one @param {string} few @param {string} many */
+/** Russian only (see plural). @param {number} n @param {string} one @param {string} few @param {string} many */
 export const count = (n, one, few, many) => `${n} ${plural(n, one, few, many)}`;
+
+const W = {
+  error: /** @type {const} */ ({ ru: ['ошибка', 'ошибки', 'ошибок'], en: ['problem', 'problems'] }),
+  eyes: /** @type {const} */ ({ ru: ['проверка зависит', 'проверки зависят', 'проверок зависят'], en: ['check depends', 'checks depend'] }),
+  remark: /** @type {const} */ ({ ru: ['замечание', 'замечания', 'замечаний'], en: ['remark', 'remarks'] }),
+};
+/** @param {number} n @param {{ru: readonly [string, string, string], en: readonly [string, string]}} f */
+const nw = (n, f) => ({ n, w: forms(n, { ru: [...f.ru], en: [...f.en] }) });
 
 /**
  * The verdict of a card's checks in a person's words: PASS / WARN / FAIL and a sentence.
@@ -60,14 +116,24 @@ export const count = (n, one, few, many) => `${n} ${plural(n, one, few, many)}`;
  * @returns {{kind: 'pass'|'warn'|'fail'|null, word: string, text: string}}
  */
 export function verdict(c, status) {
-  if (status === 'failed') return { kind: 'fail', word: 'Ошибка', text: 'Карточка не получилась: ни одна попытка не дошла до проверки.' };
-  if (status === 'new') return { kind: null, word: '', text: 'Карточка ещё не сделана.' };
-  if (!c) return { kind: null, word: '', text: 'Проверок у этой карточки нет.' };
-  if (c.blocking > 0) return { kind: 'fail', word: 'FAIL', text: `${count(c.blocking, 'ошибка', 'ошибки', 'ошибок')} по проверкам.` };
-  if (c.needsEyes > 0) return { kind: 'warn', word: 'WARN', text: `${count(c.needsEyes, 'проверка зависит', 'проверки зависят', 'проверок зависят')} от контура предмета — посмотрите глазами.` };
-  if (c.warns > 0) return { kind: 'warn', word: 'WARN', text: `${count(c.warns, 'замечание', 'замечания', 'замечаний')} — посмотрите глазами.` };
-  return { kind: 'pass', word: 'PASS', text: 'Проверки стиля пройдены.' };
+  if (status === 'failed') return { kind: 'fail', word: t('fail'), text: t('failText') };
+  if (status === 'new') return { kind: null, word: '', text: t('newText') };
+  if (!c) return { kind: null, word: '', text: t('noChecks') };
+  if (c.blocking > 0) return { kind: 'fail', word: 'FAIL', text: t('blocking', nw(c.blocking, W.error)) };
+  if (c.needsEyes > 0) return { kind: 'warn', word: 'WARN', text: t('eyes', nw(c.needsEyes, W.eyes)) };
+  if (c.warns > 0) return { kind: 'warn', word: 'WARN', text: t('warns', nw(c.warns, W.remark)) };
+  return { kind: 'pass', word: 'PASS', text: t('pass') };
 }
+
+/**
+ * The verdict under a thumbnail in plain words (the approved mockup): problems, worth a look, did not work out;
+ * nothing when the card is fine or not made yet. Its sentence is the tooltip.
+ * @param {{kind: string|null, word: string, text: string}} v @param {string} [status]
+ */
+export const say = (v, status) => {
+  const word = status === 'failed' ? t('sayFailed') : v.kind === 'fail' ? t('sayFail') : v.kind === 'warn' ? t('sayWarn') : '';
+  return word ? `<span class="thumb__say thumb__say--${v.kind}" title="${esc(v.text)}"><i class="dot dot--${v.kind}"></i>${esc(word)}</span>` : '';
+};
 
 /** @param {{kind: string|null, word: string, text: string}} v */
 export const badge = v => (v.kind ? `<span class="badge badge--${v.kind}" title="${esc(v.text)}">${v.word}</span>` : '');
@@ -84,24 +150,64 @@ export function thumb(c, { n = null, drag = null, selected = false, note = '' } 
   return `<figure class="thumb" data-card="${esc(c.id)}" aria-selected="${selected}" tabindex="0" ${drag ? `data-drag='${esc(JSON.stringify({ card: c.id, ...drag }))}'` : ''}>
     <div class="thumb__img">${img}</div>
     <figcaption class="thumb__cap"><span class="thumb__line">${n != null ? `<span class="thumb__num">${String(n).padStart(2, '0')}</span>` : ''}<span class="thumb__name" title="${esc(c.title)}">${esc(c.title)}</span></span>${note ? `<span class="thumb__note data ink-3" title="${esc(note)}">${esc(note)}</span>` : ''}
-      <span class="thumb__line">${badge(v)}<span class="thumb__check">${I.check}</span>${drag ? `<span class="thumb__grip" data-grip aria-hidden="true">${I.grip}</span>` : ''}</span></figcaption>
+      <span class="thumb__line">${say(v, c.status)}<span class="thumb__check">${I.check}</span>${drag ? `<span class="thumb__grip" data-grip aria-hidden="true">${I.grip}</span>` : ''}</span></figcaption>
   </figure>`;
 }
 
 /** One element from HTML. @param {string} html */
-export const fromHtml = html => { const t = document.createElement('template'); t.innerHTML = html.trim(); return /** @type {HTMLElement} */ (t.content.firstElementChild); };
+export const fromHtml = html => { const tpl = document.createElement('template'); tpl.innerHTML = html.trim(); return /** @type {HTMLElement} */ (tpl.content.firstElementChild); };
+
+// ---------- jobs in plain words (the line on a screen and the queue panel) ----------
+
+/** What a job does, in the page's language, from its op and what it is about (server/jobs.js `about`). @param {any} j */
+export function jobTitle(j) {
+  const a = j.about ?? {};
+  // a title without its theme or card name says what the job is, without empty quotes
+  const bare = !a.theme && !a.title && ['makeCard', 'planSet', 'makeCards', 'buildSet'].includes(j.op);
+  const key = j.op === 'buildCollection' && a.mode === 'variants' ? 'op_buildCollection_variants' : `op_${j.op}${bare ? '_bare' : ''}`;
+  const said = t(/** @type {any} */ (key), { theme: a.theme ?? '', title: a.title ?? '' });
+  return said === key ? j.title : said;
+}
+
+/** The status of one card row of a job. @param {string} status */
+export const itemWords = status => {
+  const key = /** @type {const} */ ({ start: 'itemStart', made: 'itemMade', kept: 'itemKept', skipped: 'itemSkipped', failed: 'itemFailed', cancelled: 'itemCancelled' })[/** @type {'start'} */ (status)];
+  return key ? t(key) : status;
+};
+
+/** What a running job is doing now, in a sentence. @param {any} j */
+export function jobStep(j) {
+  const drawing = (j.items ?? []).filter((/** @type {any} */ i) => i.status === 'start');
+  const last = [...(j.log ?? [])].reverse().find((/** @type {any} */ l) => l.say)?.say;
+  if (last?.k === 'stopping') return t('stopping');
+  if (drawing.length) return drawing.length > 1 ? t('generatingMore', { title: drawing[0].title, n: drawing.length - 1 }) : t('generating', { title: drawing[0].title });
+  if (last?.k === 'attempt') {
+    if (last.stage === 'process') return t('processing');
+    if (last.stage === 'generate') return last.n > 1 ? t('retry', { n: last.n, of: last.of }) : t('generatingOne');
+  }
+  if (/^(plan|build)/.test(j.op) && !(j.items ?? []).length) return t('planning');
+  return t('starting');
+}
+
+/** How a job ended, in words. @param {any} j */
+export const jobEnd = j => (j.status === 'done' ? t(j.warnings?.length ? 'jobWarn' : 'jobDone') : j.status === 'failed' ? t('jobFailed') : j.status === 'cancelled' ? t('jobCancelled') : jobStep(j));
+
+/** «Готово: 3 из 5» — the cards made so far, of how many when that is known. @param {any} j */
+export function jobCount(j) {
+  if (!j.items?.length && !j.about?.count) return '';
+  const done = (j.items ?? []).filter((/** @type {any} */ i) => i.status === 'made' || i.status === 'kept').length;
+  return j.about?.count ? t('doneOf', { done, total: j.about.count }) : t('doneN', { done });
+}
 
 /**
- * One running job as a line on the screen it concerns: what is being done, its last step, what it has spent so far.
+ * One running job as a line on the screen it concerns: what is being done and its step, in words; no money.
  * app.js replaces it in place on every progress event.
  * @param {any} j
  */
 export function jobline(j) {
-  const made = j.items?.filter((/** @type {any} */ i) => i.status === 'made' || i.status === 'kept').length;
-  return `<div class="jobline panel" data-jobline="${esc(j.id)}"><i class="dot dot--work"></i><span class="jobline__title">${esc(j.title)}</span>
-    <span class="jobline__last ink-2">${esc(j.log.at(-1)?.text ?? 'начинаю…')}</span>
-    ${j.items?.length ? `<span class="data ink-3">${made}/${j.items.length}</span>` : ''}${j.spent != null ? `<span class="data ink-3">${usd(j.spent)}</span>` : ''}
-    <button type="button" class="btn btn--text btn--s" data-open-jobs><span>Очередь</span></button></div>`;
+  return `<div class="jobline panel" data-jobline="${esc(j.id)}"><i class="dot dot--work"></i><span class="jobline__title">${esc(jobTitle(j))}</span>
+    <span class="jobline__last ink-2">${esc(jobStep(j))}</span><span class="jobline__count">${esc(jobCount(j))}</span>
+    <button type="button" class="btn btn--text btn--s" data-open-jobs><span>${esc(t('more'))}</span></button></div>`;
 }
 
 // ---------- sheet: a panel over the screen, from the right (from the bottom on phones) ----------
@@ -120,7 +226,7 @@ export function openSheet({ title, body, foot = '', wide = false, onClose }) {
   wrap.className = 'sheet-wrap';
   wrap.innerHTML = `<div class="scrim" data-close></div>
     <section class="sheet${wide ? ' sheet--wide' : ''}" role="dialog" aria-modal="true" aria-label="${esc(title)}">
-      <header class="sheet__head"><h2 class="type-headline-sm">${esc(title)}</h2><button type="button" class="btn btn--secondary btn--icon btn--s" data-close aria-label="Закрыть">${I.x}</button></header>
+      <header class="sheet__head"><h2 class="type-headline-sm">${esc(title)}</h2><button type="button" class="btn btn--secondary btn--icon btn--s" data-close aria-label="${esc(t('close'))}">${I.x}</button></header>
       <div class="sheet__body">${body}</div>${foot ? `<footer class="sheet__foot">${foot}</footer>` : ''}
     </section>`;
   const prev = /** @type {HTMLElement|null} */ (document.activeElement);
@@ -146,6 +252,41 @@ export function openSheet({ title, body, foot = '', wide = false, onClose }) {
 
 export const closeSheet = () => openSheetRef?.close();
 
+// ---------- confirmation: a dialog in the centre, over any sheet ----------
+
+/**
+ * Asks before something that cannot be undone. «Да» (destructive, red) stands on the left, «Нет» on the right (the
+ * author's note on the mockup); Escape, a click outside and «Нет» answer no. The sheet under it stays open.
+ * @param {{title: string, text?: string, yes: string, no: string, icon?: string}} o  icon: an I.* svg (default: trash)
+ * @returns {Promise<boolean>}
+ */
+export function confirmDialog({ title, text = '', yes, no, icon = I.trash }) {
+  return new Promise(resolve => {
+    const wrap = document.createElement('div');
+    wrap.className = 'dialog-wrap';
+    wrap.innerHTML = `<div class="scrim" data-answer="no"></div><div class="dialog" role="alertdialog" aria-modal="true" aria-label="${esc(title)}" tabindex="-1">
+      <span class="state__icon">${icon}</span><h3 class="type-headline-sm">${esc(title)}</h3>${text ? `<p>${esc(text)}</p>` : ''}
+      <div class="dialog__acts"><button type="button" class="btn btn--danger" data-answer="yes">${icon}<span>${esc(yes)}</span></button><button type="button" class="btn btn--secondary" data-answer="no">${esc(no)}</button></div></div>`;
+    const prev = /** @type {HTMLElement|null} */ (document.activeElement);
+    /** @param {boolean} v */
+    const done = v => { wrap.remove(); document.removeEventListener('keydown', onKey, true); prev?.focus?.(); resolve(v); };
+    // capture, so the Escape that answers here does not also close the sheet under the dialog
+    const onKey = (/** @type {KeyboardEvent} */ e) => { if (e.key === 'Escape') { e.stopImmediatePropagation(); e.preventDefault(); done(false); } };
+    wrap.addEventListener('click', e => { const b = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-answer]')); if (b) done(b.dataset.answer === 'yes'); });
+    document.addEventListener('keydown', onKey, true);
+    layer.append(wrap);
+    /** @type {HTMLElement} */ (wrap.querySelector('[data-answer="no"].btn')).focus();
+  });
+}
+
+// ---------- «i» hint ----------
+
+/**
+ * A small round «i» that shows its text on hover and focus, in place of a line of hint text nobody reads.
+ * @param {string} text @param {{side?: 'center'|'left'|'right'}} [o]  where the bubble opens
+ */
+export const tip = (text, { side = 'center' } = {}) => `<span class="tip" tabindex="0" role="note" aria-label="${esc(text)}">i<span class="bubble${side === 'center' ? '' : ` bubble--${side}`}" aria-hidden="true">${esc(text)}</span></span>`;
+
 // ---------- toasts ----------
 
 /**
@@ -155,12 +296,12 @@ export const closeSheet = () => openSheetRef?.close();
 export function toast(text, { kind = null, action, ms = 5000 } = {}) {
   let host = document.querySelector('.toasts');
   if (!host) { host = document.createElement('div'); host.className = 'toasts'; host.setAttribute('role', 'status'); document.body.append(host); }
-  const t = document.createElement('div');
-  t.className = `toast glass glass--thick${kind ? ` toast--${kind}` : ''}`;
-  t.innerHTML = `${kind ? `<i class="dot dot--${kind}"></i>` : ''}<span class="toast__text">${esc(text)}</span>${action ? `<button type="button" class="btn btn--text btn--s"><span>${esc(action.label)}</span></button>` : ''}`;
-  if (action) t.querySelector('button')?.addEventListener('click', () => { action.run(); t.remove(); });
-  host.append(t);
-  setTimeout(() => t.remove(), kind === 'fail' ? Math.max(ms, 9000) : ms);
+  const el = document.createElement('div');
+  el.className = `toast glass glass--thick${kind ? ` toast--${kind}` : ''}`;
+  el.innerHTML = `${kind ? `<i class="dot dot--${kind}"></i>` : ''}<span class="toast__text">${esc(text)}</span>${action ? `<button type="button" class="btn btn--text btn--s"><span>${esc(action.label)}</span></button>` : ''}`;
+  if (action) el.querySelector('button')?.addEventListener('click', () => { action.run(); el.remove(); });
+  host.append(el);
+  setTimeout(() => el.remove(), kind === 'fail' ? Math.max(ms, 9000) : ms);
 }
 
 // ---------- text help: rough notes in a field → a finished text (core/text/draft.js) ----------
@@ -174,30 +315,39 @@ export const SPENT_EVENT = 'ccf:spent';
  * is saved: the form the field belongs to saves it. The kinds: settings text.help.kinds.
  * @param {string} kind
  */
-export const textHelp = kind => `<span class="texthelp" data-texthelp="${esc(kind)}"><button type="button" class="btn btn--text btn--s" data-draft title="Модель сделает из ваших мыслей готовый текст; проверьте его перед сохранением">${I.spark}<span>Сформулировать</span></button><button type="button" class="btn btn--text btn--s" data-draft-undo hidden><span>Вернуть как было</span></button></span>`;
+export const textHelp = kind => `<span class="texthelp" data-texthelp="${esc(kind)}"><button type="button" class="btn btn--text btn--s" data-draft title="${esc(t('draftTitle'))}">${I.spark}<span>${esc(t('draft'))}</span></button><button type="button" class="btn btn--text btn--s" data-draft-undo hidden><span>${esc(t('draftUndo'))}</span></button></span>`;
+
+/** The skeleton lines shown over a field while the model writes. */
+const DRAFT_SKELETON = '<span class="draft-skel" aria-hidden="true"><span class="skeleton" style="width:92%"></span><span class="skeleton" style="width:78%"></span><span class="skeleton" style="width:54%"></span></span>';
 
 /**
- * Makes the text help under `root` work.
+ * Makes the text help under `root` work. While the model writes, the field shows a skeleton and the button a spinner.
  * @param {HTMLElement} root
  * @param {() => {context?: Record<string, string|undefined>, collectionId?: string|null}} about  what the text belongs
  *   to, read at the moment of the click
  */
 export function bindTextHelp(root, about) {
   root.addEventListener('click', async e => {
-    const t = /** @type {HTMLElement} */ (e.target);
-    const box = /** @type {HTMLElement|null} */ (t.closest('[data-texthelp]'));
+    const target = /** @type {HTMLElement} */ (e.target);
+    const box = /** @type {HTMLElement|null} */ (target.closest('[data-texthelp]'));
     if (!box) return;
     e.preventDefault();
-    const field = /** @type {HTMLInputElement|HTMLTextAreaElement} */ (box.closest('.field')?.querySelector('textarea, input'));
+    const fieldEl = /** @type {HTMLElement} */ (box.closest('.field'));
+    const field = /** @type {HTMLInputElement|HTMLTextAreaElement} */ (fieldEl.querySelector('textarea, input'));
     const go = /** @type {HTMLButtonElement} */ (box.querySelector('[data-draft]'));
     const undo = /** @type {HTMLButtonElement} */ (box.querySelector('[data-draft-undo]'));
-    if (t.closest('[data-draft-undo]')) { field.value = box.dataset.before ?? ''; undo.hidden = true; field.focus(); return; }
-    if (!t.closest('[data-draft]')) return;
+    if (target.closest('[data-draft-undo]')) { field.value = box.dataset.before ?? ''; undo.hidden = true; field.focus(); return; }
+    if (!target.closest('[data-draft]')) return;
     const notes = field.value.trim();
-    if (!notes) { toast('Напишите мысли как есть — модель сформулирует из них текст.', { kind: 'fail' }); field.focus(); return; }
-    const label = /** @type {HTMLElement} */ (go.querySelector('span'));
+    const before = go.innerHTML;
     go.disabled = true;
-    label.textContent = 'Формулирую…';
+    go.innerHTML = `<span class="spin"></span><span>${esc(t('drafting'))}</span>`;
+    const holder = document.createElement('span');
+    holder.className = 'drafting';
+    field.replaceWith(holder);
+    holder.append(field);
+    holder.insertAdjacentHTML('beforeend', DRAFT_SKELETON);
+    field.readOnly = true;
     try {
       const r = await call('draftText', { kind: box.dataset.texthelp, notes, ...about() });
       box.dataset.before = field.value;
@@ -207,8 +357,10 @@ export function bindTextHelp(root, about) {
     } catch (/** @type {any} */ err) {
       toast(err?.message ?? String(err), { kind: 'fail' });
     } finally {
+      field.readOnly = false;
+      holder.replaceWith(field);
       go.disabled = false;
-      label.textContent = 'Сформулировать';
+      go.innerHTML = before;
     }
   });
 }

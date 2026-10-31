@@ -1,42 +1,102 @@
-// Settings, reachable from every screen: the service every keyed call goes to (provider.preset: OpenRouter or Google
-// AI Studio) and its key (status, a temporary key held only while the editor runs — one per service), who draws (the
-// service's model or Codex), the models of the chosen service, attempts. Spend caps are not shown (the author's
-// decision, 2026-10-31: the person limits spend on their provider's key; the caps of settings are a safety net for
-// agents and the command line). Saved into settings/local.json through core/settings.js; what is rare sits under
-// «Дополнительно».
-import { call } from '../api.js';
-import { attempt, esc, I, openSheet, setTheme, toast, usd } from '../ui.js';
+// Settings, reachable from every screen, in sections: Сервис (the service every keyed call goes to — provider.preset:
+// OpenRouter or Google AI Studio —, its key applied as soon as it is pasted, the endpoint), Генерация (who draws: the
+// service's model or Codex CLI, which the factory starts itself; the image model; attempts per card; cards at the same
+// time), Взгляд на карточки, Текстовая модель, Вид (theme, language), and «Выключить редактор». Each section keeps
+// what is rare under «Дополнительные настройки <раздела>». The model fields are searchable lists of the service's own
+// models (op listModels); a typed id is taken too. Spend caps are not shown (the author's decision, 2026-10-31).
+// Saved into settings/local.json through core/settings.js.
+import { call, jobs } from '../api.js';
+import { lang, LANGS, setLang, words } from '../i18n.js';
+import { attempt, confirmDialog, esc, I, openSheet, setTheme, tip, toast, usd } from '../ui.js';
 import { app } from '../state.js';
 
-/** The services (settings provider.preset): what each is, the key's look and where to get one; their names come with
- * the key statuses (getSettings → keys[preset].title, core/providers/preset.js). */
-const PRESETS = /** @type {Record<string, {title?: string, hint: string, placeholder: string, keyHint: string}>} */ ({
-  openrouter: { hint: 'OpenRouter — один ключ к моделям разных компаний, оплата за каждый вызов с баланса OpenRouter.', placeholder: 'sk-or-…', keyHint: 'Ключ выдаёт openrouter.ai в разделе Keys.' },
-  google: { hint: 'Google AI Studio — модели Google (Nano Banana, Gemini) напрямую, по ключу Gemini API; оплата по счёту Google.', placeholder: 'ключ Gemini API', keyHint: 'Ключ выдаёт aistudio.google.com/apikey.' },
+const t = words({
+  ru: {
+    title: 'Настройки', cancel: 'Отмена', save: 'Сохранить', saved: 'Настройки сохранены.',
+    service: 'Сервис', serviceField: 'Через какой сервис работают модели',
+    hint_openrouter: 'OpenRouter — один ключ к моделям разных компаний, оплата за каждый вызов с баланса OpenRouter.',
+    hint_google: 'Google AI Studio — модели Google (Nano Banana, Gemini) напрямую, по ключу Gemini API; оплата по счёту Google.',
+    keyOf: 'Ключ {service}', keyNone: 'Ключа нет.', keyNoneText: 'Генерация через {service}, план набора и взгляд на карточки не работают. Codex CLI рисует без ключа.',
+    keyTemp: 'Временный ключ', keyTempText: '— живёт, пока запущен редактор.', keyPerm: 'Постоянный ключ', keyPermText: '— из файла .env ({envVar}).',
+    keyPlaceholderNone: 'Вставьте ключ', keyPlaceholder: 'Вставьте ключ, чтобы заменить его временным',
+    keyHint: 'Вставили — ключ сразу работает, пока запущен редактор; на диск он не сохраняется. Постоянный ключ кладут в файл .env в папке фабрики: {envVar}=… Ключи лучше время от времени менять у сервиса.',
+    keyWhere_openrouter: 'Ключ выдаёт openrouter.ai в разделе Keys.', keyWhere_google: 'Ключ выдаёт aistudio.google.com/apikey.',
+    keyShow: 'Показать ключ', keyHide: 'Скрыть ключ', keySet: 'Временный ключ подключён.', keyForget: 'Забыть временный ключ',
+    keyCheck: 'Проверить ключ', keyAsking: 'Спрашиваю {service}…', keyOkCredits: 'Ключ работает. Осталось {left} из {total}.',
+    keyOkModels: 'Ключ работает: доступно моделей — {n}{missing}. Баланс этот сервис через API не сообщает.', keyMissing: ', но модели картинок из настроек среди них нет',
+    endpoint: 'Адрес подключения', endpointHint: 'Менять не нужно, если сервис не просит другой адрес.',
+    moreService: 'Дополнительные настройки сервиса', keyVar: 'Переменная ключа', keyVarHint: 'Имя строки в файле .env, где лежит постоянный ключ.',
+    generation: 'Генерация', who: 'Кто рисует картинки',
+    codexExplain: 'Фабрика сама запускает Codex CLI на этом компьютере, в фоне, и просит его нарисовать каждую картинку. Рисует по вашей подписке Codex — без оплаты за картинку, только модель GPT Image. Открывать Codex не нужно: он должен быть установлен, и в него нужно один раз войти. План набора и взгляд на карточки всё равно идут через {service}.',
+    apiHint: 'Картинки рисует модель {service} по ключу — оплата за каждую картинку.',
+    imageModel: 'Модель картинок', imageNote: 'Модели сервиса, которые рисуют картинки.',
+    attempts: 'Попыток на карточку', attemptsTip: 'Сколько раз карточку можно нарисовать заново, если она не прошла проверки стиля. Каждая попытка — оплата за картинку.',
+    parallel: 'Карточек одновременно', parallelTip: 'Сколько карточек набора рисуются в одно и то же время.',
+    moreGeneration: 'Дополнительные настройки генерации', fallback: 'Запасная модель картинок', fallbackHint: 'Пробуется, если основная не справилась.', noFallback: 'Без запасной модели',
+    look: 'Взгляд на карточки', lookField: 'Модель смотрит на каждую попытку', on: 'Включён', off: 'Выключен',
+    lookHint: 'Сверяет картинку с заказом и замечает лишнее; нужен ключ сервиса. Выключайте, если карточки смотрит сам агент.',
+    visionModel: 'Смотрящая модель', visionNote: 'Только модели, которые видят картинки.',
+    textSection: 'Текстовая модель', textModel: 'Модель для текста', textNote: 'Модели сервиса, которые пишут текст.',
+    textHint: 'Пишет планы наборов и заказы карточек, помогает с текстом («Сформулировать»).',
+    view: 'Вид', theme: 'Тема', light: 'Светлая', dark: 'Тёмная', language: 'Язык', languageHint: 'Страница перезагрузится. Подписи на карточках не переводятся.',
+    stopEditor: 'Выключить редактор', stopHint: 'Генерация остановится. Открыть снова — файлом запуска фабрики.',
+    stopAsk: 'Выключить редактор?', stopAskText: 'Идёт генерация ({n}): она остановится, начатые карточки останутся недоделанными.', stopYes: 'Да, выключить', stopNo: 'Нет, оставить',
+    search: 'Найти модель или вписать её id', take: 'Взять «{id}»', loading: 'Загружаю список моделей…', listFailed: 'Список не пришёл: {error} Можно вписать id модели в поиск и нажать Enter.',
+    shown: 'Показано {n} из {all}. Уточните поиск.', nothing: 'Таких моделей в списке сервиса нет. Enter — взять вписанный id.',
+    needNumber: '«{label}»: нужно число не меньше {min}.',
+  },
+  en: {
+    title: 'Settings', cancel: 'Cancel', save: 'Save', saved: 'Settings saved.',
+    service: 'Service', serviceField: 'Which service the models work through',
+    hint_openrouter: 'OpenRouter — one key to models of many companies; every call is paid from your OpenRouter balance.',
+    hint_google: 'Google AI Studio — Google’s models (Nano Banana, Gemini) directly, with a Gemini API key; billed by Google.',
+    keyOf: '{service} key', keyNone: 'No key.', keyNoneText: 'Generating through {service}, set plans and the model’s look do not work. Codex CLI draws without a key.',
+    keyTemp: 'Temporary key', keyTempText: '— lives while the editor runs.', keyPerm: 'Permanent key', keyPermText: '— from the .env file ({envVar}).',
+    keyPlaceholderNone: 'Paste the key', keyPlaceholder: 'Paste a key to replace it with a temporary one',
+    keyHint: 'Once pasted, the key works at once while the editor runs; it is not saved to disk. A permanent key goes into the .env file in the factory folder: {envVar}=… Change keys at the service from time to time.',
+    keyWhere_openrouter: 'openrouter.ai gives keys under Keys.', keyWhere_google: 'aistudio.google.com/apikey gives keys.',
+    keyShow: 'Show the key', keyHide: 'Hide the key', keySet: 'Temporary key connected.', keyForget: 'Forget the temporary key',
+    keyCheck: 'Check the key', keyAsking: 'Asking {service}…', keyOkCredits: 'The key works. {left} left of {total}.',
+    keyOkModels: 'The key works: {n} models available{missing}. This service does not report a balance through its API.', keyMissing: ', but the image model of the settings is not among them',
+    endpoint: 'Endpoint', endpointHint: 'Leave it unless the service asks for another address.',
+    moreService: 'More service settings', keyVar: 'Key variable', keyVarHint: 'The name of the line in the .env file that holds the permanent key.',
+    generation: 'Generation', who: 'Who draws the pictures',
+    codexExplain: 'The factory itself starts Codex CLI on this computer, in the background, and asks it to draw each picture. It draws under your Codex subscription — no payment per picture, GPT Image only. You do not need to open Codex: it must be installed and signed in once. Set plans and the model’s look still go through {service}.',
+    apiHint: 'A {service} model draws the pictures with the key — every picture is paid.',
+    imageModel: 'Image model', imageNote: 'The service’s models that draw pictures.',
+    attempts: 'Attempts per card', attemptsTip: 'How many times a card may be drawn again when it fails the style checks. Every attempt is a paid picture.',
+    parallel: 'Cards at the same time', parallelTip: 'How many cards of a set are drawn at the same time.',
+    moreGeneration: 'More generation settings', fallback: 'Fallback image model', fallbackHint: 'Tried when the main one fails.', noFallback: 'No fallback model',
+    look: 'The model’s look at cards', lookField: 'A model looks at every attempt', on: 'On', off: 'Off',
+    lookHint: 'Compares the picture with the order and notices what is off; needs the service key. Turn it off when an agent looks at the cards itself.',
+    visionModel: 'Vision model', visionNote: 'Only models that see pictures.',
+    textSection: 'Text model', textModel: 'Model for text', textNote: 'The service’s models that write text.',
+    textHint: 'Writes set plans and card orders, helps with texts (“Write it for me”).',
+    view: 'Look', theme: 'Theme', light: 'Light', dark: 'Dark', language: 'Language', languageHint: 'The page reloads. Card captions are not translated.',
+    stopEditor: 'Switch the editor off', stopHint: 'Generation stops. To open it again, use the factory’s launcher.',
+    stopAsk: 'Switch the editor off?', stopAskText: 'Generation is under way ({n}): it will stop, cards started stay unfinished.', stopYes: 'Yes, switch off', stopNo: 'No, keep it',
+    search: 'Find a model or type its id', take: 'Use “{id}”', loading: 'Loading the model list…', listFailed: 'The list did not come: {error} You can type a model id into the search and press Enter.',
+    shown: '{n} of {all} shown. Narrow the search.', nothing: 'The service lists no such model. Enter uses the typed id.',
+    needNumber: '“{label}”: a number of at least {min} is needed.',
+  },
 });
 
-/** One editable setting: a dotted path into the settings ({p} = the service's key), its label and kind. */
-const FIELDS = {
-  main: [
-    { path: 'provider.{p}.model', label: 'Модель картинок', hint: 'Основная модель сервиса.' },
-    { path: 'card.attempts', label: 'Попыток на карточку', type: 'number', min: 1, step: 1, hint: 'Сколько раз карточку можно сгенерировать заново, если она не прошла проверки стиля.' },
-  ],
-  look: [
-    { path: 'provider.{p}.visionModel', label: 'Модель, которая смотрит', hint: 'Смотрит на готовые карточки: находит контур героя и сверяет картинку с заказом.' },
-  ],
-  more: [
-    { path: 'provider.{p}.fallbackModel', label: 'Запасная модель картинок', hint: 'Пробуется, если основная не справилась. Пусто — без запасной.', nullable: true },
-    { path: 'provider.{p}.textModel', label: 'Текстовая модель', hint: 'Пишет план набора и коллекции, помогает с текстом.' },
-    { path: 'provider.{p}.endpoint', label: 'Адрес подключения', hint: 'Адрес API сервиса.', inputmode: 'url' },
-    { path: 'provider.{p}.keyEnvVar', label: 'Переменная ключа', hint: 'Имя строки в .env, где лежит постоянный ключ.' },
-    { path: 'set.parallel', label: 'Карточек одновременно', type: 'number', min: 1, step: 1 },
-  ],
-};
-
-/** @param {string} use @param {string} preset */
-const providerHint = (use, preset) => use === 'codex-cli'
-  ? `Codex CLI — по подписке Codex, без оплаты за картинку (только GPT Image). План набора и взгляд на карточки всё равно идут через ${PRESETS[preset].title}.`
-  : `Картинки рисует модель ${PRESETS[preset].title} — по ключу, оплата за каждую картинку.`;
+/** The model fields of a service: settings key, list kind, label, note, whether «none» is a choice. */
+const MODEL_FIELDS = /** @type {const} */ ({
+  model: { kind: 'image', label: 'imageModel', note: 'imageNote', none: false },
+  fallbackModel: { kind: 'image', label: 'fallback', note: 'imageNote', none: true },
+  visionModel: { kind: 'vision', label: 'visionModel', note: 'visionNote', none: false },
+  textModel: { kind: 'text', label: 'textModel', note: 'textNote', none: false },
+});
+/** The text fields of a service besides its models. */
+const TEXT_FIELDS = /** @type {const} */ (['endpoint', 'keyEnvVar']);
+/** The longest list a model dropdown draws at once: a search narrows OpenRouter's hundreds. */
+const LIST_MAX = 150;
+/** Sliders: settings path, label, tip, the range a person picks from (the top grows to a larger saved value). */
+const SLIDERS = /** @type {const} */ ([
+  { path: 'card.attempts', label: 'attempts', tip: 'attemptsTip', min: 1, max: 5 },
+  { path: 'set.parallel', label: 'parallel', tip: 'parallelTip', min: 1, max: 8 },
+]);
 
 /** @param {any} o @param {string} p */
 const get = (o, p) => p.split('.').reduce((x, k) => x?.[k], o);
@@ -47,167 +107,267 @@ function put(o, p, v) {
   for (const k of ks.slice(0, -1)) x = x[k] ??= {};
   x[/** @type {string} */ (ks.at(-1))] = v;
 }
+/** @param {string} name @param {[string, string][]} opts @param {string} cur @param {string} [cls] */
+const seg = (name, opts, cur, cls = '') => `<div class="seg ${cls}" role="group" data-seg="${name}">${opts.map(([v, l]) => `<button type="button" data-v="${esc(v)}" aria-pressed="${v === cur}">${l}</button>`).join('')}</div>`;
+/** @param {HTMLElement} root @param {string} name */
+const pressed = (root, name) => /** @type {HTMLElement} */ (root.querySelector(`[data-seg="${name}"] [aria-pressed="true"]`)).dataset.v ?? '';
 
-/** @param {any} f @param {any} s */
-const oneField = (f, s) => {
-  const v = get(s, f.path);
-  return `<label class="field"><span class="field__label">${esc(f.label)}</span>
-    <input class="input" name="${esc(f.path)}" ${f.type === 'number' ? `type="number" min="${f.min}" step="${f.step}" inputmode="decimal"` : `type="text" spellcheck="false" ${f.inputmode ? `inputmode="${f.inputmode}"` : ''}`} value="${esc(v ?? '')}">
-    ${f.hint ? `<span class="field__hint">${esc(f.hint)}</span>` : ''}</label>`;
-};
-
-/** A field; one of a service's ({p} in its path) is drawn for every service, the chosen one shown. @param {any} f @param {any} s */
-const fieldHtml = (f, s) => !f.path.includes('{p}') ? oneField(f, s)
-  : Object.keys(PRESETS).map(p => `<div data-preset-field="${p}"${p === s.provider.preset ? '' : ' hidden'}>${oneField({ ...f, path: f.path.replace('{p}', p) }, s)}</div>`).join('');
-
-/** Every setting path the form writes. */
-const allPaths = () => [...FIELDS.main, ...FIELDS.look, ...FIELDS.more].flatMap(f => (f.path.includes('{p}') ? Object.keys(PRESETS).map(p => ({ ...f, path: f.path.replace('{p}', p) })) : [f]));
-
-/** The key block of a service. @param {any} k  its status @param {string} preset */
-function keyBlock(k, preset) {
-  const P = PRESETS[preset];
-  const state = k.source === 'none'
-    ? `<p class="keystate keystate--fail"><i class="dot dot--fail"></i><span><b>Ключа нет.</b> Генерация через ${esc(P.title)}, план набора и взгляд на карточки не работают. Codex CLI рисует без ключа.</span></p>`
-    : k.source === 'temporary'
-      ? `<p class="keystate"><i class="dot dot--done"></i><span><b>Временный ключ</b> — живёт, пока открыт редактор.</span></p>`
-      : `<p class="keystate"><i class="dot dot--done"></i><span><b>Постоянный ключ</b> — из файла .env или переменной ${esc(k.envVar)}.</span></p>`;
-  return `${state}
-    <label class="field"><span class="field__label">${k.source === 'none' ? 'Временный ключ' : 'Заменить на временный'}</span>
-      <span class="input-wrap"><input class="input" type="password" name="key" autocomplete="off" spellcheck="false" placeholder="${esc(P.placeholder)}" data-key-input><button type="button" class="btn btn--text btn--icon btn--s" data-key-toggle aria-label="Показать ключ" aria-pressed="false">${I.eye}</button></span>
-      <span class="field__hint">${esc(P.keyHint)} Ключ не сохраняется на диск: он живёт, пока запущен редактор. Постоянный ключ кладут в файл .env в папке фабрики: ${esc(k.envVar)}=… Ключи лучше время от времени менять (ротировать) у провайдера.</span></label>
-    <div class="row"><button type="button" class="btn btn--secondary btn--s" data-key-set>${I.key}Использовать ключ</button>
-      ${k.source === 'temporary' ? '<button type="button" class="btn btn--text btn--s" data-key-clear><span>Забыть временный ключ</span></button>' : ''}
-      ${k.source !== 'none' ? `<button type="button" class="btn btn--text btn--s" data-key-check><span>${preset === 'openrouter' ? 'Проверить баланс' : 'Проверить ключ'}</span></button>` : ''}</div>
-    <p class="field__hint" data-key-result></p>`;
+/** @param {{path: string, label: string, tip: string, min: number, max: number}} sl @param {number} v */
+function slider(sl, v) {
+  const max = Math.max(sl.max, v);
+  return `<div class="slider" data-slider="${sl.path}"><span class="slider__label">${esc(t(/** @type {any} */ (sl.label)))}${tip(t(/** @type {any} */ (sl.tip)))}</span><span class="slider__value" data-value>${v}</span><span></span>
+    <input type="range" min="${sl.min}" max="${max}" step="1" value="${v}" style="--p:${((v - sl.min) / (max - sl.min)) * 100}%" aria-label="${esc(t(/** @type {any} */ (sl.label)))}">
+    <span class="ticks" aria-hidden="true">${Array.from({ length: max - sl.min + 1 }, (_, k) => `<span>${sl.min + k}</span>`).join('')}</span></div>`;
 }
+
+/** A searchable dropdown of models. @param {string} field  a MODEL_FIELDS key @param {string|null} value */
+const combo = (field, value) => `<div class="combo" data-combo="${field}"><button type="button" class="input combo__btn" data-combo-open aria-haspopup="listbox" aria-expanded="false"><span class="data">${esc(value ?? t('noFallback'))}</span></button>
+  <div class="combo__menu" hidden><span class="input-wrap"><input class="input" data-combo-search placeholder="${esc(t('search'))}" autocomplete="off" spellcheck="false"><span class="btn btn--text btn--icon btn--s" aria-hidden="true">${I.search}</span></span>
+    <div class="combo__list" role="listbox"></div><p class="combo__foot"></p></div></div>`;
 
 export async function openSettings() {
   const r = await attempt(() => call('getSettings'));
   if (!r) return;
   const s = r.settings;
-  const provider = s.provider.use;
-  let preset = s.provider.preset;
   /** @type {Record<string, any>} */
   const keys = r.keys;
-  for (const [p, k] of Object.entries(keys)) PRESETS[p].title = k.title;
+  /** @type {Record<string, string>} */
+  const titles = Object.fromEntries(Object.entries(keys).map(([p, k]) => [p, k.title]));
+  let preset = s.provider.preset;
+  /** what the form holds for each service: its models, endpoint and key variable */
+  /** @type {Record<string, Record<string, any>>} */
+  const svc = Object.fromEntries(Object.keys(keys).map(p => [p, Object.fromEntries([...Object.keys(MODEL_FIELDS), ...TEXT_FIELDS].map(f => [f, s.provider[p]?.[f] ?? null]))]));
+  /** the service's model lists, read once per service while the window is open @type {Record<string, Promise<any>>} */
+  const lists = {};
+  const listOf = (/** @type {string} */ p) => (lists[p] ??= call('listModels', { preset: p }));
+  listOf(preset).catch(() => {});
+
+  const keyBlock = (/** @type {any} */ k) => {
+    const state = k.source === 'none'
+      ? `<p class="keyline keyline--fail"><i class="dot dot--fail"></i><span><b>${esc(t('keyNone'))}</b> ${esc(t('keyNoneText', { service: titles[preset] }))}</span></p>`
+      : `<p class="keyline"><i class="dot dot--done"></i><span><b>${esc(t(k.source === 'temporary' ? 'keyTemp' : 'keyPerm'))}</b> ${esc(t(k.source === 'temporary' ? 'keyTempText' : 'keyPermText', { envVar: k.envVar }))}</span></p>`;
+    return `${state}
+      <span class="input-wrap"><input class="input" type="password" autocomplete="off" spellcheck="false" placeholder="${esc(t(k.source === 'none' ? 'keyPlaceholderNone' : 'keyPlaceholder'))}" data-key-input aria-label="${esc(t('keyOf', { service: titles[preset] }))}"><button type="button" class="btn btn--text btn--icon btn--s" data-key-toggle aria-label="${esc(t('keyShow'))}" aria-pressed="false">${I.eye}</button></span>
+      <span class="field__hint">${esc(t(/** @type {any} */ (`keyWhere_${preset}`)))} ${esc(t('keyHint', { envVar: k.envVar }))}</span>
+      <div class="keyacts">${k.source !== 'none' ? `<button type="button" class="btn btn--text btn--s" data-key-check><span>${esc(t('keyCheck'))}</span></button>` : ''}${k.source === 'temporary' ? `<button type="button" class="btn btn--text btn--s" data-key-clear><span>${esc(t('keyForget'))}</span></button>` : ''}</div>
+      <p class="field__hint" data-key-result></p>`;
+  };
+  const whoHint = (/** @type {string} */ use) => (use === 'codex-cli' ? `<div class="explain">${I.info}<span>${esc(t('codexExplain', { service: titles[preset] }))}</span></div>` : `<span class="field__hint">${esc(t('apiHint', { service: titles[preset] }))}</span>`);
+  const use0 = s.provider.use;
+  const theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
+
   const { sheet, close } = openSheet({
-    title: 'Настройки',
+    title: t('title'),
     body: `<form class="form" data-form onsubmit="return false">
-      <section class="form__sec" aria-label="Сервис"><span class="label">Сервис</span>
-        <div class="field"><span class="field__label">Через какой сервис работают модели</span>
-          <div class="seg" role="group" data-preset>${Object.entries(PRESETS).map(([p, P]) => `<button type="button" data-v="${p}" aria-pressed="${p === preset}">${esc(P.title)}</button>`).join('')}</div>
-          <span class="field__hint" data-preset-hint>${esc(PRESETS[preset].hint)}</span></div></section>
-      <section class="form__sec" aria-label="Ключ"><span class="label" data-key-title>Ключ ${esc(PRESETS[preset].title)}</span><div class="keyblock" data-key>${keyBlock(keys[preset], preset)}</div></section>
-      <section class="form__sec" aria-label="Генерация"><span class="label">Генерация</span>
-        <div class="field"><span class="field__label">Кто рисует картинки</span>
-          <div class="seg" role="group" data-provider><button type="button" data-v="api" aria-pressed="${provider === 'api'}" data-api-title>${esc(PRESETS[preset].title)}</button><button type="button" data-v="codex-cli" aria-pressed="${provider === 'codex-cli'}">Codex CLI</button></div>
-          <span class="field__hint" data-provider-hint>${esc(providerHint(provider, preset))}</span></div>
-        ${FIELDS.main.map(f => fieldHtml(f, s)).join('')}
-      </section>
-      <section class="form__sec" aria-label="Взгляд на карточки"><span class="label">Взгляд на карточки</span>
-        <div class="field"><span class="field__label">Смотрящая модель проверяет каждую попытку</span>
-          <div class="seg" role="group" data-look><button type="button" data-v="true" aria-pressed="${s.look.use}">Включена</button><button type="button" data-v="false" aria-pressed="${!s.look.use}">Выключена</button></div>
-          <span class="field__hint">Сверяет картинку с заказом и замечает лишнее; нужен ключ сервиса. Выключайте, если карточки смотрит сам агент.</span></div>
-        ${FIELDS.look.map(f => fieldHtml(f, s)).join('')}
-      </section>
-      <section class="form__sec" aria-label="Вид"><span class="label">Вид</span>
-        <div class="field"><span class="field__label">Тема</span><div class="seg" role="group" data-theme-set>${['light', 'dark'].map(t => `<button type="button" data-v="${t}" aria-pressed="${(document.documentElement.dataset.theme ?? 'light') === t}">${t === 'light' ? `${I.sun}Светлая` : `${I.moon}Тёмная`}</button>`).join('')}</div>
-          <span class="field__hint">Запоминается в этом браузере.</span></div></section>
-      <details class="more"><summary class="btn btn--text btn--s"><span>Дополнительно</span></summary><div class="form">${FIELDS.more.map(f => fieldHtml(f, s)).join('')}</div></details>
+      <section class="sset" aria-label="${esc(t('service'))}"><h3 class="sset__title">${esc(t('service'))}</h3>
+        <div class="field"><span class="field__label">${esc(t('serviceField'))}</span>${seg('preset', Object.keys(keys).map(p => [p, esc(titles[p])]), preset)}<span class="field__hint" data-preset-hint>${esc(t(/** @type {any} */ (`hint_${preset}`)))}</span></div>
+        <div class="field"><span class="field__label" data-key-title>${esc(t('keyOf', { service: titles[preset] }))}</span><div class="keyblock" data-key>${keyBlock(keys[preset])}</div></div>
+        <label class="field"><span class="field__label">${esc(t('endpoint'))}</span><input class="input data" data-svc="endpoint" value="${esc(svc[preset].endpoint ?? '')}" spellcheck="false" inputmode="url"><span class="field__hint">${esc(t('endpointHint'))}</span></label>
+        <details class="disclose"><summary>${I.chev}${esc(t('moreService'))}</summary><div>
+          <label class="field"><span class="field__label">${esc(t('keyVar'))}</span><input class="input data" data-svc="keyEnvVar" value="${esc(svc[preset].keyEnvVar ?? '')}" spellcheck="false"><span class="field__hint">${esc(t('keyVarHint'))}</span></label></div></details></section>
+
+      <section class="sset" aria-label="${esc(t('generation'))}"><h3 class="sset__title">${esc(t('generation'))}</h3>
+        <div class="field"><span class="field__label">${esc(t('who'))}</span>${seg('use', [['api', esc(titles[preset])], ['codex-cli', 'Codex CLI']], use0)}<div data-who-hint>${whoHint(use0)}</div></div>
+        <div class="field" data-api-only ${use0 === 'codex-cli' ? 'hidden' : ''}><span class="field__label">${esc(t('imageModel'))}</span>${combo('model', svc[preset].model)}</div>
+        ${SLIDERS.map(sl => slider(sl, Number(get(s, sl.path)))).join('')}
+        <details class="disclose" data-api-only ${use0 === 'codex-cli' ? 'hidden' : ''}><summary>${I.chev}${esc(t('moreGeneration'))}</summary><div>
+          <div class="field"><span class="field__label">${esc(t('fallback'))}</span>${combo('fallbackModel', svc[preset].fallbackModel)}<span class="field__hint">${esc(t('fallbackHint'))}</span></div></div></details></section>
+
+      <section class="sset" aria-label="${esc(t('look'))}"><h3 class="sset__title">${esc(t('look'))}</h3>
+        <div class="field"><span class="field__label">${esc(t('lookField'))}</span>${seg('look', [['true', esc(t('on'))], ['false', esc(t('off'))]], String(!!s.look.use))}<span class="field__hint">${esc(t('lookHint'))}</span></div>
+        <div class="field"><span class="field__label">${esc(t('visionModel'))}</span>${combo('visionModel', svc[preset].visionModel)}</div></section>
+
+      <section class="sset" aria-label="${esc(t('textSection'))}"><h3 class="sset__title">${esc(t('textSection'))}</h3>
+        <div class="field"><span class="field__label">${esc(t('textModel'))}</span>${combo('textModel', svc[preset].textModel)}<span class="field__hint">${esc(t('textHint'))}</span></div></section>
+
+      <section class="sset" aria-label="${esc(t('view'))}"><h3 class="sset__title">${esc(t('view'))}</h3>
+        <div class="field"><span class="field__label">${esc(t('theme'))}</span>${seg('theme', [['light', `${I.sun}${esc(t('light'))}`], ['dark', `${I.moon}${esc(t('dark'))}`]], theme)}</div>
+        <div class="field"><span class="field__label">${esc(t('language'))}</span>${seg('lang', LANGS.map(l => [l, l === 'ru' ? 'Русский' : 'English']), lang())}<span class="field__hint">${esc(t('languageHint'))}</span></div></section>
+
+      <section class="sset sset--off" aria-label="${esc(t('stopEditor'))}"><button type="button" class="btn btn--secondary" data-stop>${I.power}<span>${esc(t('stopEditor'))}</span></button>
+        <span class="field__hint">${esc(t('stopHint'))}</span></section>
     </form>`,
-    foot: `<button type="button" class="btn btn--secondary" data-close>Отмена</button><button type="button" class="btn btn--primary" data-save>Сохранить</button>`,
+    foot: `<button type="button" class="btn btn--secondary" data-close>${esc(t('cancel'))}</button><button type="button" class="btn btn--primary" data-save>${esc(t('save'))}</button>`,
   });
+
+  // ---------- the key: applied on paste, on leaving the field and on Enter ----------
   const keyEl = /** @type {HTMLElement} */ (sheet.querySelector('[data-key]'));
-  /** A service's key changed: its block, and the top bar's chip when it is the settings' service. @param {any} k */
+  /** A service's key changed: its block, and the top bar when it is the settings' service. @param {any} k */
   const redrawKey = k => {
     keys[preset] = k;
     if (preset === s.provider.preset) app.key = k;
-    keyEl.innerHTML = keyBlock(k, preset);
+    keyEl.innerHTML = keyBlock(k);
   };
-  const usePressed = () => /** @type {HTMLElement} */ (sheet.querySelector('[data-provider] [aria-pressed="true"]')).dataset.v ?? 'api';
+  let applying = '';
+  const applyKey = async () => {
+    const input = /** @type {HTMLInputElement|null} */ (keyEl.querySelector('[data-key-input]'));
+    const value = input?.value.trim() ?? '';
+    if (!value || value === applying) return;
+    applying = value;
+    const k = await attempt(() => call('setKey', { key: value, preset }));
+    applying = '';
+    if (k) { redrawKey(k); toast(t('keySet'), { kind: 'done' }); delete lists[preset]; listOf(preset).catch(() => {}); }
+  };
+  keyEl.addEventListener('paste', e => { if (/** @type {HTMLElement} */ (e.target).matches('[data-key-input]')) setTimeout(applyKey, 0); });
+  keyEl.addEventListener('change', e => { if (/** @type {HTMLElement} */ (e.target).matches('[data-key-input]')) applyKey(); });
+  keyEl.addEventListener('keydown', e => { if (e.key === 'Enter' && /** @type {HTMLElement} */ (e.target).matches('[data-key-input]')) { e.preventDefault(); applyKey(); } });
+
+  // ---------- the model dropdowns: a menu that opens over the form, the form itself never redrawn ----------
+  /** @type {HTMLElement|null} */
+  let openCombo = null;
+  const closeCombo = () => {
+    if (!openCombo) return;
+    /** @type {HTMLElement} */ (openCombo.querySelector('.combo__menu')).hidden = true;
+    openCombo.querySelector('[data-combo-open]')?.setAttribute('aria-expanded', 'false');
+    openCombo = null;
+  };
+  /** @param {HTMLElement} box */
+  async function fillCombo(box) {
+    const field = /** @type {keyof typeof MODEL_FIELDS} */ (box.dataset.combo);
+    const def = MODEL_FIELDS[field];
+    const listEl = /** @type {HTMLElement} */ (box.querySelector('.combo__list'));
+    const foot = /** @type {HTMLElement} */ (box.querySelector('.combo__foot'));
+    const query = /** @type {HTMLInputElement} */ (box.querySelector('[data-combo-search]')).value.trim().toLowerCase();
+    const cur = svc[preset][field];
+    let models = /** @type {{id: string, name?: string}[]} */ ([]);
+    let failed = '';
+    if (!lists[preset]) foot.textContent = t('loading');
+    try { models = (await listOf(preset))[def.kind] ?? []; } catch (/** @type {any} */ e) { failed = e?.message ?? String(e); delete lists[preset]; }
+    if (openCombo !== box) return;
+    const hits = models.filter(m => !query || m.id.toLowerCase().includes(query) || (m.name ?? '').toLowerCase().includes(query));
+    const opt = (/** @type {string|null} */ id, /** @type {string} */ label, /** @type {string} */ tag = '') => `<button type="button" class="combo__opt" role="option" data-pick="${esc(id ?? '')}" aria-selected="${id === cur}"><span class="data">${esc(label)}</span><span class="combo__tag">${esc(tag)}</span></button>`;
+    const typed = query && !models.some(m => m.id.toLowerCase() === query) ? /** @type {HTMLInputElement} */ (box.querySelector('[data-combo-search]')).value.trim() : '';
+    listEl.innerHTML = [
+      ...(def.none && !query ? [opt(null, t('noFallback'))] : []),
+      ...hits.slice(0, LIST_MAX).map(m => opt(m.id, m.id, m.name && m.name !== m.id ? m.name : '')),
+      ...(typed ? [opt(typed, t('take', { id: typed }))] : []),
+    ].join('');
+    foot.textContent = failed ? t('listFailed', { error: failed }) : hits.length > LIST_MAX ? t('shown', { n: LIST_MAX, all: hits.length }) : !hits.length ? t('nothing') : t(/** @type {any} */ (def.note));
+  }
+  /** @param {HTMLElement} box @param {string|null} id */
+  const pick = (box, id) => {
+    const field = /** @type {keyof typeof MODEL_FIELDS} */ (box.dataset.combo);
+    svc[preset][field] = id;
+    /** @type {HTMLElement} */ (box.querySelector('[data-combo-open] > span')).textContent = id ?? t('noFallback');
+    closeCombo();
+  };
+  sheet.addEventListener('input', e => {
+    const target = /** @type {HTMLElement} */ (e.target);
+    const box = /** @type {HTMLElement|null} */ (target.closest('[data-combo]'));
+    if (box && target.matches('[data-combo-search]')) { fillCombo(box); return; }
+    const sl = /** @type {HTMLElement|null} */ (target.closest('[data-slider]'));
+    if (sl) {
+      const input = /** @type {HTMLInputElement} */ (target);
+      /** @type {HTMLElement} */ (sl.querySelector('[data-value]')).textContent = input.value;
+      input.style.setProperty('--p', `${((Number(input.value) - Number(input.min)) / (Number(input.max) - Number(input.min))) * 100}%`);
+      return;
+    }
+    if (target.matches('[data-svc]')) svc[preset][/** @type {string} */ (target.dataset.svc)] = /** @type {HTMLInputElement} */ (target).value.trim() || null;
+  });
+  sheet.addEventListener('keydown', e => {
+    const target = /** @type {HTMLElement} */ (e.target);
+    if (!openCombo) return;
+    if (e.key === 'Escape') { e.stopPropagation(); closeCombo(); return; }
+    // Enter takes the first model of the list; with no model found, the id typed
+    if (e.key === 'Enter' && target.matches('[data-combo-search]')) {
+      e.preventDefault();
+      const first = /** @type {HTMLElement|null} */ (openCombo.querySelector('.combo__opt'));
+      if (first) pick(openCombo, first.dataset.pick || null);
+    }
+  }, true);
+  document.addEventListener('pointerdown', function away(e) {
+    if (!sheet.isConnected) { document.removeEventListener('pointerdown', away); return; }
+    if (openCombo && !openCombo.contains(/** @type {Node} */ (e.target))) closeCombo();
+  });
+
+  /** Shows the chosen service's values in the fields that depend on it. */
+  const showPreset = () => {
+    /** @type {HTMLElement} */ (sheet.querySelector('[data-preset-hint]')).textContent = t(/** @type {any} */ (`hint_${preset}`));
+    /** @type {HTMLElement} */ (sheet.querySelector('[data-key-title]')).textContent = t('keyOf', { service: titles[preset] });
+    /** @type {HTMLElement} */ (sheet.querySelector('[data-seg="use"] [data-v="api"]')).textContent = titles[preset];
+    /** @type {HTMLElement} */ (sheet.querySelector('[data-who-hint]')).innerHTML = whoHint(pressed(sheet, 'use'));
+    for (const el of /** @type {NodeListOf<HTMLInputElement>} */ (sheet.querySelectorAll('[data-svc]'))) el.value = svc[preset][/** @type {string} */ (el.dataset.svc)] ?? '';
+    for (const box of /** @type {NodeListOf<HTMLElement>} */ (sheet.querySelectorAll('[data-combo]'))) /** @type {HTMLElement} */ (box.querySelector('[data-combo-open] > span')).textContent = svc[preset][/** @type {string} */ (box.dataset.combo)] ?? t('noFallback');
+    keyEl.innerHTML = keyBlock(keys[preset]);
+    listOf(preset).catch(() => {});
+  };
 
   sheet.addEventListener('click', async e => {
-    const t = /** @type {HTMLElement} */ (e.target);
-    const tog = /** @type {HTMLElement|null} */ (t.closest('[data-key-toggle]'));
+    const target = /** @type {HTMLElement} */ (e.target);
+    const opener = /** @type {HTMLElement|null} */ (target.closest('[data-combo-open]'));
+    if (opener) {
+      const box = /** @type {HTMLElement} */ (opener.closest('[data-combo]'));
+      if (openCombo === box) { closeCombo(); return; }
+      closeCombo();
+      openCombo = box;
+      opener.setAttribute('aria-expanded', 'true');
+      /** @type {HTMLElement} */ (box.querySelector('.combo__menu')).hidden = false;
+      const search = /** @type {HTMLInputElement} */ (box.querySelector('[data-combo-search]'));
+      search.value = '';
+      search.focus();
+      fillCombo(box);
+      return;
+    }
+    const option = /** @type {HTMLElement|null} */ (target.closest('[data-pick]'));
+    if (option && openCombo) { pick(openCombo, option.dataset.pick || null); return; }
+    const tog = /** @type {HTMLElement|null} */ (target.closest('[data-key-toggle]'));
     if (tog) {
-      const input = /** @type {HTMLInputElement} */ (sheet.querySelector('[data-key-input]'));
+      const input = /** @type {HTMLInputElement} */ (keyEl.querySelector('[data-key-input]'));
       const show = input.type === 'password';
       input.type = show ? 'text' : 'password';
       tog.setAttribute('aria-pressed', String(show));
-      tog.setAttribute('aria-label', show ? 'Скрыть ключ' : 'Показать ключ');
+      tog.setAttribute('aria-label', t(show ? 'keyHide' : 'keyShow'));
       return;
     }
-    if (t.closest('[data-key-set]')) {
-      const input = /** @type {HTMLInputElement} */ (sheet.querySelector('[data-key-input]'));
-      const k = await attempt(() => call('setKey', { key: input.value, preset }));
-      if (k) { input.value = ''; redrawKey(k); toast('Временный ключ подключён.', { kind: 'done' }); }
-      return;
-    }
-    if (t.closest('[data-key-clear]')) { const k = await attempt(() => call('clearKey', { preset })); if (k) redrawKey(k); return; }
-    if (t.closest('[data-key-check]')) {
-      const out = /** @type {HTMLElement} */ (sheet.querySelector('[data-key-result]'));
-      out.textContent = `Спрашиваю ${PRESETS[preset].title}…`;
+    if (target.closest('[data-key-clear]')) { const k = await attempt(() => call('clearKey', { preset })); if (k) redrawKey(k); return; }
+    if (target.closest('[data-key-check]')) {
+      const out = /** @type {HTMLElement} */ (keyEl.querySelector('[data-key-result]'));
+      out.classList.remove('field__hint--fail');
+      out.textContent = t('keyAsking', { service: titles[preset] });
       try {
         const c = await call('checkKey', { preset });
-        out.textContent = c.credits ? `Ключ работает. Осталось ${usd(c.credits.remaining)} из ${usd(c.credits.total)}.`
-          : `Ключ работает: доступно моделей — ${c.models}${c.hasModel ? '' : ', но модели картинок из настроек среди них нет'}. Баланс этот сервис через API не сообщает.`;
+        out.textContent = c.credits ? t('keyOkCredits', { left: usd(c.credits.remaining), total: usd(c.credits.total) }) : t('keyOkModels', { n: c.models, missing: c.hasModel ? '' : t('keyMissing') });
       } catch (/** @type {any} */ err) { out.textContent = err.message; out.classList.add('field__hint--fail'); }
       return;
     }
-    const th = /** @type {HTMLElement|null} */ (t.closest('[data-theme-set] > button'));
-    if (th) {
-      for (const b of /** @type {HTMLElement} */ (th.parentElement).children) b.setAttribute('aria-pressed', String(b === th));
-      setTheme(/** @type {string} */ (th.dataset.v));
+    const b = /** @type {HTMLElement|null} */ (target.closest('[data-seg] > button'));
+    if (b) {
+      const name = /** @type {HTMLElement} */ (b.parentElement).dataset.seg;
+      if (name === 'lang') { setLang(/** @type {import('../i18n.js').Lang} */ (b.dataset.v)); return; }
+      for (const x of /** @type {HTMLElement} */ (b.parentElement).children) x.setAttribute('aria-pressed', String(x === b));
+      if (name === 'theme') setTheme(/** @type {string} */ (b.dataset.v));
+      if (name === 'preset') { closeCombo(); preset = /** @type {string} */ (b.dataset.v); showPreset(); }
+      if (name === 'use') {
+        /** @type {HTMLElement} */ (sheet.querySelector('[data-who-hint]')).innerHTML = whoHint(b.dataset.v ?? 'api');
+        for (const el of /** @type {NodeListOf<HTMLElement>} */ (sheet.querySelectorAll('[data-api-only]'))) el.hidden = b.dataset.v === 'codex-cli';
+      }
       return;
     }
-    const lk = /** @type {HTMLElement|null} */ (t.closest('[data-look] > button'));
-    if (lk) {
-      for (const b of /** @type {HTMLElement} */ (lk.parentElement).children) b.setAttribute('aria-pressed', String(b === lk));
+    if (target.closest('[data-stop]')) {
+      const running = [...jobs.values()].filter(j => j.status === 'running').length;
+      if (running && !(await confirmDialog({ title: t('stopAsk'), text: t('stopAskText', { n: running }), yes: t('stopYes'), no: t('stopNo'), icon: I.power }))) return;
+      await attempt(() => call('stopEditor', { force: true }));
       return;
     }
-    const pr = /** @type {HTMLElement|null} */ (t.closest('[data-preset] > button'));
-    if (pr) {
-      preset = /** @type {string} */ (pr.dataset.v);
-      for (const b of /** @type {HTMLElement} */ (pr.parentElement).children) b.setAttribute('aria-pressed', String(b === pr));
-      /** @type {HTMLElement} */ (sheet.querySelector('[data-preset-hint]')).textContent = PRESETS[preset].hint;
-      /** @type {HTMLElement} */ (sheet.querySelector('[data-key-title]')).textContent = `Ключ ${PRESETS[preset].title}`;
-      /** @type {HTMLElement} */ (sheet.querySelector('[data-api-title]')).textContent = PRESETS[preset].title;
-      /** @type {HTMLElement} */ (sheet.querySelector('[data-provider-hint]')).textContent = providerHint(usePressed(), preset);
-      for (const el of /** @type {NodeListOf<HTMLElement>} */ (sheet.querySelectorAll('[data-preset-field]'))) el.hidden = el.dataset.presetField !== preset;
-      keyEl.innerHTML = keyBlock(keys[preset], preset);
-      return;
-    }
-    const pv = /** @type {HTMLElement|null} */ (t.closest('[data-provider] > button'));
-    if (pv) {
-      for (const b of /** @type {HTMLElement} */ (pv.parentElement).children) b.setAttribute('aria-pressed', String(b === pv));
-      /** @type {HTMLElement} */ (sheet.querySelector('[data-provider-hint]')).textContent = providerHint(usePressed(), preset);
-      return;
-    }
-    if (t.closest('[data-save]')) {
+    if (target.closest('[data-save]')) {
       /** @type {Record<string, any>} */
       const patch = {};
-      put(patch, 'provider.use', usePressed());
-      put(patch, 'provider.preset', preset);
-      put(patch, 'look.use', /** @type {HTMLElement} */ (sheet.querySelector('[data-look] [aria-pressed="true"]')).dataset.v === 'true');
-      /** number fields left empty: back to their default */
+      /** @type {string[]} fields left empty: back to their default */
       const reset = [];
-      for (const f of /** @type {any[]} */ (allPaths())) {
-        const input = /** @type {HTMLInputElement} */ (sheet.querySelector(`[name="${f.path}"]`));
-        const raw = input.value.trim();
-        if (f.type !== 'number') { put(patch, f.path, raw === '' && f.nullable ? null : raw); continue; }
-        // a number field with text it cannot read reports an empty value: badInput tells the two apart
-        if (raw === '' && !input.validity.badInput) { reset.push(f.path); continue; }
-        const n = Number(raw);
-        if (raw === '' || !Number.isFinite(n) || n < f.min) {
-          input.closest('details')?.setAttribute('open', '');
-          input.focus();
-          toast(`«${f.label}»: нужно число не меньше ${f.min}. Пустое поле вернёт значение по умолчанию.`, { kind: 'fail' });
-          return;
-        }
-        put(patch, f.path, n);
+      put(patch, 'provider.use', pressed(sheet, 'use'));
+      put(patch, 'provider.preset', preset);
+      put(patch, 'look.use', pressed(sheet, 'look') === 'true');
+      for (const [p, v] of Object.entries(svc)) {
+        for (const f of Object.keys(MODEL_FIELDS)) if (v[f] !== (s.provider[p]?.[f] ?? null)) put(patch, `provider.${p}.${f}`, v[f]);
+        for (const f of TEXT_FIELDS) { if (v[f] === null) reset.push(`provider.${p}.${f}`); else if (v[f] !== s.provider[p]?.[f]) put(patch, `provider.${p}.${f}`, v[f]); }
+      }
+      for (const sl of SLIDERS) {
+        const n = Number(/** @type {HTMLInputElement} */ (sheet.querySelector(`[data-slider="${sl.path}"] input`)).value);
+        if (!Number.isInteger(n) || n < sl.min) { toast(t('needNumber', { label: t(/** @type {any} */ (sl.label)), min: sl.min }), { kind: 'fail' }); return; }
+        put(patch, sl.path, n);
       }
       const ok = await attempt(() => call('saveSettings', { patch, reset }));
-      if (ok) { app.key = ok.key; close(); toast('Настройки сохранены.', { kind: 'done' }); }
+      if (ok) { app.key = ok.key; close(); toast(t('saved'), { kind: 'done' }); }
     }
   });
 }

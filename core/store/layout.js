@@ -15,6 +15,9 @@ export const SET_FILE = 'set.json';
 export const SETS_DIR = 'sets';
 export const CARDS_DIR = 'cards';
 export const EXPORT_DIR = 'export';
+/** The factory's export folder at the top of collections/ (an export of every collection). The underscore keeps it
+ * apart from collection folders: a collection's id is a slug of its title and never starts with one. */
+export const FACTORY_EXPORT_DIR = '_export';
 /** The factory's spend ledger at the top of collections/: paid calls that no card records (plans, text help). */
 export const SPEND_FILE = 'spend.jsonl';
 

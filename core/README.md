@@ -9,7 +9,7 @@ For agents. The product's vision: `docs/plans/VISION.md` («Устройство
 | `providers/` | the services every keyed call goes to — API presets (`provider.preset`): OpenRouter (`openrouter.js`, `openrouter-text.js`) and Google AI Studio, the Gemini API (`gemini.js`), each with images, vision and text behind one contract; Codex CLI for images; each image model's profile (ratios, reference images, request fields, `sameAs`) | `preset.js`, `openrouter.js`, `gemini.js`, `codex-cli.js`, `models.js` |
 | `image/` | model image → card pixels (`prepare.js`), post-processing shared with the browser (`adjust.js`, no imports) | |
 | `style/` | card orders, prompt assembly from the bible's fragments, reference picking | `style/README.md` |
-| `card/` | one card: generate → prepare → hero outline (`hero.js`) → tune → check → the vision model's look (`look.js`) → regenerate (`make.js`); a person's requests: regenerate with a wish, edit, adjust by hand (or reset to the program's own), import an image (checked as strictly as a generated one), choose any version (attempt) as the card; recheck | `card/card-file.js` |
+| `card/` | one card: generate → prepare → hero outline (`hero.js`) → tune → check → the vision model's look (`look.js`) → regenerate with a correction the text model writes from the findings (`fix.js`, `make.js`); a person's requests: regenerate (a wish optional: the findings of the version it starts from are corrected), a proposed wish from the findings (`proposeCardWish`), edit, adjust by hand (or reset to the program's own), import an image (checked as strictly as a generated one), choose any version (attempt) as the card; recheck | `card/card-file.js` |
 | `store/` | collections, sets, the card pool, moves, export, live events | `store/README.md` |
 | `set/` | planning a set and a collection by the style's rules, generating them; loose cards into a collection's pool | `set/README.md` |
 | `text/` | text help: a producer's rough notes → the finished text of a field (`draft.js` `draftText`) | `text/draft.js` |
@@ -37,7 +37,8 @@ deleteCard(collectionId, cardId)                     // OS trash; its slot becom
 newCardId(collectionId, base) → id                   // sync; unique, readable (from the card's title); creates the folder
 cardDir(collectionId, cardId) → absolute path        // sync; where core/card writes the card
 listCards(collectionId, { setId? , pool? }) → CardSummary[]   // id, title, image, status, checks, cost, setId, slot, busy
-exportItems({ collectionId, setIds?, cardIds?, pool?, format: 'png' | 'zip', name? }) → { path, files, skipped }   // nothing chosen = every set and the pool
+exportItems({ collectionId?, setIds?, cardIds?, pool?, originals?, format: 'png' | 'zip', name? }) → { path, files, skipped }   // nothing chosen = the chosen variant of every set and the pool (pool: false — without it, pool: true — only it); no collectionId = every collection into collections/_export/; originals = the model original beside each card
+exportDir(collectionId?) → path
 recordSpend(collectionId | null, { kind: 'images'|'vision'|'text', what, model, usd })   // a paid call no card records
 spend({ collectionId? }?) → { images, vision, text, total, unknown }                    // USD by kind: a collection, or the factory
 openFolder(path)                                     // the OS file manager

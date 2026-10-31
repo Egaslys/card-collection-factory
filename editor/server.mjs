@@ -18,7 +18,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { cli } from '../tools/cli-args.mjs';
 import { loadSettings, ROOT } from '../core/settings.js';
-import { COLLECTIONS_DIR } from '../core/store/layout.js';
+import { COLLECTIONS_DIR, SLOT_COUNT } from '../core/store/layout.js';
 import { createJobs } from './server/jobs.js';
 import { presetOf } from '../core/providers/preset.js';
 import { initKey, keyStatus } from './server/key.js';
@@ -34,6 +34,8 @@ const KEEPALIVE_MS = 25000;
 const WAIT_MS = 60000;
 /** How often an editor run from a terminal checks that the terminal's process is still its parent. */
 const ORPHAN_CHECK_MS = 2000;
+/** How long a stop asked by the page waits, so the answer of the call reaches the page first. */
+const STOP_DELAY_MS = 150;
 
 /** @type {Record<string, string>} */
 const MIME = {
@@ -43,6 +45,8 @@ const MIME = {
   '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8',
 };
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp']);
+/** The jobs that draw pictures (their `about` says when Codex CLI draws). */
+const DRAWING_OPS = { makeCard: 1, regenerateCard: 1, editCard: 1, makeSet: 1, makeCollection: 1, makeCards: 1, buildSet: 1, buildCollection: 1 };
 /** Operations after which every open page is told the key status (it shows on every screen). */
 const KEY_OPS = new Set(['setKey', 'clearKey', 'saveSettings']);
 
@@ -134,6 +138,22 @@ export function withUrls(v) {
   return out;
 }
 
+/**
+ * What a job is about, from its request, for the page to say it in the person's language (jobs.js JobAbout): the
+ * theme, the card's title, the build mode, the number of cards when it is known before the job starts, and `codex`
+ * when Codex CLI draws its pictures (the run's `provider`, else the settings').
+ * @param {string} op @param {any} a @param {any} settings
+ */
+export function aboutOf(op, a, settings) {
+  const variants = Number.isInteger(a.variants) && a.variants > 0 ? a.variants : 1;
+  const count = op === 'makeCards' ? Number(a.count) || undefined
+    : op === 'makeSet' ? (Array.isArray(a.only) ? a.only.length : SLOT_COUNT)
+      : op === 'buildSet' ? SLOT_COUNT * variants : undefined;
+  const draws = Object.hasOwn(DRAWING_OPS, op);
+  const codex = draws && (a.provider ? a.provider === 'codex-cli' : !a.model && settings?.provider?.use === 'codex-cli') ? true : undefined;
+  return Object.fromEntries(Object.entries({ theme: a.theme, title: a.order?.title, mode: a.mode, count, codex }).filter(([, v]) => v !== undefined && v !== null && v !== ''));
+}
+
 /** @param {string} url */
 export function openBrowser(url) {
   const [cmd, args] = process.platform === 'darwin' ? ['open', [url]] : process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : ['xdg-open', [url]];
@@ -163,10 +183,11 @@ export async function runningEditor() {
 
 /**
  * Starts the editor. Resolves when it listens.
- * @param {{port?: number, quiet?: boolean, discovery?: boolean}} [o]  port 0 = any free port; discovery: write .ccf/editor.json
+ * @param {{port?: number, quiet?: boolean, discovery?: boolean, onStop?: () => void}} [o]  port 0 = any free port;
+ *   discovery: write .ccf/editor.json; onStop: after the page's «Выключить редактор» closed the server (the script exits)
  * @returns {Promise<{url: string, port: number, token: string, close: () => Promise<void>}>}
  */
-export async function startEditor({ port, quiet = false, discovery = true } = {}) {
+export async function startEditor({ port, quiet = false, discovery = true, onStop } = {}) {
   const settings = /** @type {any} */ (loadSettings());
   initKey(presetOf(settings.provider).keyEnvVar);
   const { OPS } = await import('./server/ops.js');
@@ -181,6 +202,11 @@ export async function startEditor({ port, quiet = false, discovery = true } = {}
     for (const c of clients) c.write(data);
   };
   const jobs = createJobs(broadcast);
+  /** The page's «Выключить редактор»: every page is told, the answer goes out, then the server closes. */
+  const shutdown = () => {
+    broadcast({ type: 'bye' });
+    setTimeout(() => { close().then(() => onStop?.()); }, STOP_DELAY_MS);
+  };
   // a store event { type: collection|set|card, … } goes to the page as { type: 'store', entity, … }
   const stopWatch = store.watch(e => broadcast({ ...e, type: 'store', entity: e.type }));
   const keepalive = setInterval(() => { for (const c of clients) c.write(': keepalive\n\n'); }, KEEPALIVE_MS);
@@ -241,13 +267,13 @@ export async function startEditor({ port, quiet = false, discovery = true } = {}
         if (op.job) {
           const job = jobs.start({
             op: om[1], title: op.title?.(args) ?? om[1], scope: op.scope?.(args) ?? {}, cancellable: !!op.cancellable, spentOf: op.spentOf,
-            run: ctx => op.run(args, ctx),
+            run: ctx => op.run(args, ctx), about: aboutOf(om[1], args, loadSettings()),
           });
           sendJson(res, 202, { job: withUrls(job) });
           return;
         }
         try {
-          const result = await op.run(args, { progress: () => {}, signal: new AbortController().signal });
+          const result = await op.run(args, { progress: () => {}, signal: new AbortController().signal, editor: { running: jobs.running, stop: shutdown } });
           sendJson(res, 200, { result: withUrls(result ?? null) });
           if (KEY_OPS.has(om[1])) broadcast({ type: 'key', key: keyStatus() });
         } catch (/** @type {any} */ e) {
@@ -322,16 +348,17 @@ export async function startEditor({ port, quiet = false, discovery = true } = {}
     } catch { /* already gone */ }
   };
 
-  return {
-    url, port: actualPort, token,
-    close: async () => {
-      clearInterval(keepalive);
-      stopWatch();
-      for (const c of clients) c.end();
-      removeDiscovery();
-      await new Promise(r => server.close(() => r(undefined)));
-    },
-  };
+  /** @type {Promise<void>|undefined} */
+  let closing;
+  const close = () => (closing ??= (async () => {
+    clearInterval(keepalive);
+    stopWatch();
+    for (const c of clients) c.end();
+    removeDiscovery();
+    server.closeAllConnections?.();
+    await new Promise(r => server.close(() => r(undefined)));
+  })());
+  return { url, port: actualPort, token, close };
 }
 
 // ---------- run as a script ----------
@@ -358,7 +385,7 @@ a free one is used.`,
     console.log(`Редактор уже запущен: ${target}`);
     if (browser) openBrowser(target);
   } else {
-    const ed = await startEditor({ port: values.port !== undefined ? +values.port : undefined });
+    const ed = await startEditor({ port: values.port !== undefined ? +values.port : undefined, onStop: () => process.exit(0) });
     const target = pageUrl(ed.url, /** @type {string|undefined} */ (values.open));
     const key = keyStatus();
     console.log(`Редактор открыт: ${target}`);
