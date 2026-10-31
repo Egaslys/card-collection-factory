@@ -219,10 +219,11 @@ export async function checkCard(card, { baseDir, overlaysDir, outline } = {}) {
     const byEye = METHOD.backdrop_colour_strict_placements.includes(s.placement) ? {} : { soft: true, note: 'the floor, support or wall around the hero is in the backdrop measure: check by eye' };
     const t7 = T['COLOUR.7'], h = hb.hero?.dominant, b = hb.bg?.dominant;
     if (h && b) {
-      const achrom = h.C < t7.achromatic_hero_C_max;
+      // a white, grey or metal hero on a saturated backdrop: metal mirrors the backdrop, so its main colour is dull rather than grey
+      const achrom = h.C < t7.achromatic_hero_C_max || h.C <= t7.dull_hero_C_ratio_max * b.C;
       const hueOk = hb.hero_chromatic && hb.bg_chromatic && hb.hue_diff >= t7.hue_diff_min;
       const ok = achrom || hueOk || Math.abs(hb.dL) >= t7.dL_min;
-      res.push(make('COLOUR.7', ok ? 'PASS' : 'FAIL', `hero ${h.hex} vs backdrop ${b.hex}: hue diff ${hb.hue_diff}°, dL ${hb.dL}, hero C* ${h.C}`, `hue diff ≥ ${t7.hue_diff_min}° or |dL| ≥ ${t7.dL_min}; hero C* < ${t7.achromatic_hero_C_max} passes`, ok ? null : t7.note));
+      res.push(make('COLOUR.7', ok ? 'PASS' : 'FAIL', `hero ${h.hex} vs backdrop ${b.hex}: hue diff ${hb.hue_diff}°, dL ${hb.dL}, hero C* ${h.C}, backdrop C* ${b.C}`, `hue diff ≥ ${t7.hue_diff_min}° or |dL| ≥ ${t7.dL_min}; hero C* < ${t7.achromatic_hero_C_max} or ≤ ${t7.dull_hero_C_ratio_max} × backdrop C* passes`, ok ? null : t7.note));
       res.push(range('COLOUR.8a', VALUE_OF['COLOUR.8a']({ bg: b }), byEye)); res.push(range('COLOUR.8b', VALUE_OF['COLOUR.8b']({ bg: b }))); res.push(range('COLOUR.8c', VALUE_OF['COLOUR.8c']({ bg: b })));
       res.push(range('COLOUR.8d', hb.bg.L_p90 - hb.bg.L_p10));
     } else for (const id of ['COLOUR.7', 'COLOUR.8a', 'COLOUR.8b', 'COLOUR.8c', 'COLOUR.8d']) res.push(nm(id, 'hero or backdrop region too small'));

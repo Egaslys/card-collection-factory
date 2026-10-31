@@ -89,17 +89,19 @@ test('gemini: повтор при 429 и 5xx, затем ошибка HTTP со 
 
 test('gemini askVision и complete: уровень размышлений из effort, без temperature, JSON, system → systemInstruction', async t => {
   const textAnswer = text => ({ candidates: [{ content: { parts: [{ text: 'thinking…', thought: true }, { text }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 1000, candidatesTokenCount: 50, thoughtsTokenCount: 150 } });
-  const { calls, endpoint } = await fakeGemini(t, textAnswer('{"box_2d": [1, 2, 3, 4]}'), textAnswer('{"plan": 1}'), { candidates: [{ content: { parts: [] }, finishReason: 'MAX_TOKENS' }] });
+  const { calls, endpoint } = await fakeGemini(t, textAnswer('{"box_2d": [1, 2, 3, 4]}'), textAnswer('{"best": 1}'), textAnswer('{"plan": 1}'), { candidates: [{ content: { parts: [] }, finishReason: 'MAX_TOKENS' }] });
   const v = await askVision({ endpoint, apiKey: KEY, model: 'flash', prompt: 'find', image: { bytes: png, mime: 'image/png' }, maxTokens: 2000, reasoning: { effort: 'low' }, prices: PRICES });
   assert.equal(v.text, '{"box_2d": [1, 2, 3, 4]}', 'размышления не в ответе');
   assert.deepEqual(calls[0].body.generationConfig, { maxOutputTokens: 2000, thinkingConfig: { thinkingLevel: 'LOW' } });
   assert.deepEqual(calls[0].body.contents[0].parts.map((/** @type {any} */ p) => Object.keys(p)[0]), ['text', 'inlineData']);
+  await askVision({ endpoint, apiKey: KEY, model: 'flash', prompt: 'which?', images: [{ bytes: png, mime: 'image/png', label: 'Version 1:' }, { bytes: png, mime: 'image/png', label: 'Version 2:' }], prices: PRICES });
+  assert.deepEqual(calls[1].body.contents[0].parts.map((/** @type {any} */ p) => p.text ?? p.inlineData.mimeType), ['which?', 'Version 1:', 'image/png', 'Version 2:', 'image/png'], 'несколько картинок, каждая после своей подписи');
   const price = priceOf(PRICES, 'flash');
   assert.equal(v.cost, costOf({ promptTokenCount: 1000, candidatesTokenCount: 50, thoughtsTokenCount: 150 }, price));
   const c = await complete({ endpoint, apiKey: KEY, model: 'flash', json: true, maxTokens: 16000, temperature: 0.7, prices: PRICES,
     messages: [{ role: 'system', content: 'rules' }, { role: 'user', content: 'plan' }, { role: 'assistant', content: 'draft' }, { role: 'user', content: 'fix' }] });
   assert.equal(c.text, '{"plan": 1}');
-  const body = calls[1].body;
+  const body = calls[2].body;
   assert.deepEqual(body.systemInstruction, { parts: [{ text: 'rules' }] });
   assert.deepEqual(body.contents.map((/** @type {any} */ m) => m.role), ['user', 'model', 'user']);
   assert.deepEqual(body.generationConfig, { maxOutputTokens: 16000, responseMimeType: 'application/json' }, 'temperature не отправляется: Gemini 3.6+ её не принимают');
@@ -154,7 +156,7 @@ test('gemini: цена по дате — до конца акции и посл�
   assert.equal(calls[0].headers['x-goog-api-key'], KEY);
 });
 
-test('пресет Google: providerFrom рисует Nano Banana 2.1 через generateContent, смотрит Gemini 3.8 Flash; обработка — как у той же модели OpenRouter', async t => {
+test('пресет Google: providerFrom рисует Nano Banana 2.1 через generateContent, смотрит Gemini 4 Argon; обработка — как у той же модели OpenRouter', async t => {
   const loop = await import('../core/card/make.js').catch(() => null);
   if (!loop) return t.skip('sharp не установлен');
   const real = loadSettings();
@@ -167,9 +169,9 @@ test('пресет Google: providerFrom рисует Nano Banana 2.1 через 
   assert.ok(r.cost && r.cost > 0.03 && r.cost < 0.04, `цена картинки 1K около $0.034: ${r.cost}`);
   assert.equal(calls[0].url, '/v1beta/models/gemini-nano-banana-2.1:generateContent');
   assert.deepEqual(calls[0].body.generationConfig.imageConfig, { aspectRatio: real.provider.google.aspectRatio, imageSize: '1K' });
-  assert.equal(p.vision?.model, 'gemini-3.8-flash');
-  await /** @type {any} */ (p.vision)({ model: 'gemini-3.8-flash', prompt: 'q', image: { bytes: png, mime: 'image/png' }, maxTokens: 100, timeoutMs: 5000 });
-  assert.equal(calls[1].url, '/v1beta/models/gemini-3.8-flash:generateContent');
+  assert.equal(p.vision?.model, 'gemini-4-argon');
+  await /** @type {any} */ (p.vision)({ model: 'gemini-4-argon', prompt: 'q', image: { bytes: png, mime: 'image/png' }, maxTokens: 100, timeoutMs: 5000 });
+  assert.equal(calls[1].url, '/v1beta/models/gemini-4-argon:generateContent');
   await p.generate({ prompt: 'p', references: [], crop: { width: 430, height: 480 } });
   assert.equal(calls.at(-1).body.generationConfig.imageConfig.aspectRatio, '1:1', 'карточка: кадр не выше карточки (сверху и снизу не режем)');
   assert.equal(presetOf(provider).name, 'google');

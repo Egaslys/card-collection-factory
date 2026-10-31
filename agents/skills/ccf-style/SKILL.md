@@ -12,7 +12,7 @@ The only style so far is `styles/scapes/`. Its entry point is `styles/scapes/REA
 | prompt fragments, their markers, the assembly rules format | `core/style/README.md`; order of assembly for a person: `PROMPTS.md` |
 | how fragments are picked and joined, staging vocabulary, references and anchors | `prompt-assembly.json` |
 | set and collection rules as data, including what a card order may say to the image model (`orders`, SETS.md 9.22–9.24) and the text model's prompt glue for plans and loose cards (`prompt`) | `set-rules.json` (source: `SETS.md`); how core uses it: `core/set/README.md` |
-| post-processing numbers: bounds, shadow lift, the start per image model (a new model needs a `start` entry, or `sameAs` in its settings profile `provider.models`) | `processing.json` (its `_about`) |
+| post-processing numbers: bounds of the program's search, `manual` — the wider range a person or agent may set by hand, shadow lift, the start per image model (a new model needs a `start` entry, or `sameAs` in its settings profile `provider.models`) | `processing.json` (its `_about`) |
 | automated checks, thresholds, the control run, the hero outline | `checks/README.md` |
 | the order of checks for a person or agent | `CHECKLIST.md` |
 | reference cards / character anchors | `references/README.md` / `characters/README.md` |

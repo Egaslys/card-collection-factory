@@ -105,7 +105,7 @@ async function getCard(a) {
     return { ...rest, files, spend: attemptSpend(x), details };
   });
   const style = JSON.parse(fs.readFileSync(path.join(ROOT, 'styles', file.order.style, 'processing.json'), 'utf8'));
-  return { summary, order: file.order, chosen: file.chosen, chosenBy: file.chosenBy ?? 'checks', attempts, dir, processing: { neutral: style.neutral, bounds: style.bounds, sharpenMax: style.sharpen_amount_max } };
+  return { summary, order: file.order, chosen: file.chosen, chosenBy: file.chosenBy ?? 'checks', attempts, dir, processing: { neutral: style.neutral, bounds: style.bounds, manual: style.manual ?? {}, sharpenMax: style.sharpen_amount_max } };
 }
 
 /** The models of each service and endpoint, read once while the editor runs (listModels). @type {Map<string, Promise<any>>} */

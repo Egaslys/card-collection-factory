@@ -125,7 +125,7 @@ test('loadApiKey: из окружения, из .env, без ключа — ош
 });
 
 test('askVision: сначала текст, затем картинка data URL; рассуждения как заданы; текст ответа и цена', async () => {
-  const { calls, fetchImpl } = mock(reply(200, { choices: [{ message: { content: '{"box_2d": [1, 2, 3, 4]}' } }], usage: { cost: 0.0003 } }));
+  const { calls, fetchImpl } = mock(reply(200, { choices: [{ message: { content: '{"box_2d": [1, 2, 3, 4]}' } }], usage: { cost: 0.0003 } }), reply(200, { choices: [{ message: { content: '{"best": 1}' } }] }));
   const r = await askVision({ ...base, model: 'v/m', prompt: 'find it', image: { bytes: Buffer.from('img'), mime: 'image/png' }, maxTokens: 100, reasoning: { enabled: false }, net: { fetchImpl } });
   assert.equal(calls[0].url, 'https://example.test/api/v1/chat/completions');
   const body = JSON.parse(calls[0].init.body);
@@ -136,6 +136,10 @@ test('askVision: сначала текст, затем картинка data URL
   assert.deepEqual(body.messages[0].content.map(c => c.type), ['text', 'image_url']);
   assert.equal(body.messages[0].content[1].image_url.url, 'data:image/png;base64,' + Buffer.from('img').toString('base64'));
   assert.deepEqual(r, { text: '{"box_2d": [1, 2, 3, 4]}', model: 'v/m', cost: 0.0003 });
+  // several images, each after its label (the choice among a card's versions)
+  await askVision({ ...base, model: 'v/m', prompt: 'which?', images: [{ bytes: Buffer.from('a'), mime: 'image/png', label: 'Version 1:' }, { bytes: Buffer.from('b'), mime: 'image/png', label: 'Version 2:' }], net: { fetchImpl } });
+  const many = JSON.parse(calls[1].init.body).messages[0].content;
+  assert.deepEqual(many.map(c => c.text ?? c.image_url.url), ['which?', 'Version 1:', 'data:image/png;base64,' + Buffer.from('a').toString('base64'), 'Version 2:', 'data:image/png;base64,' + Buffer.from('b').toString('base64')]);
   const { calls: c2, fetchImpl: empty } = mock(reply(200, { choices: [] }));
   await assert.rejects(askVision({ ...base, model: 'v/m', prompt: 'p', image: { bytes: Buffer.from('i'), mime: 'image/png' }, net: { fetchImpl: empty } }), /без текста/);
   // an answer without text that was paid: the error carries its price

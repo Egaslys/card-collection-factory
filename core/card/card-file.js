@@ -15,6 +15,7 @@
 //       card.mask.png      the hero outline the checks used, drawn over the card, when there is one
 //       card.hero.png      the hero outline found in a box (core/card/hero.js): white = hero
 //       look.json          what the vision model saw (core/card/look.js): its answers, as given
+//       pick.json          the run's last attempt only: the vision model's choice among the versions (core/card/pick.js)
 //
 // An order whose output is not a card (kind "character-sheet", core/style/README.md) keeps the model's frame:
 // prepared.png and card.png have the model image's size, not the card size, and check.json holds only the list of
@@ -23,7 +24,10 @@
 // Every attempt is a version of the card (version n = attempt n). Who chooses the card: the checks (the best attempt,
 // `chosenBy` "checks"), an explicit request of a person or an agent (regenerate with a wish, edit, import: the best of
 // the attempts the request made, `chosenBy` "request"), or a person or an agent picking a version by hand
-// (`chooseAttempt`, `chosenBy` "choice"); a choice by request or by hand is kept when the checks run again.
+// (`chooseAttempt`, `chosenBy` "choice"); a choice by request or by hand is kept when the checks run again. When a run
+// leaves several versions, the vision model looks at them all at once and names the best (core/card/pick.js,
+// `chosenBy` "look"; the pick and its reason are recorded in the run's last attempt, `pick`); that choice is kept
+// when the checks run again too, as nobody asks the vision model then.
 //
 // collections/ is not tracked by Git (VISION.md «Устройство и стек»).
 import fs from 'node:fs';
@@ -32,7 +36,7 @@ import path from 'node:path';
 export const CARD_FILE = 'card.json';
 export const FINAL_IMAGE = 'card.png';
 /** File names inside attempts/<n>/ (the model original is `model` + the extension of its format). */
-export const ATTEMPT_FILES = { original: 'model', prepared: 'prepared.png', card: 'card.png', check: 'check.json', mask: 'card.mask.png', hero: 'card.hero.png', look: 'look.json' };
+export const ATTEMPT_FILES = { original: 'model', prepared: 'prepared.png', card: 'card.png', check: 'check.json', mask: 'card.mask.png', hero: 'card.hero.png', look: 'look.json', pick: 'pick.json' };
 
 /**
  * @typedef {object} CheckFail  an unexpected FAIL of the style's checks
@@ -94,18 +98,28 @@ export const ATTEMPT_FILES = { original: 'model', prepared: 'prepared.png', card
  */
 
 /**
- * USD an attempt spent: the image (when its price is known), the vision model's calls for its hero and its look, and the
- * text model's correction it was drawn with.
+ * USD an attempt spent: the image (when its price is known), the vision model's calls for its hero, its look and the
+ * choice among versions made after it, and the text model's correction it was drawn with.
  * @param {Attempt} a
  */
-export const attemptCost = a => (a.cost ?? 0) + (a.hero?.cost ?? 0) + (a.look?.cost ?? 0) + (a.fix?.cost ?? 0);
+export const attemptCost = a => (a.cost ?? 0) + (a.hero?.cost ?? 0) + (a.look?.cost ?? 0) + (a.pick?.cost ?? 0) + (a.fix?.cost ?? 0);
 
 /**
  * The same USD split by kind: `images` the image (0 for a free provider and an imported image), `vision` the vision
- * model's calls (hero and look), `text` the text model's correction (fix.js).
+ * model's calls (hero, look, the choice among versions), `text` the text model's correction (fix.js).
  * @param {Attempt} a @returns {{images: number, vision: number, text: number}}
  */
-export const attemptSpend = a => ({ images: a.cost ?? 0, vision: (a.hero?.cost ?? 0) + (a.look?.cost ?? 0), text: a.fix?.cost ?? 0 });
+export const attemptSpend = a => ({ images: a.cost ?? 0, vision: (a.hero?.cost ?? 0) + (a.look?.cost ?? 0) + (a.pick?.cost ?? 0), text: a.fix?.cost ?? 0 });
+
+/**
+ * @typedef {object} PickRecord  the vision model's choice among the card's versions (core/card/pick.js)
+ * @property {number[]} ns  the versions it saw, in the program's order
+ * @property {number|null} best  the version it named; null = no usable answer (`error`)
+ * @property {string} [reason]  why, in its words
+ * @property {string} model
+ * @property {number} cost  USD (0 when the service did not report it)
+ * @property {string} [error]
+ */
 
 /**
  * @typedef {object} FixRecord
@@ -139,6 +153,7 @@ export const attemptSpend = a => ({ images: a.cost ?? 0, vision: (a.hero?.cost ?
  * @property {Review} [review]
  * @property {HeroRecord} [hero]  the hero outline the checks used, when one was cut in a box (card.hero.png)
  * @property {LookRecord} [look]  the vision model's look at the card (look.json)
+ * @property {PickRecord} [pick]  the choice among the card's versions made after this attempt's run (pick.json)
  * @property {FixRecord} [fix]  the correction added at the end of `prompt`, written by the text model from the findings
  *   of an earlier attempt (core/card/fix.js)
  * @property {CheckSummary} [check]
@@ -151,7 +166,8 @@ export const attemptSpend = a => ({ images: a.cost ?? 0, vision: (a.hero?.cost ?
  * @property {import('../style/card-order.js').CardOrder} order  the current order; each attempt keeps its own prompt
  * @property {Attempt[]} attempts
  * @property {number|null} chosen  n of the chosen attempt (card.png is its copy)
- * @property {'checks'|'request'|'choice'} [chosenBy]  absent = checks; choice = a person or an agent made this
+ * @property {'checks'|'request'|'look'|'choice'} [chosenBy]  absent = checks; look = the vision model's pick among the
+ *   versions (the run's last attempt holds it, `pick`); choice = a person or an agent made this
  *   version the card (`chooseAttempt`)
  */
 

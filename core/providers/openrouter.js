@@ -180,21 +180,26 @@ export async function generateImage({ endpoint, apiKey, model, prompt, reference
 }
 
 /**
- * Asks a vision model about one image (POST {endpoint}/chat/completions: the text first, then the image, as the
- * OpenRouter image-understanding guide recommends), temperature 0: the answer is a short structured one.
+ * Asks a vision model about one image or several (POST {endpoint}/chat/completions: the text first, then the image, as
+ * the OpenRouter image-understanding guide recommends; several images each after its label), temperature 0: the answer
+ * is a short structured one.
  * @param {object} o
  * @param {string} o.endpoint @param {string} o.apiKey @param {string} o.model @param {string} o.prompt
- * @param {{bytes?: Uint8Array, path?: string, mime?: string}} o.image
+ * @param {{bytes?: Uint8Array, path?: string, mime?: string}} [o.image]
+ * @param {{bytes?: Uint8Array, path?: string, mime?: string, label?: string}[]} [o.images]  instead of `image`
  * @param {number} [o.maxTokens]
  * @param {Record<string, unknown>} [o.reasoning]  the request's `reasoning` field as is (e.g. {effort: "minimal"}); not sent when absent
  * @param {NetOptions} [o.net]
  * @returns {Promise<{text: string, model: string, cost: number|null}>}
  */
-export async function askVision({ endpoint, apiKey, model, prompt, image, maxTokens = 400, reasoning, net = {} }) {
-  const body = {
-    model, temperature: 0, max_tokens: maxTokens, ...(reasoning ? { reasoning } : {}),
-    messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: await toDataUrl(image) } }] }],
-  };
+export async function askVision({ endpoint, apiKey, model, prompt, image, images, maxTokens = 400, reasoning, net = {} }) {
+  /** @type {any[]} */
+  const content = [{ type: 'text', text: prompt }];
+  for (const one of images ?? [image ?? {}]) {
+    if ('label' in one && one.label) content.push({ type: 'text', text: one.label });
+    content.push({ type: 'image_url', image_url: { url: await toDataUrl(one) } });
+  }
+  const body = { model, temperature: 0, max_tokens: maxTokens, ...(reasoning ? { reasoning } : {}), messages: [{ role: 'user', content }] };
   const json = await request({ endpoint, apiKey, method: 'POST', route: '/chat/completions', body, ...net });
   const text = json.choices?.[0]?.message?.content;
   if (typeof text !== 'string') throw new ProviderError('Провайдер ответил без текста.', { status: 200, providerMessage: redact(JSON.stringify(json.error || {}).slice(0, 300), apiKey), cost: usageCost(json) });

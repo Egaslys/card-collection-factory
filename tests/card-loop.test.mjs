@@ -143,7 +143,7 @@ test('цикл: карточка, которая не проходит пров�
   assert.deepEqual(file.attempts[0].processing, JSON.parse(fs.readFileSync(path.join(ROOT, 'styles/scapes/processing.json'), 'utf8')).start[MODEL]);
 
   // second run on the same card: the known price limits it from the first call; attempts continue numbering
-  const again = await makeCard({ order: ORDER, ...at, card: r.id, settings: SETTINGS, provider: p, buildPrompt: fakePrompt, limits: { maxSpendUsd: 0.1 } });
+  const again = await makeCard({ order: ORDER, ...at, card: r.id, settings: SETTINGS, provider: p, buildPrompt: fakePrompt, limits: { maxSpendUsd: 0.086 } });
   assert.equal(again.dir, dir);
   assert.equal(again.stop, 'budget');
   assert.deepEqual(again.attempts.map(a => a.n), [3]);
@@ -615,6 +615,10 @@ test('ручная обработка: card.png заново из prepared.png �
   const made = await makeCard({ order: ORDER, ...await pool(), settings: SETTINGS, provider: fakeProvider(await grey(), 0.04), buildPrompt: fakePrompt, limits: { attempts: 2 } });
   assert.equal(made.chosen, 1);
   await assert.rejects(adjustCard({ dir: made.dir }), /Не задано/);
+  const { manual, bounds } = JSON.parse(fs.readFileSync(path.join(ROOT, 'styles/scapes/processing.json'), 'utf8'));
+  assert.ok(manual.saturation.min < bounds.saturation.min && manual.saturation.max > bounds.saturation.max, 'ручной диапазон шире поиска программы');
+  await assert.rejects(adjustCard({ dir: made.dir, n: 2, saturation: manual.saturation.max + 0.1 }), /вне диапазона ручной правки/);
+  await adjustCard({ dir: made.dir, n: 2, saturation: manual.saturation.max });
   const r = await adjustCard({ dir: made.dir, n: 2, saturation: 1.1, sharpen: 0.2 });
   const a = cardOf(made.dir).attempts[1];
   const start = JSON.parse(fs.readFileSync(path.join(ROOT, 'styles/scapes/processing.json'), 'utf8')).start[MODEL];
@@ -876,6 +880,7 @@ test('смотрящая модель в цикле: рамка героя → �
   const vision = async req => {
     asked.push(req);
     if (/box_2d/.test(req.prompt)) return { text: '{"box_2d": [60, 180, 940, 820]}', cost: 0.001 };
+    if (req.images) return { text: '{"best": 2, "reason": "a lantern, as ordered"}', cost: 0.003 };
     looks++;
     const subject = looks === 1 ? { ok: false, why: 'a candle, not a lantern' } : { ok: true, why: '' };
     return { text: JSON.stringify({ subject, staging: { ok: true }, additions: { ok: true }, costume: { ok: null }, checklist: [] }), cost: 0.002 };
@@ -896,12 +901,63 @@ test('смотрящая модель в цикле: рамка героя → �
   assert.equal(a2.look.verdict, 'ok');
   const lookFile = JSON.parse(fs.readFileSync(path.join(r.dir, 'attempts/1/look.json'), 'utf8'));
   assert.match(lookFile.prompt, /«Lantern»/);
-  assert.ok(Math.abs(r.spent - 2 * (0.04 + 0.001 * 2 + 0.002)) < 1e-9, `расходы ${r.spent}`);
+  assert.ok(Math.abs(r.spent - 2 * (0.04 + 0.001 * 2 + 0.002) - 0.003) < 1e-9, `расходы ${r.spent}`);
+  assert.deepEqual([card.chosen, card.chosenBy, a2.pick.best, a2.pick.cost], [2, 'look', 2, 0.003], 'две версии: выбор смотрящей модели');
   const before = asked.length;
   const re = await recheckCard({ dir: r.dir });
   assert.equal(asked.length, before, 'перепроверка бесплатна: контур из card.hero.png, взгляд из попытки');
   assert.deepEqual(re.attempts.find(a => a.n === 1).check.look, a1.check.look);
   assert.equal(re.attempts.find(a => a.n === 1).check.maskStatus, 'auto');
+  assert.deepEqual([re.chosen, cardOf(r.dir).chosenBy], [2, 'look'], 'перепроверка выбор смотрящей модели не трогает');
+});
+
+test('лучшая версия: замечание смотрящей модели весит больше измеренных FAIL стиля', () => {
+  const { rankAttempts, pickBest } = /** @type {any} */ (loop);
+  const fail = id => ({ id, title: id, value: 1, threshold: null, note: null, needsMask: false });
+  const drawn = { kind: 'drawing', what: 'the farmer has one arm', blocking: true };
+  const a1 = { n: 1, check: { maskStatus: 'auto', blocking: 1, needsEyes: 0, warns: 0, fails: [], look: { verdict: 'fix', issues: [drawn] } } };
+  const a2 = { n: 2, check: { maskStatus: 'auto', blocking: 2, needsEyes: 0, warns: 3, fails: [fail('COLOUR.15c'), fail('COMPOSITION.2')], look: { verdict: 'ok', issues: [] } } };
+  const a3 = { n: 3, check: { maskStatus: 'auto', blocking: 1, needsEyes: 0, warns: 9, fails: [fail('COLOUR.7')] } };
+  assert.deepEqual(rankAttempts([a1, a2, a3]).map(a => a.n), [3, 2, 1], 'ошибка рисунка — хуже двух измеренных FAIL');
+  assert.equal(pickBest([a1, a2]), 2);
+});
+
+test('лучшая версия на глаз: смотрящая модель видит все версии сразу с находками, её выбор и причина записаны, расход в потолке', { skip: noSharp }, async () => {
+  const { makeCard, regenerateCard } = /** @type {any} */ (loop);
+  const real = loadSettings();
+  const settings = { ...real, card: { ...real.card, attempts: 2, tuneProcessing: false } };
+  /** @type {any[]} */
+  const picks = [];
+  let looks = 0;
+  const vision = async req => {
+    if (/box_2d/.test(req.prompt)) return { text: 'no box', cost: 0 };
+    if (req.images) { picks.push(req); return { text: 'Sure. {"best": 1, "reason": "both hands are drawn right"}', cost: 0.01 }; }
+    looks++;
+    const drawing = looks === 1 ? { ok: true } : { ok: false, why: 'the hand has six fingers' };
+    return { text: JSON.stringify({ subject: looks === 1 ? { ok: false, why: 'a cup, not a mug' } : { ok: true }, drawing, checklist: [] }), cost: 0.002 };
+  };
+  const p = fakeProvider(await grey(), 0.04, { vision });
+  const r = await makeCard({ order: ORDER, ...await pool(), settings, provider: p, buildPrompt: fakePrompt });
+  assert.equal(picks.length, 1);
+  assert.deepEqual(picks[0].images.map((/** @type {any} */ i) => [i.label, path.relative(r.dir, i.path)]), [['Version 1:', 'attempts/1/card.png'], ['Version 2:', 'attempts/2/card.png']]);
+  assert.match(picks[0].prompt, /Version 1:\n(?:- .*\n)*- subject: a cup, not a mug\n\nVersion 2:/);
+  assert.match(picks[0].prompt, /Version 2:\n(?:- .*\n)*- drawing: the hand has six fingers\n/);
+  assert.ok(!/\{(title|order|count|versions|n|wish|findings)\}/.test(picks[0].prompt), 'все слоты заполнены');
+  const card = cardOf(r.dir);
+  assert.deepEqual([card.chosen, card.chosenBy], [1, 'look']);
+  assert.deepEqual(card.attempts[1].pick, { ns: [1, 2], best: 1, reason: 'both hands are drawn right', model: p.vision.model ?? real.provider.openrouter.visionModel, cost: 0.01 });
+  assert.equal(card.attempts[0].pick, undefined, 'выбор записан в последней попытке прогона');
+  assert.ok(fs.existsSync(path.join(r.dir, 'attempts/2/pick.json')));
+  assert.ok(Math.abs(r.spent - (2 * (0.04 + 0.002) + 0.01)) < 1e-9, `расходы ${r.spent}`);
+  // one version made by a request: nothing to compare it with among the request's versions
+  const one = await regenerateCard({ dir: r.dir, settings, provider: p, buildPrompt: fakePrompt });
+  assert.equal(picks.length, 1);
+  assert.deepEqual([one.chosen, cardOf(r.dir).chosenBy], [3, 'request']);
+  // the cap leaves no room for the choice: the program's order stands, and the report says so
+  const tight = await makeCard({ order: ORDER, ...await pool(), settings, provider: p, buildPrompt: fakePrompt, limits: { maxSpendUsd: 0.086 } });
+  assert.equal(picks.length, 1, 'выбор не помещается в потолок — не спрашивали');
+  assert.equal(cardOf(tight.dir).chosenBy, 'checks');
+  assert.ok(tight.warnings.some((/** @type {string} */ w) => /не помещается в потолок/.test(w)), tight.warnings.join('\n'));
 });
 
 test('запрос Codex: подпись к образцам из собранного запроса не повторяется и не заменяется общей', { skip: noSharp }, async () => {

@@ -144,7 +144,7 @@ export async function openCard(collectionId, cardId, { version, wish: typed = ''
     Object.assign(values, applied);
     const ranges = {
       sharpen: [0, Math.max(proc.sharpenMax, applied.sharpen)],
-      saturation: [Math.min(proc.bounds.saturation.min, applied.saturation), Math.max(proc.bounds.saturation.max, applied.saturation)],
+      saturation: [Math.min((proc.manual?.saturation ?? proc.bounds.saturation).min, applied.saturation), Math.max((proc.manual?.saturation ?? proc.bounds.saturation).max, applied.saturation)],
       brightness: [Math.min(proc.bounds.brightness.min, applied.brightness), Math.max(proc.bounds.brightness.max, applied.brightness)],
       shadows: [0, Math.max(proc.bounds.shadows?.max ?? 0, applied.shadows)],
     };

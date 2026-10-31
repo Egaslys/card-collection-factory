@@ -3,7 +3,7 @@
   "files": {
     ".claude/skills/ccf-core/SKILL.md": {
       "source": "agents/skills/ccf-core/SKILL.md",
-      "sha256": "d3dee9e3977563f0b9804b64abf7bcc6daf54026b5256dde2c6783adf99cb081",
+      "sha256": "b36f53d0a1c051ca16f807e56e05089d61fc86ca4348daf532be4ce8b4f1f688",
       "text": true
     },
     ".claude/skills/ccf-editor/SKILL.md": {
@@ -23,17 +23,17 @@
     },
     ".claude/skills/ccf-review-cards/SKILL.md": {
       "source": "agents/skills/ccf-review-cards/SKILL.md",
-      "sha256": "e12a461cbe6ebc1d4ebd18ecf9da3c7aa1a8dce4a0b77fed1a1fdd30fa30ce20",
+      "sha256": "1a5e34fdb820f29d696ea37c58e53787568d63cd388c930de0fcb6ddb382eda1",
       "text": true
     },
     ".claude/skills/ccf-style/SKILL.md": {
       "source": "agents/skills/ccf-style/SKILL.md",
-      "sha256": "960bc8b2d28f55df211b4c94f020fc5e1d16d3db04b5317c5beded0006a7768f",
+      "sha256": "c727b93eeb3f9ce4bbbe356a3cb26fd648d4f3d71470e224afa894405051c14a",
       "text": true
     },
     ".agents/skills/ccf-core/SKILL.md": {
       "source": "agents/skills/ccf-core/SKILL.md",
-      "sha256": "d3dee9e3977563f0b9804b64abf7bcc6daf54026b5256dde2c6783adf99cb081",
+      "sha256": "b36f53d0a1c051ca16f807e56e05089d61fc86ca4348daf532be4ce8b4f1f688",
       "text": true
     },
     ".agents/skills/ccf-editor/SKILL.md": {
@@ -53,12 +53,12 @@
     },
     ".agents/skills/ccf-review-cards/SKILL.md": {
       "source": "agents/skills/ccf-review-cards/SKILL.md",
-      "sha256": "e12a461cbe6ebc1d4ebd18ecf9da3c7aa1a8dce4a0b77fed1a1fdd30fa30ce20",
+      "sha256": "1a5e34fdb820f29d696ea37c58e53787568d63cd388c930de0fcb6ddb382eda1",
       "text": true
     },
     ".agents/skills/ccf-style/SKILL.md": {
       "source": "agents/skills/ccf-style/SKILL.md",
-      "sha256": "960bc8b2d28f55df211b4c94f020fc5e1d16d3db04b5317c5beded0006a7768f",
+      "sha256": "c727b93eeb3f9ce4bbbe356a3cb26fd648d4f3d71470e224afa894405051c14a",
       "text": true
     }
   }

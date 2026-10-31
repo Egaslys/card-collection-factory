@@ -53,11 +53,13 @@ import { checkAttempt, styleChecker, styleDir, withLook } from './check.js';
 import { findingsOf, proposeWish, writeFix } from './fix.js';
 import { findHero, locateHero, readOutline, readPixels as heroPixels, writeOutline } from './hero.js';
 import { lookAtCard } from './look.js';
+import { pickVersion } from './pick.js';
 import { tuneProcessing } from './tune.js';
 import { textCallOptions } from '../text/draft.js';
 
 /** @typedef {import('./card-file.js').Attempt} Attempt */
 /** @typedef {import('./card-file.js').CardFile} CardFile */
+/** @typedef {{path?: string, bytes?: Uint8Array, mime?: string}} ImageRef */
 /** @typedef {import('../style/card-order.js').CardOrder} CardOrder */
 /** @typedef {import('../image/adjust.js').AdjustSettings} AdjustSettings */
 /** @typedef {import('../style/style.js').OrderOutput} OrderOutput */
@@ -70,7 +72,7 @@ import { textCallOptions } from '../text/draft.js';
  * it is (a model that lacks the ratio is asked for the one closest to it). fallback: the provider to try, in the same
  * attempt, when this one fails (an error, a refusal, an answer without an image). legend: what the attached images
  * are, for a provider that says it in words (Codex); default: style references. vision: asks the vision model about one
- * image through the API preset of the run (provider.preset, with its key); absent when there is no key — the loop then
+ * image (or several, each after its label: the choice among versions) through the API preset of the run (provider.preset, with its key); absent when there is no key — the loop then
  * finds no hero box by itself and does not look (settings → vision, hero, look). text: the text model of the preset
  * (with its key), which writes the correction of a failed picture before the next attempt (fix.js); absent without a key.
  * @typedef {{model: string, free?: boolean, fallback?: Provider, vision?: VisionCall, text?: import('./fix.js').TextCall,
@@ -79,10 +81,10 @@ import { textCallOptions } from '../text/draft.js';
 
 /**
  * The vision call of a connection; `model`: its preset's vision model (without it, the settings preset's).
- * @typedef {((req: {model: string, prompt: string, image: {path?: string, bytes?: Uint8Array, mime?: string}, maxTokens: number, reasoning?: Record<string, unknown>, timeoutMs: number}) => Promise<{text: string, cost: number|null}>) & {model?: string}} VisionCall
+ * @typedef {((req: {model: string, prompt: string, image?: ImageRef, images?: (ImageRef & {label?: string})[], maxTokens: number, reasoning?: Record<string, unknown>, timeoutMs: number}) => Promise<{text: string, cost: number|null}>) & {model?: string}} VisionCall
  */
 
-/** @typedef {((req: {prompt: string, image: {path?: string, bytes?: Uint8Array, mime?: string}, maxTokens: number, reasoning?: Record<string, unknown>}) => Promise<{text: string, cost: number|null}>) & {model: string}} Ask  the vision model of the run (reasoning: instead of the settings'); model: its id, recorded */
+/** @typedef {((req: {prompt: string, image?: ImageRef, images?: (ImageRef & {label?: string})[], maxTokens: number, reasoning?: Record<string, unknown>}) => Promise<{text: string, cost: number|null}>) & {model: string}} Ask  the vision model of the run (reasoning: instead of the settings'); model: its id, recorded */
 
 /**
  * The prompt of an order (core/style buildPrompt): legend = what the attached images are, as the prompt says it,
@@ -177,18 +179,25 @@ export function nextStep({ done, spent, limits, priceHint }) {
 }
 
 /**
- * The best checked attempt: fewest blocking FAILs, then fewest FAILs left for eyes, then fewest WARNs, then the
- * earliest.
+ * The checked attempts, best first: fewest blocking problems the vision model saw (a drawing error, the wrong subject,
+ * a thing nobody ordered: they outweigh a measured FAIL, the author's decision of 2026-10-31), then fewest blocking
+ * FAILs of the style's checks, then fewest FAILs left for eyes, then fewest WARNs, then the earliest.
  * @param {Attempt[]} attempts
- * @returns {number|null}
+ * @returns {Attempt[]}
  */
-export function pickBest(attempts) {
+export function rankAttempts(attempts) {
   const checked = attempts.filter(a => a.check && !a.error);
   /** @param {Attempt} a */
-  const key = a => { const c = /** @type {import('./card-file.js').CheckSummary} */ (a.check); return [c.blocking, c.fails.length - c.blocking, c.warns, a.n]; };
-  checked.sort((a, b) => { const x = key(a), y = key(b); return x.map((v, i) => v - y[i]).find(d => d !== 0) ?? 0; });
-  return checked[0]?.n ?? null;
+  const key = a => {
+    const c = /** @type {import('./card-file.js').CheckSummary} */ (a.check);
+    const seen = c.look?.issues.filter(i => i.blocking).length ?? 0, measured = c.blocking - seen;
+    return [seen, measured, c.fails.length - measured, c.warns, a.n];
+  };
+  return checked.sort((a, b) => { const x = key(a), y = key(b); return x.map((v, i) => v - y[i]).find(d => d !== 0) ?? 0; });
 }
+
+/** The best checked attempt by the program's order (rankAttempts). @param {Attempt[]} attempts @returns {number|null} */
+export const pickBest = attempts => rankAttempts(attempts)[0]?.n ?? null;
 
 /** @param {string} style @returns {any} the style's processing.json */
 const styleProcessing = style => JSON.parse(fs.readFileSync(path.join(styleDir(style), 'processing.json'), 'utf8'));
@@ -318,8 +327,8 @@ export function visionFrom(settings, { apiKey } = {}) {
   if (!key) return null;
   const k = key;
   /** @type {VisionCall} */
-  const call = ({ model, prompt, image, maxTokens, reasoning, timeoutMs }) => apiOf(o.name).askVision({
-    endpoint: o.endpoint, apiKey: k, prices: o.prices, model, prompt, image, maxTokens, reasoning, net: { timeoutMs, retries: o.retries, backoffMs: o.backoffMs },
+  const call = ({ model, prompt, image, images, maxTokens, reasoning, timeoutMs }) => apiOf(o.name).askVision({
+    endpoint: o.endpoint, apiKey: k, prices: o.prices, model, prompt, image, images, maxTokens, reasoning, net: { timeoutMs, retries: o.retries, backoffMs: o.backoffMs },
   });
   return Object.assign(call, { model: o.visionModel });
 }
@@ -474,15 +483,50 @@ async function processAttempt({ order, attempt, dir, bytes, mime, processing, ou
 /**
  * Chooses the card's attempt and copies its card to the card folder. by 'checks': the best checked attempt of the
  * card; by 'request': the best of `ns` (the attempts a person's or an agent's explicit request just made: their
- * word outranks the checks), the choice kept unchanged when none of them reached the checks.
- * @param {string} dir @param {CardFile} card @param {'checks'|'request'} by @param {number[]} [ns]
+ * word outranks the checks), the choice kept unchanged when none of them reached the checks. `eye`: the version the
+ * vision model picked among those (pickByEye) wins over the program's order (`chosenBy` "look").
+ * @param {string} dir @param {CardFile} card @param {'checks'|'request'} by @param {number[]} [ns] @param {number|null} [eye]
  */
-function choose(dir, card, by, ns = []) {
-  const best = pickBest(by === 'checks' ? card.attempts : card.attempts.filter(a => ns.includes(a.n)));
+function choose(dir, card, by, ns = [], eye = null) {
+  const pool = by === 'checks' ? card.attempts : card.attempts.filter(a => ns.includes(a.n));
+  const seen = eye != null && pool.some(a => a.n === eye && a.check && !a.error);
+  const best = seen ? eye : pickBest(pool);
   if (by === 'request' && best == null) return;
   card.chosen = best;
-  card.chosenBy = by;
+  card.chosenBy = seen ? 'look' : by;
   copyChosen(dir, card);
+}
+
+/**
+ * The vision model's choice among the card's versions after a run (pick.js): the best `settings.card.pick.maxVersions`
+ * of the checked attempts (all of the card's, or `ns`) by the program's order, shown at once, when there are two or
+ * more, the run made one of them and its spend cap leaves room for the call (about one look per version shown). The
+ * pick is recorded in the run's last attempt (`pick`, pick.json), its cost counted there.
+ * @param {{dir: string, card: CardFile, ns?: number[], run: {ns: number[], spent: number, stop: StopReason, warnings: string[]}, provider: Provider,
+ *   settings: import('../settings.js').Settings, limits: {maxSpendUsd: number}}} o
+ * @returns {Promise<{best: number|null, attempt: Attempt}|null>}  null = not asked
+ */
+async function pickByEye({ dir, card, ns, run, provider, settings, limits }) {
+  const p = settings.card.pick, ask = askOf(provider.vision, settings);
+  const holder = card.attempts.find(a => a.n === run.ns.at(-1));
+  if (!p?.use || !ask || !settings.look.use || !holder || run.stop === 'key' || run.stop === 'cancelled') return null;
+  const versions = rankAttempts(ns ? card.attempts.filter(a => ns.includes(a.n)) : card.attempts)
+    .filter(a => fs.existsSync(path.join(attemptDir(dir, a.n), ATTEMPT_FILES.card))).slice(0, p.maxVersions);
+  if (versions.length < 2 || !versions.some(a => run.ns.includes(a.n))) return null;
+  const hint = Math.max(0, ...versions.map(a => a.look?.cost ?? 0)) * versions.length;
+  if (run.spent + hint > limits.maxSpendUsd + EPSILON_USD) {
+    run.warnings.push(`Выбор лучшей версии смотрящей моделью пропущен: он не помещается в потолок расходов ($${limits.maxSpendUsd}); выбрано по проверкам.`);
+    return null;
+  }
+  const { record, prompt, text } = await pickVersion({
+    versions: versions.map(a => ({ n: a.n, attempt: a, image: { path: path.join(attemptDir(dir, a.n), ATTEMPT_FILES.card) } })),
+    order: card.order, model: ask.model, settings: p, look: settings.look, ask,
+  });
+  fs.writeFileSync(path.join(attemptDir(dir, holder.n), ATTEMPT_FILES.pick), JSON.stringify({ ...record, prompt, answer: text }, null, 1));
+  holder.pick = record;
+  run.spent += record.cost;
+  if (record.error) run.warnings.push(`Смотрящая модель не выбрала версию: ${record.error}`);
+  return { best: record.best, attempt: holder };
 }
 
 /** @param {string} dir @param {CardFile} card */
@@ -758,7 +802,8 @@ export async function makeCard({ order, collection, card: cardId, place, setting
   saveCard(dir, card, [], c => { c.order = order; });
   const lim = { attempts: limits.attempts ?? settings.card.attempts, maxSpendUsd: limits.maxSpendUsd ?? settings.card.maxSpendUsd };
   const run = await runAttempts({ what: 'make', dir, card, request: { prompt, references, ...(legend ? { legend } : {}) }, provider, settings, limits: lim, control: { signal, onProgress } });
-  saveCard(dir, card, [], c => choose(dir, c, 'checks'));
+  const eye = await pickByEye({ dir, card, run, provider, settings, limits: lim });
+  saveCard(dir, card, eye ? [eye.attempt] : [], c => choose(dir, c, 'checks', [], eye?.best));
   if (place) await store.moveCard(collection, id, place);
   return runReport(dir, card, run.ns, run, lim);
 }
@@ -811,7 +856,8 @@ export async function regenerateCard({ dir, wish, n, settings, provider, buildPr
   const { prompt, references, legend } = await buildPrompt(text ? { ...order, [key]: [order[key], text].filter(Boolean).join(' ') } : order);
   const lim = { attempts: limits.attempts ?? REQUEST_ATTEMPTS, maxSpendUsd: limits.maxSpendUsd ?? settings.card.maxSpendUsd };
   const run = await runAttempts({ what: 'regenerate', dir, card, request: { prompt, references, ...(legend ? { legend } : {}) }, mark: text ? { wish: text } : {}, failed, provider, settings, limits: lim, control: { signal, onProgress } });
-  saveCard(dir, card, [], c => choose(dir, c, 'request', run.ns));
+  const eye = await pickByEye({ dir, card, ns: run.ns, run, provider, settings, limits: lim });
+  saveCard(dir, card, eye ? [eye.attempt] : [], c => choose(dir, c, 'request', run.ns, eye?.best));
   return runReport(dir, card, run.ns, run, lim);
 }
 
@@ -836,7 +882,8 @@ export async function editCard({ dir, wish, n, settings, provider, limits = {}, 
   const request = { prompt: settings.card.editPrompt.replace('{wish}', () => text), references: [{ path: file }], legend: settings.card.editLegend };
   const lim = { attempts: limits.attempts ?? REQUEST_ATTEMPTS, maxSpendUsd: limits.maxSpendUsd ?? settings.card.maxSpendUsd };
   const run = await runAttempts({ what: 'edit', dir, card, request, mark: { wish: text, editOf: attempt.n }, provider, settings, limits: lim, control: { signal, onProgress } });
-  saveCard(dir, card, [], c => choose(dir, c, 'request', run.ns));
+  const eye = await pickByEye({ dir, card, ns: run.ns, run, provider, settings, limits: lim });
+  saveCard(dir, card, eye ? [eye.attempt] : [], c => choose(dir, c, 'request', run.ns, eye?.best));
   return runReport(dir, card, run.ns, run, lim);
 }
 
@@ -908,6 +955,10 @@ export async function adjustCard({ dir, n, saturation, brightness, sharpen, shad
   const given = saturation != null || brightness != null || sharpen != null || shadows != null;
   if (reset && given) throw new Error('Сброс обработки идёт без значений: либо значения, либо сброс.');
   if (!reset && !given) throw new Error('Не задано ни одного значения обработки (насыщенность, яркость, резкость, тени).');
+  const range = styleProcessing(card.order.style).manual?.saturation;
+  if (saturation != null && range && !(saturation >= range.min && saturation <= range.max)) {
+    throw new Error(`Насыщенность ×${saturation} вне диапазона ручной правки ×${range.min}–×${range.max} (styles/${card.order.style}/processing.json, manual).`);
+  }
   const adir = attemptDir(dir, a.n);
   const pic = await readPixels(file);
   const hero = await storedHero(a, adir);
@@ -1054,7 +1105,7 @@ async function retune(order, a, adir, fg = null, outline = 'confirmed') {
 /**
  * Runs the checks again on attempts of a card (after the order's staging was edited, or with what a person or an
  * agent confirmed by eye), then chooses the best attempt again, unless the choice came from a request (regenerate,
- * edit, import) or a version was chosen by hand (chooseAttempt): then it stays. A hero box given here cuts a new outline (free; it replaces any verdict on the outline
+ * edit, import), from the vision model's pick among the versions, or a version was chosen by hand (chooseAttempt): then it stays. A hero box given here cuts a new outline (free; it replaces any verdict on the outline
  * shown before, `mask`), and the attempt is tuned again with it when it is trusted; an attempt whose checker outline
  * has just been confirmed is tuned again too — both unless its processing was set by hand. The vision model is not
  * asked again: the hero and the look recorded in the attempt are reused.
@@ -1083,7 +1134,7 @@ export async function recheckCard({ dir, n, review }) {
     a.check = await checkOrSkip({ order: card.order, dir: adir, attempt: a, output, hero });
   }
   saveCard(dir, card, targets, c => {
-    if (c.chosenBy === 'request' || c.chosenBy === 'choice') copyChosen(dir, c);
+    if (c.chosenBy === 'request' || c.chosenBy === 'look' || c.chosenBy === 'choice') copyChosen(dir, c);
     else choose(dir, c, 'checks');
   });
   return cardReport(dir, card, targets.map(a => a.n));

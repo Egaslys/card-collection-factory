@@ -29,7 +29,7 @@ With a key the vision model has already looked (`check.look`, the full answer in
 Open `card.png` (zoom in on small creatures and faces) and go section by section, giving each a pass or fail with a reason:
 
 - the card order of `styles/<style>/CHECKLIST.md`: format and category, staging and backdrop, composition, colour, rendering, characters. The entries of `chosenVisual` (document and check number) fall into these sections: read each in its document's checks section, but write a verdict per section, naming only the checks that fail — not one line per check;
-- **adequacy**: the image holds nothing that was not ordered and that the thing does not have — a face on fish, animals or objects (mouth, smile, brows, expression; plain natural eyes on a fish or an animal are fine, eyes on an object are not), extra objects, text or letters, a frame — unless the person asked for it;
+- **adequacy**: the image holds nothing that was not ordered and that the thing does not have — a face on fish, animals or objects (mouth, smile, brows, expression; plain natural eyes on a fish or an animal are fine, eyes on an object are not; a face drawn in a printed emblem, logo or label on a package is fine), extra objects, text or letters, a frame — unless the person asked for it;
 - the order's `subject` is what is drawn, and the caption (`title`) names it.
 
 An order of kind `character-sheet` has no pixel checks: its `chosenVisual` list is the whole review.
@@ -39,7 +39,7 @@ An order of kind `character-sheet` has no pixel checks: its `chosenVisual` list 
 | What is wrong | Fix | Cost |
 |---|---|---|
 | the order's staging does not describe the card, which is fine | correct `order.staging` in `card.json`, then `card check CARD_DIR` | free |
-| only tone: brightness, saturation, sharpness, too-dark shadows | `card adjust CARD_DIR [--saturation X] [--brightness Y] [--sharpen A] [--shadows S]` (bounds: `styles/<style>/processing.json`); values set by hand are never tuned again — `card adjust CARD_DIR --reset` gives back the processing the program tunes | free |
+| only tone: brightness, saturation, sharpness, too-dark shadows | `card adjust CARD_DIR [--saturation X] [--brightness Y] [--sharpen A] [--shadows S]` (by hand within `manual` of `styles/<style>/processing.json`, saturation ×0.5–×1.6, wider than the program's own search); values set by hand are never tuned again — `card adjust CARD_DIR --reset` gives back the processing the program tunes | free |
 | an earlier version was better | `card choose CARD_DIR --attempt N`: version N (attempt N) becomes the card; kept on recheck | free |
 | one local defect (a face on a fish, a wrong detail) | `card edit CARD_DIR --wish TEXT [--attempt N]` — that version's model image goes back with the wish | one generation |
 | subject, staging or composition wrong | `card regenerate CARD_DIR [--wish TEXT] [--attempt N]` (without a wish it fixes the findings of the chosen version, or of version N; `card wish CARD_DIR` proposes a wish), or fix the order and `card make ORDER.json --collection ID --card CARD_ID` | generations |

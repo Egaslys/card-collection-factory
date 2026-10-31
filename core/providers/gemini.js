@@ -116,19 +116,27 @@ function textOf(json, apiKey, what, prices, model) {
 }
 
 /**
- * Asks a vision model about one image (the same contract as openrouter.js askVision): the text first, then the image.
+ * Asks a vision model about one image or several (the same contract as openrouter.js askVision): the text first, then
+ * the image, or each image after its label.
  * @param {object} o
  * @param {string} o.endpoint @param {string} o.apiKey @param {string} o.model @param {string} o.prompt
- * @param {{bytes?: Uint8Array, path?: string, mime?: string}} o.image
+ * @param {{bytes?: Uint8Array, path?: string, mime?: string}} [o.image]
+ * @param {{bytes?: Uint8Array, path?: string, mime?: string, label?: string}[]} [o.images]  instead of `image`
  * @param {number} [o.maxTokens]  maxOutputTokens; the model's thinking counts in it
  * @param {Record<string, unknown>} [o.reasoning]  {effort}: sent as thinkingConfig.thinkingLevel
  * @param {Prices} [o.prices] @param {NetOptions} [o.net]
  * @returns {Promise<{text: string, model: string, cost: number|null}>}
  */
-export async function askVision({ endpoint, apiKey, model, prompt, image, maxTokens = 400, reasoning, prices, net = {} }) {
-  const i = await readImage(image);
+export async function askVision({ endpoint, apiKey, model, prompt, image, images, maxTokens = 400, reasoning, prices, net = {} }) {
+  /** @type {any[]} */
+  const parts = [{ text: prompt }];
+  for (const one of images ?? [image ?? {}]) {
+    const i = await readImage(one);
+    if ('label' in one && one.label) parts.push({ text: one.label });
+    parts.push({ inlineData: { mimeType: i.mime, data: i.base64 } });
+  }
   const body = {
-    contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: i.mime, data: i.base64 } }] }],
+    contents: [{ role: 'user', parts }],
     generationConfig: { maxOutputTokens: maxTokens, ...thinkingOf(reasoning) },
   };
   return textOf(await generate({ endpoint, apiKey, model, body, net }), apiKey, 'Смотрящая модель', prices, model);

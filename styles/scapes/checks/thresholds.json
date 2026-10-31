@@ -121,6 +121,8 @@
       "hue_diff_min": 60,
       "dL_min": 13,
       "achromatic_hero_C_max": 8,
+      "dull_hero_C_ratio_max": 0.4,
+      "dull_hero_source": "COLOUR.md check 7 (2026-10-31): a silver or other metal hero mirrors the backdrop, so its main colour takes the backdrop's hue at a low chroma and is not under C* 8; it is set off by being much duller than the backdrop (the bible's third way, 1.4). Proposed from the four generated silver heroes the author saw separated (Ration Pack ×3, the hydrazine burner: hero C* 9.4–26.1 against backdrop 57–78, ratio 0.13–0.34); the 160 references have no bare metal hero on an abstract backdrop and all pass either way",
       "note": "if the measure took the backdrop seen through the hero or dark inserts as the hero's main colour, check by eye (#77, #115)",
       "exceptions": [
         38
