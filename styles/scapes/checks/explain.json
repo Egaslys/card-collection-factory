@@ -1,0 +1,367 @@
+{
+ "_about": "The Scapes checks in plain words, for a person: what each check of the bible looks at (the ids of thresholds.json `checks` and `visual`), in Russian and English, and the names of the bible's areas the ids start with. The one source of these texts: the editor's card sheet shows them in the page's language (editor/web/panels/card.js); a new check needs its line here (tests/scapes-checks.test.mjs).",
+ "groups": {
+  "BASE_RULES": {
+   "ru": "Основа",
+   "en": "Basics"
+  },
+  "CHARACTERS": {
+   "ru": "Персонажи",
+   "en": "Characters"
+  },
+  "COLOUR": {
+   "ru": "Цвет",
+   "en": "Colour"
+  },
+  "BACKGROUNDS": {
+   "ru": "Фон",
+   "en": "Backdrop"
+  },
+  "COMPOSITION": {
+   "ru": "Композиция",
+   "en": "Composition"
+  },
+  "RENDERING": {
+   "ru": "Прорисовка",
+   "en": "Rendering"
+  }
+ },
+ "checks": {
+  "BASE_RULES.1": {
+   "ru": "Файл нужного размера (430 × 480), без прозрачных мест и без нарисованной рамки, плашки, звёзд или подписи.",
+   "en": "The file is the card size (430 × 480), with no transparent areas and no drawn frame, plate, stars or caption."
+  },
+  "BASE_RULES.2-7": {
+   "ru": "Постановка читается так, как заказана: парит на узоре, стоит на ровном полу, на настоящей поверхности, в обстановке или сцена с персонажами.",
+   "en": "The staging reads as ordered: floating on a pattern, standing on a plain floor, on a real surface, in a setting, or a scene with characters."
+  },
+  "BASE_RULES.9": {
+   "ru": "На главном предмете нет мелкой фактуры поверхности: он гладкий, как в образцах.",
+   "en": "The hero has no fine surface texture: it is smooth, as in the references."
+  },
+  "CHARACTERS.1-11": {
+   "ru": "Персонажи узнаются, одеты по правилам, заняты одним делом с предметом набора, голова целиком в кадре, шутка читается сразу.",
+   "en": "The characters are recognisable and dressed by the rules, busy with one thing using the set's item, heads fully in the frame, the joke reads at once."
+  },
+  "COLOUR.1": {
+   "ru": "Насколько цветная картинка в целом: стиль любит чистый насыщенный цвет.",
+   "en": "How colourful the picture is overall: the style likes clean, saturated colour."
+  },
+  "COLOUR.10": {
+   "ru": "Тёмные места фона остаются цветными.",
+   "en": "The dark parts of the backdrop keep their colour."
+  },
+  "COLOUR.11": {
+   "ru": "Тени цветные: в тени цвет густеет, а не сереет.",
+   "en": "Shadows are coloured: in shade a colour deepens instead of greying."
+  },
+  "COLOUR.12": {
+   "ru": "Свет теплеет к жёлтому, тень уходит от жёлтого — а не наоборот.",
+   "en": "Light warms towards yellow and shade moves away from yellow, not the other way round."
+  },
+  "COLOUR.13": {
+   "ru": "Белое на свету кремовое или нейтральное, в тени — прохладное, но не жёлто-серое и не буро-серое.",
+   "en": "White in the light is cream or neutral, in shade cool, never yellow-grey or brown-grey."
+  },
+  "COLOUR.14": {
+   "ru": "Дневное небо сверху картинки голубое и чистое.",
+   "en": "A day sky at the top of the picture is clean blue."
+  },
+  "COLOUR.15": {
+   "ru": "Ночное небо синее или сине-фиолетовое, свет окон и ламп тёплый жёлтый.",
+   "en": "A night sky is blue or blue-violet; window and lamp light is warm yellow."
+  },
+  "COLOUR.15a": {
+   "ru": "Ночная или вечерняя картинка темнее дневной.",
+   "en": "A night or dusk picture is darker than a day one."
+  },
+  "COLOUR.15b": {
+   "ru": "Ночью цвета остаются почти такими же насыщенными, как днём.",
+   "en": "At night the colours stay almost as saturated as by day."
+  },
+  "COLOUR.15c": {
+   "ru": "Картинка в золотой час или в сумерках по-вечернему темнее дневной.",
+   "en": "A golden-hour or dusk picture is evening-dark compared with a day one."
+  },
+  "COLOUR.2": {
+   "ru": "Сколько на картинке серого: серым бывает только сам материал (белое, металл, камень).",
+   "en": "How much of the picture is grey: only a material itself may be grey (white, metal, stone)."
+  },
+  "COLOUR.3a": {
+   "ru": "Сколько почти чёрного: чёрный допустим только на чёрных вещах.",
+   "en": "How much is almost black: black belongs only on black things."
+  },
+  "COLOUR.3b": {
+   "ru": "Самые тёмные места остаются цветными, а не грязно-чёрными.",
+   "en": "The darkest places keep their colour instead of turning muddy black."
+  },
+  "COLOUR.4": {
+   "ru": "Сколько чисто белого: пересвеченных белых пятен мало.",
+   "en": "How much is pure white: few blown-out white patches."
+  },
+  "COLOUR.5a": {
+   "ru": "Общая светлота картинки: средне-светлая, без провалов в темноту.",
+   "en": "The overall lightness: mid-to-light, with no sinking into darkness."
+  },
+  "COLOUR.5b": {
+   "ru": "Самые тёмные места не слишком тёмные.",
+   "en": "The darkest places are not too dark."
+  },
+  "COLOUR.5c": {
+   "ru": "Самые светлые места достаточно светлые, картинка не тусклая.",
+   "en": "The lightest places are light enough, so the picture is not dull."
+  },
+  "COLOUR.6": {
+   "ru": "Сколько заметных цветов на картинке: обычно три–пять.",
+   "en": "How many noticeable colours the picture has: usually three to five."
+  },
+  "COLOUR.7": {
+   "ru": "Главный предмет отделён от фона оттенком или светлотой, а не сливается с ним.",
+   "en": "The hero stands apart from the backdrop by hue or lightness instead of blending into it."
+  },
+  "COLOUR.8a": {
+   "ru": "Насколько насыщен цвет фона.",
+   "en": "How saturated the backdrop's colour is."
+  },
+  "COLOUR.8b": {
+   "ru": "Насколько чистый (не сероватый) цвет фона.",
+   "en": "How pure, not greyish, the backdrop's colour is."
+  },
+  "COLOUR.8c": {
+   "ru": "Насколько светлый фон.",
+   "en": "How light the backdrop is."
+  },
+  "COLOUR.8d": {
+   "ru": "Насколько ровный фон по светлоте: без резких светлых и тёмных пятен.",
+   "en": "How even the backdrop is in lightness: no harsh light or dark patches."
+  },
+  "COLOUR.9a": {
+   "ru": "Фон светлее прямо за героем и темнее к углам.",
+   "en": "The backdrop is lighter right behind the hero and darker towards the corners."
+  },
+  "COLOUR.9b": {
+   "ru": "К углам фон становится гуще по цвету, а не бледнеет.",
+   "en": "Towards the corners the backdrop gets richer in colour instead of paler."
+  },
+  "COLOUR.9c": {
+   "ru": "Оттенок фона к углам меняется мягко, как в тени.",
+   "en": "The backdrop's hue shifts gently towards the corners, as in shade."
+  },
+  "BACKGROUNDS.10": {
+   "ru": "Без задника: нет неба, стены и горизонта.",
+   "en": "No backdrop: no sky, wall or horizon."
+  },
+  "BACKGROUNDS.11": {
+   "ru": "Обстановка в три-четыре плана, дальний мягче; горизонт на высоте камеры; небо светлеет книзу.",
+   "en": "The setting has three or four planes, the far one softer; the horizon at camera height; the sky lightens downwards."
+  },
+  "BACKGROUNDS.12": {
+   "ru": "Персонажи — только в обстановке, не на абстрактном фоне.",
+   "en": "Characters appear only in a setting, not on an abstract backdrop."
+  },
+  "BACKGROUNDS.13": {
+   "ru": "Предмет без персонажей показан днём, если ему не нужен свет (неон, фары, закат).",
+   "en": "An object without characters is shown by day unless it needs light (neon, headlights, a sunset)."
+  },
+  "BACKGROUNDS.2": {
+   "ru": "Фон и опора соответствуют заказанной постановке; на настоящей поверхности видна её фактура.",
+   "en": "The backdrop and the support match the ordered staging; a real surface shows its material."
+  },
+  "BACKGROUNDS.3": {
+   "ru": "Парящий предмет — на узоре, без пятна тени под ним и без земли с горизонтом.",
+   "en": "A floating hero is on a pattern, with no shadow patch under it and no ground or horizon."
+  },
+  "BACKGROUNDS.4": {
+   "ru": "Узор фона в одном оттенке, без второго узора поверх.",
+   "en": "The backdrop pattern is in one hue, with no second pattern over it."
+  },
+  "BACKGROUNDS.4a": {
+   "ru": "Полосы узора различаются по светлоте чуть-чуть: узор тихий, не спорит с героем.",
+   "en": "Neighbouring bands of the pattern differ only slightly in lightness: the pattern is quiet and does not compete with the hero."
+  },
+  "BACKGROUNDS.4b": {
+   "ru": "Края полос узора чёткие, не размытые.",
+   "en": "The edges of the pattern's bands are crisp, not blurred."
+  },
+  "BACKGROUNDS.5": {
+   "ru": "Свечение фона — прямо за героем.",
+   "en": "The backdrop's glow sits right behind the hero."
+  },
+  "BACKGROUNDS.6a": {
+   "ru": "Сколько лучей в узоре-солнце.",
+   "en": "How many rays the sunburst pattern has."
+  },
+  "BACKGROUNDS.6b": {
+   "ru": "Светлые лучи и тёмные промежутки примерно одной ширины.",
+   "en": "Light rays and dark gaps are about equally wide."
+  },
+  "BACKGROUNDS.6c": {
+   "ru": "Центр лучей — на вертикали героя.",
+   "en": "The rays' centre is on the hero's vertical axis."
+  },
+  "BACKGROUNDS.6d": {
+   "ru": "Центр лучей на высоте середины героя или чуть ниже.",
+   "en": "The rays' centre is at the hero's middle height or a little below."
+  },
+  "BACKGROUNDS.7a": {
+   "ru": "Центр колец — за героем.",
+   "en": "The rings' centre is behind the hero."
+  },
+  "BACKGROUNDS.7b": {
+   "ru": "Сколько колец от центра до угла.",
+   "en": "How many rings there are from the centre to the corner."
+  },
+  "BACKGROUNDS.7c": {
+   "ru": "Шаг колец — их ширина.",
+   "en": "The rings' spacing, their width."
+  },
+  "BACKGROUNDS.8a": {
+   "ru": "Полосы фона не горизонтальные.",
+   "en": "The backdrop's stripes are not horizontal."
+  },
+  "BACKGROUNDS.8b": {
+   "ru": "Полосы вертикальные или наклонные под одним из углов стиля; на стене — только вертикальные.",
+   "en": "Stripes are vertical or slanted at one of the style's angles; on a wall only vertical."
+  },
+  "BACKGROUNDS.8c": {
+   "ru": "Ширина одной полосы.",
+   "en": "The width of one stripe."
+  },
+  "BACKGROUNDS.9": {
+   "ru": "Пол идёт на всю ширину до нижнего края, линия пола на нужной высоте, предмет стоит ниже неё.",
+   "en": "The floor runs the full width to the bottom edge, its line at the right height, the hero standing below it."
+  },
+  "COMPOSITION.1": {
+   "ru": "Один главный предмет или одна сцена, не больше двух спутников.",
+   "en": "One hero object or one scene, with at most two companions."
+  },
+  "COMPOSITION.10": {
+   "ru": "Отдельных вещей немного: обычно одна–три.",
+   "en": "Few separate things: usually one to three."
+  },
+  "COMPOSITION.11": {
+   "ru": "Верх и скруглённые верхние углы свободны: там в окне набора стоят звёзды и рамка; лица и надписи — в безопасной зоне.",
+   "en": "The top and the rounded top corners are clear, where the set window puts the stars and the frame; faces and text stay in the safe zone."
+  },
+  "COMPOSITION.12": {
+   "ru": "Фирменный знак — только домик или голова коровы, один на карточку, сделан в материале вещи.",
+   "en": "A brand mark is only a house or a cow head, one per card, made in the thing's material."
+  },
+  "COMPOSITION.2": {
+   "ru": "Герой по центру по горизонтали.",
+   "en": "The hero is centred left to right."
+  },
+  "COMPOSITION.3": {
+   "ru": "Герой на нужной высоте: чуть ниже середины кадра.",
+   "en": "The hero sits at the right height: a little below the middle of the frame."
+  },
+  "COMPOSITION.4a": {
+   "ru": "Герой крупный: занимает достаточно места в кадре.",
+   "en": "The hero is big: it takes up enough of the frame."
+  },
+  "COMPOSITION.4b": {
+   "ru": "Ширина героя на абстрактном фоне.",
+   "en": "How wide the hero is on an abstract backdrop."
+  },
+  "COMPOSITION.5a": {
+   "ru": "Отступ от верхнего края до героя: сверху есть воздух.",
+   "en": "The space from the top edge to the hero: there is air above it."
+  },
+  "COMPOSITION.5b": {
+   "ru": "Отступы по бокам: герой не упирается в края.",
+   "en": "The side margins: the hero does not touch the edges."
+  },
+  "COMPOSITION.5c": {
+   "ru": "Предмет на фоне или у стены целиком в кадре, не обрезан краем.",
+   "en": "An object on a backdrop or at a wall is whole, not cut by the frame's edge."
+  },
+  "COMPOSITION.6": {
+   "ru": "Обрезка: в обстановке и сцене можно резать низ и бока, верх — только у сооружения или фона, голову — никогда.",
+   "en": "Cropping: a setting or scene may be cut at the bottom and sides, the top only for a structure or the background, never a head."
+  },
+  "COMPOSITION.7": {
+   "ru": "Камера не смотрит отвесно сверху; снизу — только на высокий или героический предмет.",
+   "en": "The camera does not look straight down; from below only at a tall or heroic hero."
+  },
+  "COMPOSITION.8": {
+   "ru": "Наклон: парящий предмет слегка наклонён, стоящий — прямо.",
+   "en": "Tilt: a floating hero is slightly tilted, a standing one upright."
+  },
+  "COMPOSITION.9": {
+   "ru": "Предмет объёмный: видны две грани или верх, а не плоская наклейка.",
+   "en": "The hero has volume: two sides or the top show, never a flat sticker."
+  },
+  "RENDERING.1": {
+   "ru": "Свет слева сверху: светлые грани сверху и слева, тень справа и снизу.",
+   "en": "Light from the upper left: bright faces on top and on the left, shade on the right and below."
+  },
+  "RENDERING.11": {
+   "ru": "Чисто белых бликов на герое немного.",
+   "en": "There are few pure white highlights on the hero."
+  },
+  "RENDERING.12-14": {
+   "ru": "Нет мелкой фактуры, грязи и царапин; мелкие детали крупные и скруглённые; листва — гладкими гроздьями.",
+   "en": "No fine texture, dirt or scratches; small parts are big and rounded; foliage as smooth clumps of leaves."
+  },
+  "RENDERING.15": {
+   "ru": "Эффекты (свечение, брызги, пар) мягкие и упрощённые.",
+   "en": "Effects (glow, splashes, steam) are soft and simplified."
+  },
+  "RENDERING.16": {
+   "ru": "Нет зерна, шума и виньетки.",
+   "en": "No grain, noise or vignette."
+  },
+  "RENDERING.16a": {
+   "ru": "Нет зерна на ровных местах.",
+   "en": "No grain in flat areas."
+  },
+  "RENDERING.16b": {
+   "ru": "Нет квадратиков сжатия JPEG.",
+   "en": "No JPEG compression blocks."
+  },
+  "RENDERING.17a": {
+   "ru": "Резкость не пересушена: у резких краёв нет ореолов.",
+   "en": "Not over-sharpened: no halos at sharp edges."
+  },
+  "RENDERING.17b": {
+   "ru": "Края на картинке чёткие, не мыльные.",
+   "en": "Edges in the picture are crisp, not soapy."
+  },
+  "RENDERING.18": {
+   "ru": "Пестрота: мелких деталей не больше, чем у образцов стиля, — несколько крупных мягких масс вместо мелочи.",
+   "en": "Busyness: no more small detail than the style's references, a few large soft masses instead of clutter."
+  },
+  "RENDERING.2": {
+   "ru": "Подсказка, не ошибка: блики выше середины героя, тени ниже.",
+   "en": "A guide, never a failure: highlights above the hero's middle, shade below."
+  },
+  "RENDERING.3": {
+   "ru": "Ночью самые тёмные места не проваливаются в черноту, самые светлые светятся.",
+   "en": "At night the darkest places do not sink into black and the lightest ones glow."
+  },
+  "RENDERING.4": {
+   "ru": "У героя нет тёмного контура по краю.",
+   "en": "The hero has no dark outline around its edge."
+  },
+  "RENDERING.5": {
+   "ru": "По верхним краям обычно лёгкий светлый ободок.",
+   "en": "A light rim usually runs along the top edges."
+  },
+  "RENDERING.6": {
+   "ru": "Переход от героя к фону мягкий, но не размытый.",
+   "en": "The edge between the hero and the backdrop is soft but not blurred."
+  },
+  "RENDERING.7": {
+   "ru": "Нет острых и чертёжно-прямых краёв; тонкие части толще настоящих, пропорции приземистые.",
+   "en": "No sharp or ruler-straight edges; thin parts thicker than real, proportions squat."
+  },
+  "RENDERING.8": {
+   "ru": "У стоящего предмета есть тень касания, у парящего тени нет.",
+   "en": "A standing hero has a contact shadow; a floating one has none."
+  },
+  "RENDERING.9": {
+   "ru": "Тени мягкие, без жёстких краёв.",
+   "en": "Shadows are soft, with no hard edges."
+  }
+ }
+}

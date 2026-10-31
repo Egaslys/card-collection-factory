@@ -3,7 +3,7 @@
 // help of free-text fields. Texts come in both languages through words() (i18n.js). The look comes only from
 // design-system/components.css and editor.css.
 import { call } from './api.js';
-import { plural as forms, words } from './i18n.js';
+import { plural as forms, lang, words } from './i18n.js';
 
 const t = words({
   ru: {
@@ -334,11 +334,14 @@ const DRAFT_SKELETON = '<span class="draft-skel" aria-hidden="true"><span class=
 
 /**
  * Makes the text help under `root` work. While the model writes, the field shows a skeleton and the button a spinner.
+ * An empty field gets a text proposed from what it belongs to, in the page's language (core/text/draft.js).
  * @param {HTMLElement} root
  * @param {() => {context?: Record<string, string|undefined>, collectionId?: string|null}} about  what the text belongs
  *   to, read at the moment of the click
+ * @param {(o: {kind: string, notes: string}) => Promise<{text: string}>} [ask]  how the text is asked for (default: op
+ *   draftText; the card sheet asks proposeCardWish)
  */
-export function bindTextHelp(root, about) {
+export function bindTextHelp(root, about, ask = ({ kind, notes }) => call('draftText', { kind, notes, language: lang(), ...about() })) {
   root.addEventListener('click', async e => {
     const target = /** @type {HTMLElement} */ (e.target);
     const box = /** @type {HTMLElement|null} */ (target.closest('[data-texthelp]'));
@@ -361,7 +364,7 @@ export function bindTextHelp(root, about) {
     holder.insertAdjacentHTML('beforeend', DRAFT_SKELETON);
     field.readOnly = true;
     try {
-      const r = await call('draftText', { kind: box.dataset.texthelp, notes, ...about() });
+      const r = await ask({ kind: /** @type {string} */ (box.dataset.texthelp), notes });
       box.dataset.before = field.value;
       field.value = r.text;
       undo.hidden = false;

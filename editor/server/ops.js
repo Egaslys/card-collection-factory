@@ -111,7 +111,13 @@ async function getCard(a) {
     return { ...rest, files, spend: attemptSpend(x), details };
   });
   const style = JSON.parse(fs.readFileSync(path.join(ROOT, 'styles', file.order.style, 'processing.json'), 'utf8'));
-  return { summary, order: file.order, chosen: file.chosen, chosenBy: file.chosenBy ?? 'checks', attempts, dir, processing: { neutral: style.neutral, bounds: style.bounds, manual: style.manual ?? {}, sharpenMax: style.sharpen_amount_max } };
+  // the style's checks in plain words, both languages (styles/<style>/checks/explain.json): the card sheet's one source
+  const explainFile = path.join(ROOT, 'styles', file.order.style, 'checks', 'explain.json');
+  const explain = fs.existsSync(explainFile) ? JSON.parse(fs.readFileSync(explainFile, 'utf8')) : { groups: {}, checks: {} };
+  return {
+    summary, order: file.order, chosen: file.chosen, chosenBy: file.chosenBy ?? 'checks', attempts, dir,
+    processing: { neutral: style.neutral, bounds: style.bounds, manual: style.manual ?? {}, sharpenMax: style.sharpen_amount_max }, explain: { groups: explain.groups, checks: explain.checks },
+  };
 }
 
 /** The models of each service and endpoint, read once while the editor runs (listModels). @type {Map<string, Promise<any>>} */
@@ -260,9 +266,9 @@ export const OPS = {
 
   // ---------- text help (core/text) ----------
   draftText: {
-    run: async ({ kind, notes, context, collectionId }) => {
+    run: async ({ kind, notes, context, language, collectionId }) => {
       const { draftText } = await import('../../core/text/draft.js');
-      return draftText({ kind: need('kind', kind), notes, context, collectionId: collectionId ?? null, settings: settings(), apiKey: keyOrThrow() });
+      return draftText({ kind: need('kind', kind), notes, context, ...(language ? { language } : {}), collectionId: collectionId ?? null, settings: settings(), apiKey: keyOrThrow() });
     },
   },
 

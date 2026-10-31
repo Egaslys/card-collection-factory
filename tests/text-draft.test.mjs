@@ -30,8 +30,27 @@ test('помощь с текстом: модель и ключ из настро
   assert.equal(sent[0].maxTokens, settings.text.help.maxTokens);
   assert.match(sent[0].messages[0].content, /рыбалка, рассвет/);
   assert.deepEqual(spent, [['leto', { kind: 'text', what: 'text-help', model: presetOf(settings.provider).textModel, usd: 0.0012 }]]);
-  await assert.rejects(draftText({ kind: 'collection', notes: ' ', settings, apiKey: 'k', complete, store }), /Поле пустое/);
-  assert.equal(sent.length, 1, 'пустое поле — без платного вызова');
+  await assert.rejects(draftText({ kind: 'collection', notes: ' ', settings, apiKey: 'k', complete, store }), /Поле пустое, и предложить текст не из чего/);
+  assert.equal(sent.length, 1, 'пустое поле без того, к чему оно относится, — без платного вызова');
+});
+
+test('помощь с текстом: пустое поле — текст предложен из того, к чему оно относится, на языке страницы', async () => {
+  const settings = loadSettings();
+  const help = settings.text.help;
+  const sent = [];
+  const complete = async req => { sent.push(req); return { text: 'Marsian greenhouse', model: req.model, cost: 0.001 }; };
+  const store = { recordSpend: async () => {} };
+  const context = { collection: 'Отдых на Марсе', description: 'Вайбы фильма «Марсианин».', place: 'набор 3 из 16', set: '' };
+  const r = await draftText({ kind: 'setTheme', notes: '', context, language: 'en', collectionId: 'mars', settings, apiKey: 'k', complete, store });
+  assert.equal(r.text, 'Marsian greenhouse');
+  const p = sent[0].messages[0].content;
+  assert.ok(p.startsWith(help.propose.slice(0, 40)), 'запрос предложения, не переписывания заметок');
+  for (const t of [help.kinds.setTheme.what, help.kinds.setTheme.form, 'Write in English.', help.proposeLead, 'The collection: «Отдых на Марсе».', "The set's place in the collection: набор 3 из 16"]) assert.ok(p.includes(t), t);
+  assert.ok(!p.includes('The set:'), 'пустое — не в запросе');
+  assert.ok(!/\{(what|form|context|language)\}/.test(p));
+  await draftText({ kind: 'collection', notes: '', context: { collection: 'Лето' }, settings, apiKey: 'k', complete, store });
+  assert.match(sent[1].messages[0].content, /Write in Russian\./, 'по умолчанию — по-русски');
+  await assert.rejects(draftText({ kind: 'collection', notes: '', context: { collection: 'Лето' }, language: 'de', settings, apiKey: 'k', complete, store }), /Язык «de»/);
 });
 
 test('помощь с текстом: оплаченный, но бесполезный ответ (ошибка с ценой) всё равно записан в расход', async () => {
