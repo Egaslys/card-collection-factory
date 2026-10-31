@@ -403,6 +403,10 @@ ink (text and icons on the air) and a tint (the quiet background of a status bad
   "working" dot. A fill only, never under text (white on it is 3.68:1). **State ink (#1E66C3 · #5BA2FC)** — links
   and text buttons; **state tint** — a selected row, a drop zone.
 - **Warning (#F5B026):** amber, derived — the brand palette has no yellow. WARN badge (ink + tint), warning dot.
+- **A card's verdict is soft** (the author's decision, 2026-10-31: the factory must not look unsure of its own work):
+  a card that failed checks — «Требует внимания» in warning ink (amber tint for the card sheet's summary); a card
+  with remarks only — «Можно улучшить» in ink-3 with an ink-4 dot (sunken surface for the summary); error colours
+  only for a card that did not work out (no image). A fine card says nothing.
 - **Export (#7A5AF8):** violet, a second accent — the author asked the top bar's «Экспорт» to stand apart from the
   one green action. Its button is the tint (#ECE8FE · #2D2747) with export ink (#5B3FD6 · #B3A1FF: 5.61:1 on the
   tint, 6.34:1 dark) and an edge of the fill; never a fill under text, never on anything but the export action.

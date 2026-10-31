@@ -54,7 +54,7 @@ function headHtml({ col, sets }) {
     </div>
     <div class="head2__actions">
       <button type="button" class="btn btn--secondary" data-edit>${I.edit}<span>${esc(t('desc'))}</span></button>
-      <button type="button" class="btn btn--secondary" data-create-set>${I.plus}<span>${esc(t('createSet'))}</span></button>
+      <button type="button" class="btn ${sets.length ? 'btn--primary' : 'btn--secondary'}" data-create-set>${I.plus}<span>${esc(t('createSet'))}</span></button>
       <button type="button" class="btn btn--secondary" data-build>${I.spark}<span>${esc(sets.length ? t('buildRest') : t('buildAll', { n: PLACES }))}</span></button>
     </div>`;
 }
@@ -85,7 +85,7 @@ function tiles({ col, sets, cards, g }) {
     key: 'new',
     html: `<article class="setcard"><div class="window window--compact"><div class="window__stage newtile" style="aspect-ratio:${g.size.width}/${g.size.height}">
       <span class="state__icon">${I.plus}</span><p>${esc(t('newTile'))}</p>
-      <button type="button" class="btn btn--primary" data-create-set>${I.plus}<span>${esc(t('createSet'))}</span></button></div></div></article>`,
+      <button type="button" class="btn btn--secondary" data-create-set>${I.plus}<span>${esc(t('createSet'))}</span></button></div></div></article>`,
   });
   return list;
 }

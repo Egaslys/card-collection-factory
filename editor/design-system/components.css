@@ -143,6 +143,7 @@ textarea.input { height: auto; min-height: calc(var(--c-field-height) * 2.4); pa
 .dot--idle { background: transparent; box-shadow: inset 0 0 0 1.5px var(--color-ink-4); }
 .dot--warn { background: var(--color-warning); }
 .dot--fail { background: var(--color-error); }
+.dot--soft { background: var(--color-ink-4); }
 @keyframes ds-pulse { 50% { box-shadow: 0 0 0 5px rgb(var(--color-state-rgb) / 0); } }
 .progress { height: var(--c-progress-height); border-radius: var(--c-progress-height); background: var(--c-progress-bg); overflow: hidden; }
 .progress > i { display: block; height: 100%; width: var(--p, 0%); border-radius: inherit; background: var(--c-progress-fill-bg); transition: width var(--motion-t2) linear; }
@@ -162,8 +163,9 @@ textarea.input { height: auto; min-height: calc(var(--c-field-height) * 2.4); pa
 /* the verdict under a thumbnail in words; nothing when the card is fine */
 .thumb__say { display: inline-flex; align-items: center; gap: var(--spacing-s1); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   font: var(--type-body-sm-weight) var(--type-body-sm-size)/var(--type-body-sm-line) var(--type-body-sm-family); }
-.thumb__say--fail { color: var(--color-error-ink); }
-.thumb__say--warn { color: var(--color-warning-ink); }
+.thumb__say--failed { color: var(--color-error-ink); }
+.thumb__say--attention { color: var(--color-warning-ink); }
+.thumb__say--soft { color: var(--color-ink-3); }
 .thumb__grip { display: inline-flex; margin-left: auto; color: var(--color-ink-3); cursor: grab; opacity: 0; transition: opacity var(--motion-t1) var(--motion-ease); }
 .thumb:hover .thumb__grip, .thumb:focus-within .thumb__grip, .thumb.is-dragging .thumb__grip { opacity: 1; }
 @media (hover: none) { .thumb__grip { opacity: 1; } }

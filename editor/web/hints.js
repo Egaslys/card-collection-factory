@@ -62,7 +62,7 @@ const shown = (id, m) => m.on && !m.dismissed.includes(id);
 
 /**
  * The hint of a set screen. Cards in the pool and an empty place: drag one in (first use); after the first drag, click
- * a card in the window (first use); a full window with no card «Есть проблемы»: export; cards in the window: check
+ * a card in the window (first use); a full window with no card «Требует внимания»: export; cards in the window: check
  * and swap them.
  * @param {{places: number, filled: number, made: number, problems: number, freeCards: number}} f  places of the
  *   window; filled: places holding a card; made: of them, made cards; problems: cards in it with problems (FAIL);

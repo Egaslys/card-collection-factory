@@ -10,7 +10,7 @@ const t = words({
     agent: 'своя картинка', fail: 'Ошибка', failText: 'Карточка не получилась: ни одна попытка не дошла до проверки.',
     newText: 'Карточка ещё не сделана.', noChecks: 'Проверок у этой карточки нет.', blocking: '{n} {w} по проверкам.',
     eyes: '{n} {w} от контура предмета — посмотрите глазами.', warns: '{n} {w} — посмотрите глазами.', pass: 'Проверки стиля пройдены.',
-    sayFail: 'Есть проблемы', sayWarn: 'Стоит взглянуть', sayFailed: 'Не получилась',
+    sayFail: 'Требует внимания', sayWarn: 'Можно улучшить', sayFailed: 'Не получилась',
     close: 'Закрыть', more: 'Подробнее', starting: 'Начинаю…', planning: 'Пишу план', generating: 'Генерируется картинка «{title}»',
     generatingMore: 'Генерируется картинка «{title}» и ещё {n}', generatingOne: 'Генерируется картинка', retry: 'Не получилось, пробую ещё раз ({n} из {of})',
     retryCard: '«{title}»: не получилось, пробую ещё раз ({n} из {of})',
@@ -29,7 +29,7 @@ const t = words({
     agent: 'own image', fail: 'Error', failText: 'The card did not work out: no attempt reached the checks.',
     newText: 'The card is not made yet.', noChecks: 'This card has no checks.', blocking: '{n} {w} found by the checks.',
     eyes: '{n} {w} on the object’s outline — have a look.', warns: '{n} {w} — have a look.', pass: 'The style checks passed.',
-    sayFail: 'Has problems', sayWarn: 'Worth a look', sayFailed: 'Did not work out',
+    sayFail: 'Needs attention', sayWarn: 'Could be better', sayFailed: 'Did not work out',
     close: 'Close', more: 'Details', starting: 'Starting…', planning: 'Writing the plan', generating: 'Drawing “{title}”',
     generatingMore: 'Drawing “{title}” and {n} more', generatingOne: 'Drawing the picture', retry: 'Did not work, trying again ({n} of {of})',
     retryCard: '“{title}”: did not work, trying again ({n} of {of})',
@@ -130,13 +130,15 @@ export function verdict(c, status) {
 }
 
 /**
- * The verdict under a thumbnail in plain words (the approved mockup): problems, worth a look, did not work out;
+ * The verdict under a thumbnail in plain words, in soft tones (the author's decision, 2026-10-31): needs attention in
+ * amber, could be better in grey, did not work out in red;
  * nothing when the card is fine or not made yet. Its sentence is the tooltip.
  * @param {{kind: string|null, word: string, text: string}} v @param {string} [status]
  */
 export const say = (v, status) => {
-  const word = status === 'failed' ? t('sayFailed') : v.kind === 'fail' ? t('sayFail') : v.kind === 'warn' ? t('sayWarn') : '';
-  return word ? `<span class="thumb__say thumb__say--${v.kind}" title="${esc(v.text)}"><i class="dot dot--${v.kind}"></i>${esc(word)}</span>` : '';
+  const [tone, dot, word] = status === 'failed' ? ['failed', 'fail', t('sayFailed')] : v.kind === 'fail' ? ['attention', 'warn', t('sayFail')]
+    : v.kind === 'warn' ? ['soft', 'soft', t('sayWarn')] : ['', '', ''];
+  return word ? `<span class="thumb__say thumb__say--${tone}" title="${esc(v.text)}"><i class="dot dot--${dot}"></i>${esc(word)}</span>` : '';
 };
 
 /** @param {{kind: string|null, word: string, text: string}} v */

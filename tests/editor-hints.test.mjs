@@ -20,7 +20,7 @@ test('подсказки набора: пустое место и карточк
   const both = { ...fresh, done: ['set.drag', 'set.place'] };
   assert.deepEqual(setHint(set({ filled: 1, made: 1, freeCards: 14 }), both), { kind: 'next', id: 'set.check' });
   assert.deepEqual(setHint(set({}), both), { kind: 'next', id: 'set.export' });
-  assert.deepEqual(setHint(set({ problems: 1 }), both), { kind: 'next', id: 'set.check' }, 'карточка «Есть проблемы» — ещё не экспорт');
+  assert.deepEqual(setHint(set({ problems: 1 }), both), { kind: 'next', id: 'set.check' }, 'карточка «Требует внимания» — ещё не экспорт');
   assert.deepEqual(setHint(set({ made: 9 }), both), { kind: 'next', id: 'set.check' }, 'не все карточки готовы');
   assert.deepEqual(setHint(set({ filled: 9, made: 9 }), both), { kind: 'next', id: 'set.check' }, 'пустое место без карточек в хранилище');
 });

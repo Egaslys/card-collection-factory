@@ -22,7 +22,7 @@ const t = words({
     image: 'картинка {v}', vision: 'взгляд {v}', text: 'текст {v}', priceUnknown: 'цена неизвестна', free: 'по подписке',
     prev: 'Предыдущая версия', next: 'Следующая версия', version: 'Версия {n}', of: 'из {total}', theCard: 'карточка', makeCard: 'Сделать карточкой',
     versionN: 'Версия {n}', isCard: 'это карточка', picked: 'Смотрящая модель выбрала эту версию из версий {ns}:', pickedNoReason: 'Смотрящая модель выбрала эту версию из версий {ns}.',
-    ok: 'Всё в порядке', look: 'Стоит взглянуть', problem: 'Есть проблемы', failed: 'Не получилась',
+    ok: 'Всё в порядке', look: 'Можно улучшить', problem: 'Требует внимания', failed: 'Не получилась',
     okSub: 'Программа измерила картинку, смотрящая модель сверила её с заказом — замечаний нет.', okSubNoLook: 'Программа измерила картинку — замечаний нет.',
     lookSub: 'Ничего не сломано, но есть места, которые лучше проверить глазами.', problemSub: 'Версия не прошла проверки. «Нарисовать заново» учтёт эти проблемы.',
     failedSub: 'Эта версия не дошла до проверки.', noChecks: 'Проверок у этой версии нет.',
@@ -57,7 +57,7 @@ const t = words({
     image: 'image {v}', vision: 'look {v}', text: 'text {v}', priceUnknown: 'price unknown', free: 'by subscription',
     prev: 'Previous version', next: 'Next version', version: 'Version {n}', of: 'of {total}', theCard: 'the card', makeCard: 'Make it the card',
     versionN: 'Version {n}', isCard: 'the card', picked: 'The vision model picked this version among versions {ns}:', pickedNoReason: 'The vision model picked this version among versions {ns}.',
-    ok: 'All is well', look: 'Worth a look', problem: 'Has problems', failed: 'Did not work out',
+    ok: 'All is well', look: 'Could be better', problem: 'Needs attention', failed: 'Did not work out',
     okSub: 'The program measured the picture and the vision model compared it with the order: nothing to remark.', okSubNoLook: 'The program measured the picture: nothing to remark.',
     lookSub: 'Nothing is broken, but some places are better checked by eye.', problemSub: 'The version did not pass the checks. «Draw again» corrects these problems.',
     failedSub: 'This version did not reach the checks.', noChecks: 'This version has no checks.',
@@ -128,8 +128,8 @@ async function pixelsOf(url) {
 }
 
 /**
- * The verdict of one version in words (ui.js verdict, from its summary in card.json): problem, worth a look, all is
- * well — a version whose vision model named something that blocks nothing is worth a look too.
+ * The verdict of one version in words (ui.js verdict, from its summary in card.json): needs attention, could be
+ * better, all is well — a version whose vision model named something that blocks nothing could be better too.
  * @param {any} a @returns {'problem'|'look'|'ok'|'failed'|'none'}
  */
 function stateOf(a) {
@@ -199,7 +199,7 @@ export async function openCard(collectionId, cardId, { version, wish: typed = ''
   function summaryHtml(a) {
     if (!a) return '';
     const state = stateOf(a);
-    if (state === 'failed') return `<section class="csum csum--problem"><div class="csum__head"><span class="csum__icon">${I.alert}</span><div><p class="csum__title">${esc(t('failed'))}</p><p class="csum__sub">${esc(t('failedSub'))}</p></div></div>
+    if (state === 'failed') return `<section class="csum csum--failed"><div class="csum__head"><span class="csum__icon">${I.alert}</span><div><p class="csum__title">${esc(t('failed'))}</p><p class="csum__sub">${esc(t('failedSub'))}</p></div></div>
       <ul class="reasons"><li><span>${esc(saidText(a.error.said, a.error.message))}</span></li></ul></section>`;
     if (state === 'none') return `<p class="ink-3">${esc(t('noChecks'))}</p>`;
     const kind = state === 'problem' ? 'problem' : state === 'look' ? 'look' : 'ok';
@@ -237,11 +237,11 @@ export async function openCard(collectionId, cardId, { version, wish: typed = ''
       const mine = results.filter(r => r.id.split('.')[0] === g && r.status !== 'N/A');
       if (!mine.length) return '';
       const fails = mine.filter(r => r.status === 'FAIL').length, warns = mine.filter(r => r.status === 'WARN').length;
-      const [dot, said] = fails ? ['fail', t('groupFail', { n: fails, w: plural(fails, W.problem) })] : warns ? ['warn', t('groupWarn', { n: warns })] : ['done', t('inNorm')];
+      const [dot, said] = fails ? ['warn', t('groupFail', { n: fails, w: plural(fails, W.problem) })] : warns ? ['soft', t('groupWarn', { n: warns })] : ['done', t('inNorm')];
       return `<li><i class="dot dot--${dot}"></i><span>${esc(name[lang()] ?? name.ru)}</span><span class="ink-3">${esc(said)}</span></li>`;
     }).join('');
     const issues = a.look?.issues ?? [];
-    const drawn = !a.look || a.look.verdict === 'unknown' ? ['warn', t('drawnNone')] : issues.length ? [issues.some((/** @type {any} */ i) => i.blocking) ? 'fail' : 'warn', t('drawnIssues', { n: issues.length, w: plural(issues.length, W.remark) })] : ['done', t('drawnOk')];
+    const drawn = !a.look || a.look.verdict === 'unknown' ? ['soft', t('drawnNone')] : issues.length ? [issues.some((/** @type {any} */ i) => i.blocking) ? 'warn' : 'soft', t('drawnIssues', { n: issues.length, w: plural(issues.length, W.remark) })] : ['done', t('drawnOk')];
     const shownResults = results.filter(r => r.status !== 'PASS' && r.status !== 'N/A');
     const all = shownResults.length || visual.length ? `<details class="disclose"><summary>${I.chev}<span>${esc(t('all'))}</span></summary>
         ${shownResults.length ? `<ul class="mlist">${shownResults.map(r => {
