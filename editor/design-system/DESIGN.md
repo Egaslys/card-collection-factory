@@ -460,7 +460,9 @@ uses the whole width; `page` (1200) is the reading width of text pages and of th
 Depth is quiet: panels are separated from the background by their surface colour and a hairline, not by heavy
 shadows. Shadows are neutral grey. `raised` — panels and rows that sit on the background; `float` — what
 floats over content (the top bar, the selection bar, a dragged card, a menu); `highlight` — the 1px inner top
-light of a raised control.
+light of a raised control; `nested` — a raised control inside a tight shell (the pressed segment): the same soft
+edge with no vertical offset and no highlight, because a shadow cast downwards inside a 4px gap reads as part of
+the pill and makes it sit low.
 
 ```json x-tokens
 {
@@ -468,12 +470,14 @@ light of a raised control.
     "light": {
       "raised": "0 1px 2px rgb(20 22 26 / 0.06)",
       "float": "0 1px 2px rgb(20 22 26 / 0.06), 0 12px 32px -12px rgb(20 22 26 / 0.22)",
-      "highlight": "inset 0 1px 0 rgb(255 255 255 / 0.7)"
+      "highlight": "inset 0 1px 0 rgb(255 255 255 / 0.7)",
+      "nested": "0 0 2px rgb(20 22 26 / 0.08)"
     },
     "dark": {
       "raised": "0 1px 2px rgb(0 0 0 / 0.3)",
       "float": "0 1px 2px rgb(0 0 0 / 0.3), 0 12px 32px -12px rgb(0 0 0 / 0.6)",
-      "highlight": "inset 0 1px 0 rgb(255 255 255 / 0.06)"
+      "highlight": "inset 0 1px 0 rgb(255 255 255 / 0.06)",
+      "nested": "0 0 2px rgb(0 0 0 / 0.3)"
     }
   }
 }
@@ -496,7 +500,7 @@ Pills sit only in pill shells or free.
   pressed moves 1px down, focus is a 2px state ring with 2px offset, disabled is sunken with ink-4.
 - **Top bar** — sticky, h 48, p 4, r 24; glass over the scrolling grid. Left: where you are (collection → set);
   right: theme, settings, the one primary action of the screen.
-- **Segmented control** — shell h 40 p 4 r 20, segments h 32 r 16; the pressed segment is a raised surface.
+- **Segmented control** — shell h 40 p 4 r 20, segments h 32 r 16; the pressed segment is a raised surface with the `nested` shadow (centred, no highlight).
 - **Fields** — h 40, r 8, p 12, 1px line-strong edge (≥ 3:1), label above in ink-2, hint below in ink-3. Focus:
   2px state ring. Error: the edge and the message in error ink, the message says what to do. Textarea grows.
   **Key field**: a password input with "show"; the hint says the key is not stored.
@@ -630,3 +634,7 @@ Agent's calls in this adaptation, waiting for the author (the author's own decis
 6. **The Science Gothic label voice is kept for labels and badges only**; segment and control texts are Geist.
 7. **Export has its own violet accent** (#7A5AF8 with its ink and tint) — derived, the brand palette has none; asked
    for by the author's note on the top bar («может быть, своим акцентным цветом»), the shade is the agent's.
+8. **A control raised inside a shell casts no downward shadow** (`nested`). The author saw the pressed segment sit
+   low in its shell (dark theme, Firefox): with `raised` (0 1px 2px) and the top highlight the pill's seen edges
+   were 4 px above and 2–2.5 px below in a 4/4 gap; with `nested` they are equal (3.5/3.5 px) in both themes, Chromium
+   and Firefox.
