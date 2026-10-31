@@ -111,6 +111,15 @@ async function getCard(a) {
 /** The models of each service and endpoint, read once while the editor runs (listModels). @type {Map<string, Promise<any>>} */
 const modelCache = new Map();
 
+/**
+ * Sets with what their window shows: `shown.places` (each place's stars, frame, scene) and `shown.choices` (what a
+ * person may set on that window kind), from core/set/places.js. @param {any[]} sets @param {string} style
+ */
+async function withPlaces(sets, style) {
+  const { placesOf, placeChoices } = await import('../../core/set/places.js');
+  return sets.map(s => ({ ...s, shown: { places: placesOf(s, style), choices: placeChoices(style, s.window.kind) } }));
+}
+
 /** @type {Record<string, Op>} */
 export const OPS = {
   // ---------- status and settings ----------
@@ -173,13 +182,41 @@ export const OPS = {
   // ---------- store ----------
   listCollections: { run: async () => store.listCollections() },
   createCollection: { run: async ({ title, description, fields, style }) => store.createCollection({ title: need('title', title), description: description ?? '', ...(fields ? { fields } : {}), ...(style ? { style } : {}) }) },
-  getCollection: { run: async ({ collectionId }) => store.getCollection(need('collectionId', collectionId)) },
+  getCollection: { run: async ({ collectionId }) => { const r = await store.getCollection(need('collectionId', collectionId)); return { ...r, sets: await withPlaces(r.sets, r.collection.style) }; } },
   updateCollection: { run: async ({ collectionId, patch }) => store.updateCollection(need('collectionId', collectionId), need('patch', patch)) },
   deleteCollection: { run: async ({ collectionId }) => store.deleteCollection(need('collectionId', collectionId)) },
   createSet: { run: async ({ collectionId, ...set }) => store.createSet(need('collectionId', collectionId), set) },
-  getSet: { run: async ({ collectionId, setId }) => store.getSet(need('collectionId', collectionId), need('setId', setId)) },
+  getSet: { run: async ({ collectionId, setId }) => (await withPlaces([await store.getSet(need('collectionId', collectionId), need('setId', setId))], (await store.getCollection(collectionId)).collection.style))[0] },
   updateSet: { run: async ({ collectionId, setId, patch }) => store.updateSet(need('collectionId', collectionId), need('setId', setId), need('patch', patch)) },
   deleteSet: { run: async ({ collectionId, setId }) => store.deleteSet(need('collectionId', collectionId), need('setId', setId)) },
+  // a place of a set window: stars and frame (core/set/places.js); one card for an empty place
+  setPlace: {
+    run: async ({ collectionId, setId, slot, stars, frame }) => {
+      const { setPlace } = await import('../../core/set/places.js');
+      return setPlace({ collection: need('collectionId', collectionId), set: need('setId', setId), slot: Number(need('slot', slot)), ...(stars !== undefined ? { stars } : {}), ...(frame ? { frame } : {}) });
+    },
+  },
+  setCardTitle: {
+    run: async a => {
+      const { setCardTitle } = await import('../../core/card/make.js');
+      return setCardTitle({ dir: cardDirOf(a), title: need('title', a.title) });
+    },
+  },
+  fillPlace: {
+    job: true, cancellable: true,
+    title: a => `Карточка для места ${Number(a.slot) + 1}`,
+    // the place too: the set screen knows which empty place is being generated
+    scope: a => ({ collectionId: a.collectionId, setId: a.setId, slot: Number(a.slot) }),
+    spentOf: r => r?.spent ?? null,
+    run: async (a, { progress, signal }) => {
+      const s = runOf(settings(), a);
+      const { fillPlace } = await import('../../core/set/places.js');
+      return fillPlace({
+        collection: need('collectionId', a.collectionId), set: need('setId', a.setId), slot: Number(need('slot', a.slot)), ...(a.about ? { about: String(a.about) } : {}),
+        settings: s, provider: await providerOf(s), apiKey: currentKey(presetOf(s.provider).keyEnvVar) ?? undefined, signal, progress,
+      });
+    },
+  },
   setSlots: { run: async ({ collectionId, setId, slots }) => store.setSlots(need('collectionId', collectionId), need('setId', setId), need('slots', slots)) },
   moveCard: {
     run: async ({ collectionId, cardId, setId, slot, pool }) => store.moveCard(need('collectionId', collectionId), need('cardId', cardId),

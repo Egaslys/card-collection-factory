@@ -46,6 +46,16 @@ async function collectionShow(v, [id]) {
   return 0;
 }
 
+/** @param {any} v @param {string[]} p */
+async function collectionCover(v, [id]) {
+  const { updateCollection, listCollections } = await store();
+  await updateCollection(id, { cover: v.clear ? null : v.card });
+  const cover = (await listCollections()).find(c => c.id === id)?.cover ?? null;
+  if (v.json) console.log(JSON.stringify({ id, card: v.clear ? null : v.card, cover }, null, 2));
+  else console.log(v.clear ? `Обложка коллекции ${id} — снова первая карточка${cover ? `: ${cover}` : ''}.` : `Обложка коллекции ${id}: ${cover ?? 'у карточки пока нет картинки'}`);
+  return 0;
+}
+
 /** @param {any} v */
 async function exportCmd(v) {
   const { exportItems, openFolder } = await store();
@@ -86,6 +96,18 @@ export const storeCommands = {
     options: { json: JSON_OPTION },
     positionals: { min: 1, max: 1, label: 'ID' },
     run: collectionShow,
+  },
+  'collection cover': {
+    usage: ['ccf.mjs collection cover ID (--card CARD_ID | --clear) [--json]'],
+    about: 'Chooses the card whose image is the collection\'s cover (--clear: the first card in the first set again).',
+    options: {
+      card: { type: 'string', value: 'CARD_ID', help: 'a card of the collection' },
+      clear: { type: 'boolean', help: 'no chosen cover: the first card stands for it' },
+      json: JSON_OPTION,
+    },
+    positionals: { min: 1, max: 1, label: 'ID' },
+    check: (/** @type {any} */ v) => !v.card === !v.clear ? 'give --card CARD_ID or --clear' : null,
+    run: collectionCover,
   },
   export: {
     usage: [

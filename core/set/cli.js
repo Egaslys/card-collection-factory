@@ -243,6 +243,51 @@ async function collectionMake(v) {
   return r.sets.every(setOk) && !r.skipped.length ? 0 : 1;
 }
 
+/** @param {any} v */
+async function setCreate(v) {
+  const store = await import('../store/index.js');
+  const set = await store.createSet(v.collection, {
+    title: v.title, brief: { theme: v.theme ?? '', wishes: v.wishes ?? '' },
+    window: { ...(v.window ? { kind: v.window } : {}), ...(v.template ? { template: v.template } : {}) },
+  });
+  if (v.json) console.log(JSON.stringify(set, null, 2));
+  else console.log(`Набор создан: ${set.id} — «${set.title}», №${set.number}, окно ${set.window.kind} (${set.window.template}); места пустые.`);
+  return 0;
+}
+
+/** @param {any} v */
+async function setPlaceCmd(v) {
+  const { setPlace, placesOf } = await import('./places.js');
+  const store = await import('../store/index.js');
+  const set = await setPlace({ collection: v.collection, set: v.set, slot: +v.slot - 1, ...(v.stars !== undefined ? { stars: +v.stars } : {}), ...(v.frame ? { frame: v.frame } : {}) });
+  const place = placesOf(/** @type {any} */ (set), (await store.getCollection(v.collection)).collection.style)[+v.slot - 1];
+  if (v.json) console.log(JSON.stringify(place, null, 2));
+  else console.log(`Место ${v.slot} набора «${set.title}»: звёзд ${place.stars}, рамка ${place.frame}${place.scene ? ', сцена с персонажами' : ''}.`);
+  return 0;
+}
+
+/** @param {any} v */
+async function setFill(v) {
+  const { fillPlace } = await import('./places.js');
+  const store = await import('../store/index.js');
+  const slot = +v.slot - 1;
+  const set = await store.getSet(v.collection, v.set);
+  const signal = interruptible();
+  const r = await paid({
+    // a set gathered by hand has no order for the place: the text model writes one (the key of the settings' service)
+    needsKey: imagesNeedKey(v) || !(/** @type {any} */ (set.plan)?.slots?.[slot]), signal, op: 'fillPlace',
+    args: () => ({ collectionId: v.collection, setId: v.set, slot, about: v.about, provider: v.provider, model: v.model }),
+    here: async () => fillPlace({ collection: v.collection, set: v.set, slot, about: v.about, ...await providerOf(v), signal, progress }),
+  }, v);
+  if (v.json) console.log(JSON.stringify(r, null, 2));
+  else {
+    for (const e of r.errors) console.log(`ошибка: ${e}`);
+    for (const w of r.warnings) console.log(`внимание: ${w}`);
+    console.log(r.card ? `Место ${v.slot}: карточка ${r.card}, потрачено ${usd(r.spent)}.` : `Место ${v.slot}: карточки нет, потрачено ${usd(r.spent)}.`);
+  }
+  return r.card && !r.errors.length ? 0 : 1;
+}
+
 const PLAN_ABOUT = `The plan is a SetPlan (core/set/README.md): the set's theme, angle and window, and for each of its 10 slots the
 stars, the frame, the item kind and the card order. It is checked by the style's set rules (styles/<style>/SETS.md,
 as data in set-rules.json) and every order by the style's card rules.`;
@@ -308,6 +353,58 @@ under one spend cap for the set. Ctrl+C stops starting new cards; the cards in p
     check: (/** @type {any} */ v, /** @type {string[]} */ p) => !v.collection ? '--collection is required' : !p.length === !v.set ? 'give either PLAN.json or --set ID'
       : !listOk(v.slots) ? '--slots must be numbers separated by commas' : makeError(v),
     run: setMake,
+  },
+  'set create': {
+    usage: ['ccf.mjs set create --collection ID --title TEXT [--theme TEXT] [--wishes TEXT] [--window KIND] [--template COLOUR] [--json]'],
+    about: `Creates an empty set of the collection, gathered by hand: 10 empty places in its window, no plan. Cards go in with
+"card make --set", moved from the pool in the editor, or "set fill" makes one for an empty place by the set's theme.`,
+    options: {
+      collection: { type: 'string', value: 'ID', help: 'the collection id (required)' },
+      title: { type: 'string', value: 'TEXT', help: 'the set title (required)' },
+      theme: { type: 'string', value: 'TEXT', help: 'what the set is about (used when a place is filled)' },
+      wishes: { type: 'string', value: 'TEXT', help: "the producer's free wishes" },
+      window: { type: 'string', value: 'KIND', help: "the window kind of the style (scapes: large, small, grand; default: the style's main one)" },
+      template: { type: 'string', value: 'COLOUR', help: "the window's colour template (default: the kind's first)" },
+      json: JSON_OPTION,
+    },
+    check: (/** @type {any} */ v) => !v.collection || !v.title?.trim() ? '--collection and --title are required' : null,
+    run: setCreate,
+  },
+  'set place': {
+    usage: ['ccf.mjs set place --collection ID --set ID --slot N [--stars N] [--frame NAME] [--json]'],
+    about: `Sets the stars and/or the frame of one place of a set window (a person's choice, kept over the plan's; the plan is
+not changed). Frames: those the window kind shows (scapes: silver, gold; the grand window: crystal only, 5 stars fixed).
+Without --stars and --frame, prints what the place shows.`,
+    options: {
+      collection: { type: 'string', value: 'ID', help: 'the collection id (required)' },
+      set: { type: 'string', value: 'ID', help: 'the set id (required)' },
+      slot: { type: 'string', value: 'N', help: 'the place, 1–10 (required)' },
+      stars: { type: 'string', value: 'N', help: 'stars, 1–5' },
+      frame: { type: 'string', value: 'NAME', help: 'the frame: silver, gold or crystal' },
+      json: JSON_OPTION,
+    },
+    check: (/** @type {any} */ v) => !v.collection || !v.set || !v.slot ? '--collection, --set and --slot are required'
+      : !(Number.isInteger(+v.slot) && +v.slot >= 1) ? '--slot must be a whole number from 1' : v.stars !== undefined && !Number.isInteger(+v.stars) ? '--stars must be a whole number' : null,
+    run: setPlaceCmd,
+  },
+  'set fill': {
+    usage: ['ccf.mjs set fill --collection ID --set ID --slot N [--about TEXT] [--provider NAME] [--model ID] [--json]'],
+    about: `Makes one card for an empty place of a set, by the set's rules for that place: a planned set makes its plan's order
+of the slot; a set gathered by hand has the text model write one order on the set's theme and wishes (a scene with
+characters where the place is one: a gold place of the large window, every place of the grand one) and makes it into
+the place. Spend: the planning call (text) and the card, within card.maxSpendUsd.`,
+    options: {
+      collection: { type: 'string', value: 'ID', help: 'the collection id (required)' },
+      set: { type: 'string', value: 'ID', help: 'the set id (required)' },
+      slot: { type: 'string', value: 'N', help: 'the empty place, 1–10 (required)' },
+      about: { type: 'string', value: 'TEXT', help: "what the card shows, in the person's words (a set without a plan for the place)" },
+      provider: MAKE_OPTIONS.provider,
+      model: MAKE_OPTIONS.model,
+      json: JSON_OPTION,
+    },
+    check: (/** @type {any} */ v) => !v.collection || !v.set || !v.slot ? '--collection, --set and --slot are required'
+      : !(Number.isInteger(+v.slot) && +v.slot >= 1) ? '--slot must be a whole number from 1' : makeError(v),
+    run: setFill,
   },
   'set sheet': {
     usage: ['ccf.mjs set sheet --collection ID --set ID --out FILE.png [--json]'],

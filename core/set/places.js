@@ -1,0 +1,133 @@
+// The places of a set window: each place's stars and frame (SETS.md 4: rarity belongs to the place, not to the card)
+// and whether a scene with characters stands there. A person sets them on the window (the editor's place panel,
+// `ccf.mjs set place`); they are kept in set.json `places` over the plan's, so the plan stays what the model wrote and
+// a planned set is still made by it. What the window shows: the place's own, else the plan's slot, else the kind's
+// default — the skeleton of its base layout in set-rules.json. A value the window kind cannot show (a crystal frame
+// outside the grand window, a gold one in it) is not used, so switching the window kind back brings it back.
+import { loadSetRules, windowSkeleton } from './rules.js';
+
+/**
+ * @typedef {object} Place
+ * @property {number} stars  1–5
+ * @property {string} frame  one of the kind's `frames`
+ * @property {boolean} scene  a scene with characters stands here (a generated card for the place is one)
+ */
+
+/**
+ * @typedef {object} PlaceChoices  what a person may set on a window kind
+ * @property {boolean} stars  false: the kind's every layout fixes the stars (the grand window: 5 on every place)
+ * @property {string[]} frames  the frames the kind shows, its plain one first
+ */
+
+/** @typedef {{stars: number, frame: string}} OwnPlace  a place as set.json `places` keeps it */
+
+/**
+ * The layouts of a window kind (set-rules.json `windows` of that family) and its base layout: the one named as the
+ * kind, else its first.
+ * @param {import('./rules.js').SetRules} rules @param {string} kind
+ */
+function layoutsOf(rules, kind) {
+  const all = Object.entries(rules.windows).filter(([, w]) => w.family === kind);
+  if (!all.length) throw new Error(`В правилах наборов нет окон вида «${kind}»; есть: ${[...new Set(Object.values(rules.windows).map(w => w.family))].join(', ')}.`);
+  const base = rules.windows[kind]?.family === kind ? kind : all[0][0];
+  return { all: all.map(([, w]) => w), base, w: rules.windows[base] };
+}
+
+/** @param {string} style @param {string} kind @returns {PlaceChoices} */
+export function placeChoices(style, kind) {
+  const { rules } = loadSetRules(style);
+  const { all } = layoutsOf(rules, kind);
+  const fixed = all.every(w => w.stars && new Set(w.stars).size === 1) && new Set(all.map(w => w.stars?.[0])).size === 1;
+  const plain = [...new Set(all.map(w => w.frame))];
+  return { stars: !fixed, frames: all.some(w => w.gold !== 'none') ? [...plain, 'gold'] : plain };
+}
+
+/**
+ * The places the window of a set shows (see the head of this file).
+ * @param {{window: {kind: string}, places?: (OwnPlace|null)[]|null, plan?: any}} set @param {string} style
+ * @returns {Place[]}
+ */
+export function placesOf(set, style) {
+  const { rules } = loadSetRules(style);
+  const kind = set.window.kind;
+  const { base, w } = layoutsOf(rules, kind);
+  const choices = placeChoices(style, kind);
+  const skeleton = windowSkeleton(rules, base, w.scenes[0]);
+  const allScenes = w.scenes[0] === rules.set_size;
+  /** @param {any} p */
+  const fits = p => p && Number.isInteger(p.stars) && p.stars >= 1 && p.stars <= 5 && choices.frames.includes(p.frame);
+  return skeleton.map((d, i) => {
+    const own = set.places?.[i];
+    const planned = set.plan?.slots?.[i];
+    if (fits(own)) {
+      const o = /** @type {OwnPlace} */ (own);
+      return { stars: choices.stars ? o.stars : d.stars, frame: o.frame, scene: allScenes || (w.gold === 'scenes' && o.frame === 'gold') };
+    }
+    if (fits(planned)) return { stars: choices.stars ? planned.stars : d.stars, frame: planned.frame, scene: Number(planned.order?.staging?.characters ?? 0) > 0 };
+    return d;
+  });
+}
+
+/**
+ * Sets one place's stars and/or frame (the rest of the window stays as shown) and saves the set's `places`.
+ * @param {object} o
+ * @param {string} o.collection @param {string} o.set @param {number} o.slot  0-based
+ * @param {number} [o.stars] @param {string} [o.frame]
+ * @param {Pick<typeof import('../store/index.js'), 'getCollection'|'getSet'|'updateSet'>} [o.store]
+ */
+export async function setPlace({ collection, set: setId, slot, stars, frame, store }) {
+  const st = store ?? await import('../store/index.js');
+  const { collection: col } = await st.getCollection(collection);
+  const set = await st.getSet(collection, setId);
+  if (!Number.isInteger(slot) || slot < 0 || slot >= set.slots.length) throw new Error(`Место — целое от 1 до ${set.slots.length}.`);
+  const choices = placeChoices(col.style, set.window.kind);
+  if (stars !== undefined) {
+    if (!choices.stars) throw new Error('В этом окне звёзды мест заданы окном: их не поменять.');
+    if (!Number.isInteger(stars) || stars < 1 || stars > 5) throw new Error('Звёзды — целое от 1 до 5.');
+  }
+  if (frame !== undefined && !choices.frames.includes(frame)) throw new Error(`Рамка «${frame}» в этом окне не бывает; есть: ${choices.frames.join(', ')}.`);
+  const shown = placesOf(/** @type {any} */ (set), col.style);
+  const own = /** @type {any} */ (set).places;
+  const old = /** @type {(OwnPlace|null)[]} */ (Array.isArray(own) ? own : []);
+  const places = shown.map((p, i) => (i === slot ? { stars: stars ?? p.stars, frame: frame ?? p.frame } : old[i] ?? null));
+  return st.updateSet(collection, setId, { places });
+}
+
+/**
+ * Makes one card for an empty place of a set, by the set's rules for that place: a planned set makes its plan's order
+ * of the slot (makeSet with that slot only); a set without a plan for the slot (a set gathered by hand) has the text
+ * model write one order on the set's theme and wishes — or on `about`, what the person wants on the card — a scene
+ * with characters when the place is one (placesOf), and makes it into the place (makeCardsInto). The place must be
+ * empty.
+ * @param {object} o
+ * @param {string} o.collection @param {string} o.set @param {number} o.slot  0-based
+ * @param {string} [o.about]  what the card shows, in the person's words (a set without a plan for the slot)
+ * @param {import('../settings.js').Settings & {set: import('./planner.js').SetSettings}} o.settings
+ * @param {import('../card/make.js').Provider} o.provider
+ * @param {string} [o.apiKey] @param {import('./planner.js').TextModel} [o.model]  the planning model (tests)
+ * @param {AbortSignal} [o.signal] @param {any} [o.store] @param {typeof import('../card/make.js').makeCard} [o.makeCard]
+ * @param {(msg: string, data?: object) => void} [o.progress]
+ * @returns {Promise<{spent: number, card: string|null, warnings: string[], errors: string[]}>}  errors: the order did not
+ *   come out (nothing was made)
+ */
+export async function fillPlace({ collection, set: setId, slot, about, settings, provider, apiKey, model, signal, store, makeCard, progress = () => {} }) {
+  const st = store ?? await import('../store/index.js');
+  const { collection: col } = await st.getCollection(collection);
+  const set = await st.getSet(collection, setId);
+  if (!Number.isInteger(slot) || slot < 0 || slot >= set.slots.length) throw new Error(`Место — целое от 1 до ${set.slots.length}.`);
+  if (set.slots[slot]) throw new Error(`Место ${slot + 1} занято: сначала уберите карточку из него.`);
+  if (set.plan?.slots?.[slot]) {
+    const { makeSet } = await import('./make.js');
+    const r = await makeSet({ collection, set: setId, only: [slot + 1], settings, provider, signal, store: st, makeCard, progress });
+    const s = r.slots[0];
+    return { spent: r.spent, card: s?.card ?? null, warnings: r.warnings, errors: s?.error ? [s.error] : [] };
+  }
+  const { makeCardsInto } = await import('./cards.js');
+  const place = placesOf(set, col.style)[slot];
+  const r = await makeCardsInto({
+    collection, theme: about ? `${about} (${set.brief.theme || set.title})` : set.brief.theme || set.title, wishes: set.brief.wishes, count: 1, scenes: place.scene ? 1 : 0, place: { setId, slot },
+    settings, provider, apiKey, model, signal, store: st, makeCard, progress,
+  });
+  const c = r.cards[0];
+  return { spent: r.spent, card: c?.card ?? null, warnings: [...r.plan.warnings, ...r.warnings], errors: [...r.plan.errors, ...(c?.error ? [c.error] : [])] };
+}

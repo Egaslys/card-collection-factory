@@ -39,6 +39,7 @@ An id is the folder name: a slug of the title (Cyrillic transliterated, lower ca
   "fields": { "season": "лето" },
   "style": "scapes",
   "sets": ["ozero", "more"],
+  "cover": "poplavok",
   "createdAt": "2026-10-30T10:00:00.000Z",
   "updatedAt": "2026-10-30T10:05:00.000Z"
 }
@@ -47,6 +48,7 @@ An id is the folder name: a slug of the title (Cyrillic transliterated, lower ca
 - `fields` — free-form fields of the collection; `updateCollection({ fields })` replaces the object as a whole.
 - `style` — `styles/<style>`; `DEFAULT_STYLE` when not given.
 - `sets` — the collection's set order. `updateCollection({ sets })` must list every set exactly once. A set folder missing from the list (written by hand) is shown after the listed ones, by number.
+- `cover` — optional: the card a person chose as the collection's cover (`updateCollection({ cover })`: a card of the collection, or `null`). `listCollections` gives its image as `cover`; without one, or when that card has no image (or is gone), the first card in the first set, else any card.
 
 ## set.json
 
@@ -71,6 +73,7 @@ An id is the folder name: a slug of the title (Cyrillic transliterated, lower ca
 - `slots` — `SLOT_COUNT` (10) card ids or `null`, in window order: row by row, left to right. In the API a slot is the **0-based index** into this array; export file names number slots from 01.
 - `variantGroup` — sets with the same group are variants of one set; a new set's group is its own id.
 - `plan` — optional, owned by `core/set`; the store keeps it as given.
+- `places` — optional, owned by `core/set` (`core/set/places.js`): the stars and frame a person set on each place of the window, `{ stars, frame }` or `null` per slot, over the plan's; the store keeps it as given.
 - Any other top-level key passed to `createSet` / `updateSet` is stored and kept on later updates. `id`, `createdAt`, `updatedAt` are set by the store only.
 
 ## Card summary (`listCards`, `getCollection().pool`, `moveCard`)

@@ -174,6 +174,7 @@ export async function planCards({ style, theme, wishes, collectionTheme, count, 
  * @param {Provider} o.provider
  * @param {string} [o.apiKey] @param {TextModel} [o.model]  the planning model (tests), else the settings' with the key
  * @param {number} [o.maxSpendUsd]  the cards' cap
+ * @param {{setId: string, slot: number}} [o.place]  one card only: the set place (0-based slot) it goes into instead of the pool
  * @param {AbortSignal} [o.signal]
  * @param {any} [o.store] @param {typeof import('../card/make.js').makeCard} [o.makeCard]
  * @param {(msg: string, data?: object) => void} [o.progress]
@@ -181,7 +182,8 @@ export async function planCards({ style, theme, wishes, collectionTheme, count, 
  *   keyProblem: the service refused the key or wants money — no card started after it (the rest `cancelled`), what
  *   was made is kept; `warnings` then holds its one message
  */
-export async function makeCardsInto({ collection, theme, wishes, count, scenes = 0, settings, provider, apiKey, model, maxSpendUsd, signal, store, makeCard, progress = () => {} }) {
+export async function makeCardsInto({ collection, theme, wishes, count, scenes = 0, settings, provider, apiKey, model, maxSpendUsd, place, signal, store, makeCard, progress = () => {} }) {
+  if (place && count !== 1) throw new Error('В место набора — ровно одна карточка.');
   const st = store ?? await import('../store/index.js');
   const make = makeCard ?? (await import('../card/make.js')).makeCard;
   const col = (await st.getCollection(collection)).collection;
@@ -255,7 +257,7 @@ export async function makeCardsInto({ collection, theme, wishes, count, scenes =
     const used = { spent: 0, prices: [] };
     progress(`«${title}» — генерация`, { title, status: 'start', spent: 0 });
     try {
-      const r = await make({ order, collection, settings, provider, store: st, limits: { maxSpendUsd: capHere }, ...(signal ? { signal } : {}) });
+      const r = await make({ order, collection, ...(place ? { place } : {}), settings, provider, store: st, limits: { maxSpendUsd: capHere }, ...(signal ? { signal } : {}) });
       used.spent = r.spent ?? 0;
       used.prices = r.attempts.map(x => x.cost ?? 0);
       if (r.stop === 'key' && r.keyProblem) keyProblem ??= r.keyProblem;

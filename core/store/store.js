@@ -23,6 +23,8 @@ import { writeZip } from './zip.js';
  * @property {Record<string, unknown>} fields  free-form fields of the collection (season, audience, …)
  * @property {string} style  styles/<style>
  * @property {string[]} sets  set ids in the collection's order
+ * @property {string|null} [cover]  the card whose image is the collection's cover, chosen by a person; none or a card
+ *   without an image: the first card in the first set (else any card) stands for it
  * @property {string} createdAt  ISO time
  * @property {string} updatedAt
  */
@@ -82,7 +84,8 @@ import { writeZip } from './zip.js';
  * @property {string} description
  * @property {number} setCount
  * @property {number} cardCount
- * @property {string|null} cover  image of the first card in the first set (else of any card); null when none
+ * @property {string|null} cover  image of the chosen cover card (collection.json `cover`), else of the first card in the
+ *   first set, else of any card; null when none
  */
 
 /** @typedef {{setId: string, slot: number}} Place */
@@ -114,7 +117,7 @@ import { writeZip } from './zip.js';
 const TRASH_MODULE = new URL('../../tools/trash.mjs', import.meta.url).href;
 const loadTrash = async () => /** @type {{trash: TrashFn}} */ (await import(TRASH_MODULE)).trash;
 
-const COLLECTION_KEYS =['title', 'description', 'fields', 'style', 'sets'];
+const COLLECTION_KEYS =['title', 'description', 'fields', 'style', 'sets', 'cover'];
 const PROTECTED_SET_KEYS = ['id', 'createdAt', 'updatedAt'];
 
 /** @param {unknown} v @returns {v is Record<string, any>} */
@@ -372,7 +375,7 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
         const sets = allSets(c, col);
         const cards = cardIds(c);
         let cover = null;
-        for (const id of [...sets.flatMap(s => s.slots), ...cards]) {
+        for (const id of [col.cover, ...sets.flatMap(s => s.slots), ...cards]) {
           if (id && exists(path.join(cardDir(c, id), FINAL_IMAGE))) { cover = path.join(cardDir(c, id), FINAL_IMAGE); break; }
         }
         out.push({ id: col.id, title: col.title, description: col.description, setCount: sets.length, cardCount: cards.length, cover, createdAt: col.createdAt });
@@ -407,7 +410,8 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
     },
 
     /**
-     * Keys: title, description, fields (replaced as a whole), style, sets (the new order: the same set ids).
+     * Keys: title, description, fields (replaced as a whole), style, sets (the new order: the same set ids), cover (a
+     * card id of the collection, or null for the first card).
      * @param {string} collectionId @param {Partial<Collection>} patch @returns {Promise<Collection>}
      */
     async updateCollection(collectionId, patch) {
@@ -419,6 +423,7 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
       if ('description' in patch) text('Описание коллекции', patch.description);
       if ('style' in patch) text('Стиль', patch.style);
       if ('fields' in patch && !isObject(patch.fields)) throw new Error('Поля коллекции (fields) — объект.');
+      if ('cover' in patch && patch.cover !== null && !(typeof patch.cover === 'string' && exists(cardDir(collectionId, patch.cover)))) throw new Error(`Обложка — карточка этой коллекции, а «${patch.cover}» в ней нет.`);
       if ('sets' in patch) {
         const have = allSets(collectionId, col).map(s => s.id).sort();
         if (!Array.isArray(patch.sets) || JSON.stringify([...patch.sets].sort()) !== JSON.stringify(have)) {
