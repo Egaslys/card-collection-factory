@@ -1,42 +1,78 @@
 # card-collection-factory
 
-Фабрика коллекций коллекционных карточек: агентский пайплайн с веб-редактором. Продукт создаёт коллекции: в стиле — коллекции, в коллекции — наборы, в наборе — карточки. Для набора инструмент получает тематику набора и свободные пожелания продюсера и выдаёт несколько вариантов готового набора картинок. Основной режим агентский: просишь Claude Code или Codex собрать набор, и агент делает всё сам. Веб-редактор нужен человеку, чтобы проверить результат, поправить его или погенерировать без агента. Видение автора — в [docs/plans/VISION.md](docs/plans/VISION.md).
+[English](README.md) | [Русский](README.ru.md)
 
-**Состояние:** продукт пишется. Есть установка в одну кнопку, команды для агента (`node ccf.mjs --help`) и веб-редактор.
+A factory of collectible card collections. You name a theme and say what you would like, and the factory draws the cards in one art style and lays them out into sets: a collection holds 16 sets, a set is 10 cards in a game window. You can work in the web editor yourself, or ask an AI agent (Claude Code or Codex) to make a set for you; the agent can do everything the editor does.
 
-## Установка и запуск
+## What you need
 
-Нужен только [Node.js](https://nodejs.org) (версия LTS, 22.18 или новее). Скачайте проект (клонируйте или распакуйте zip) и дважды щёлкните файл запуска вашей системы в корне папки:
+- A computer with macOS, Windows or Linux.
+- [Node.js](https://nodejs.org), the LTS version (22.18 or newer).
+- A key to an AI service that draws the pictures: OpenRouter or Google AI Studio (see «The key» below). Instead of a service, the pictures can be drawn by Codex CLI under your Codex subscription.
 
-- macOS: `run.command`. Если система не даёт открыть файл («неизвестный разработчик»): правый щелчок по файлу → «Открыть» → «Открыть». Если файл не запускается как программа, откройте Терминал и выполните `chmod +x run.command run.sh` в папке проекта.
-- Windows: `run.bat`. Если Windows пишет «защитили ваш компьютер», нажмите «Подробнее» → «Выполнить в любом случае».
-- Linux: `run.sh` (из файлового менеджера или командой `./run.sh` в терминале).
+## Install and start
 
-При первом запуске файл сам проверит версию Node.js и поставит недостающее (нужен интернет, до минуты). Потом запуск занимает секунду. Если Node.js не найден, файл скажет, откуда его взять.
+Download the project (clone it or unpack the zip) and double-click the launcher for your system in the project folder:
 
-После установки файл запуска открывает редактор в браузере. Окно с файлом запуска не закрывайте, пока работаете: редактор живёт, пока оно открыто. Остановить — закрыть окно или нажать Ctrl+C в нём.
+- macOS: `run.command`. If macOS will not open it («unidentified developer»): Apple menu → System Settings → Privacy & Security, scroll to Security, click Open Anyway and enter your password; then double-click the file again. If it does not start as a program, open Terminal in the project folder and run `chmod +x run.command run.sh`.
+- Windows: `run.bat`. If Windows says it «protected your PC», click More info → Run anyway.
+- Linux: `run.sh` (from the file manager, or `./run.sh` in a terminal).
 
-## Редактор
+On the first start the launcher checks Node.js and installs what is missing. If Node.js is not found, it tells you where to get it.
 
-Редактор — сайт на вашем компьютере (адрес вида `http://127.0.0.1:4870`, только для вас). Из терминала в папке проекта его можно открыть и без файла запуска: `node editor/server.mjs` (работает, пока открыто окно терминала) или `node ccf.mjs editor` (работает в фоне; остановить — `node ccf.mjs editor --stop`). Если редактор уже запущен, обе команды просто откроют его снова.
+Then the editor opens in your browser. It is a site on your own computer (an address like `http://127.0.0.1:4870`), visible only to you. Keep the launcher window open while you work.
 
-- **Коллекции** — первый экран. «Новая коллекция»: название и описание — что это за коллекция; можно сразу собрать все 16 наборов или создавать наборы по одному.
-- **Коллекция** — описание и свои поля (кнопка «Описание»), наборы в окнах игры и «Хранилище» — все карточки коллекции. Карточки перетаскиваются мышью из хранилища в места наборов, между местами и обратно. «Создать набор» — тема и пожелания свободным текстом, число вариантов. «Собрать все наборы» — вся коллекция одной кнопкой.
-- **Набор** — окно набора в одном из четырёх цветов (синий, фиолетовый, малиновый, оранжевый), варианты набора рядом и кнопка «Выбрать». Нажмите на карточку — откроется её панель: что сказали проверки стиля, пожелание, чтобы сделать её заново или поправить картинку, ползунки обработки (резкость, насыщенность, яркость) с предпросмотром, история попыток; в «Ещё» — переместить, своя картинка, экспорт, удалить.
-- **Экспорт** — картинки PNG по папкам (коллекция → наборы → карточки) или архив ZIP: карточки, набора или всей коллекции. Файлы ложатся в папку коллекции `collections/<коллекция>/export/`; кнопка «Открыть в папке» показывает их.
-- **Очередь** — сверху, пока что-то собирается: что делается, по каждой карточке, сколько потрачено; долгую сборку можно остановить.
-- **Настройки** (шестерёнка, с любого экрана): сервис моделей (OpenRouter или Google AI Studio) и его ключ, кто рисует картинки (модель сервиса по ключу или Codex CLI по подписке), модели, число попыток и потолки расходов, тема оформления.
+## The key
 
-**Ключ.** У каждого сервиса свой: для OpenRouter — строка `OPENROUTER_API_KEY=…` в файле `.env` в папке проекта, для Google AI Studio — `GEMINI_API_KEY=…` (ключ выдаёт aistudio.google.com/apikey); какой сервис работает, выбирается в настройках. Это постоянный ключ. Временный — вставьте в настройках редактора: он живёт, пока редактор запущен, и никуда не записывается. Есть ли ключ, видно вверху на каждом экране (красным — ключа нет). Агент в терминале, у которого своего ключа нет, работает через запущенный редактор и его ключ: платные команды `node ccf.mjs …` сами отправляются в редактор, а ключ из редактора не выходит.
+The factory works through one AI service at a time; you choose it in the editor: Settings → Service.
 
-Всё, что вы делаете в редакторе, агент может делать командами `node ccf.mjs …`, и наоборот: карточки, которые делает агент, появляются в открытом редакторе сами.
+- **OpenRouter** — one key to models of many companies, paid per call from your OpenRouter balance. Create a key at [openrouter.ai/keys](https://openrouter.ai/keys).
+- **Google AI Studio** — Google's models directly, billed by Google. Create a key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
 
-## Проверка настройки
+There are two ways to give the factory a key:
 
-Из корня проекта:
+- **For now:** paste it in Settings → Service. It works at once and lives while the editor runs; it is not saved anywhere.
+- **For good:** create a file named `.env` in the project folder with one line: `OPENROUTER_API_KEY=your-key` for OpenRouter or `GEMINI_API_KEY=your-key` for Google AI Studio. The factory reads it on every start. Never share this file.
 
-```sh
-node tools/check.mjs
-```
+The top bar of the editor shows on every screen whether there is a key, and what has been spent so far.
 
-Как устроена работа агентов в проекте, описано в [agents/README.md](agents/README.md).
+## Who draws the pictures
+
+In Settings → Generation you choose who draws:
+
+- **The service's model** — through your key; every picture is paid.
+- **Codex CLI** — free per picture under your Codex subscription (GPT Image only). Note: **with Codex CLI chosen, the factory itself starts Codex in the background on your computer** and gives it each picture to draw; you do not need to open Codex. It only has to be installed and signed in once. Set plans and the model's look at cards still go through the service and its key.
+
+## The editor
+
+- **Collections** — the first screen. «New collection»: a title and what the collection is about; it starts empty.
+- **A collection** — its description and cover («Description»), its sets in game windows, and the **Pool** with every card of the collection. «Create a set» generates a set on a theme or lets you gather one yourself from the pool's cards; «Generate all sets» fills the whole collection with one button; «Create cards» in the pool makes loose cards on a theme. Drag cards with the mouse from the pool into the places of a set, between places and back.
+- **A set** — its window in one of four colours, its variants side by side (the chosen one goes to the export), and its settings. Click a place to set its stars, frame and caption; an empty place can be filled from the pool or generated.
+- **A card** — click it to open its panel: what the style checks found, its versions, and ways to redo it or fix the picture.
+- **Generation** — while something is being made, the top bar says so; click it to see each card's progress in plain words and to stop a long run.
+- **Settings** (top right): the service and its key, who draws, the models (picked from the service's own list), attempts per card, theme and language.
+
+The editor speaks English and Russian (RU / EN in the top bar); captions on the cards are not translated. Light and dark themes are next to it.
+
+## Export
+
+The «Export» button at the top left works on every screen and suggests what fits the screen: every collection, this collection, this set or the cards you selected (⌘ or Ctrl + click a card). You get PNG pictures in folders (collection → sets → cards) or one ZIP archive; you can add the pool and the original pictures in full size. «Open the export folder» shows the result.
+
+The files go to the project's `collections` folder: a collection's export to `collections/<collection>/export/`, the export of every collection to `collections/_export/`.
+
+## Work through your agent
+
+Open the project folder in Claude Code or Codex and ask in plain words, for example: «make a set about fishing on a lake» or «make 20 cards about a space kitchen». The agent follows the project's skills `ccf-make-sets`, `ccf-make-cards` and `ccf-review-cards`, checks the cards and fixes the weak ones. You can also work from another folder: tell the agent where the factory is.
+
+The agent uses the same key — from `.env`, or the one in the running editor. Whatever it makes appears in the open editor by itself.
+
+## Stopping the editor
+
+- In the editor: Settings → «Switch the editor off» (at the bottom).
+- Or close the launcher window (or press Ctrl+C in it).
+
+From a terminal in the project folder the editor can also be started in the background with `node ccf.mjs editor` and stopped with `node ccf.mjs editor --stop`.
+
+## License
+
+The code and documents are under the MIT license — see [LICENSE](LICENSE). The reference card images in `styles/scapes/references/` are not covered by it: they belong to their owners and are included only as style references.

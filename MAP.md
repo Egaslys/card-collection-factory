@@ -7,7 +7,7 @@ Update this map in the same task when an area, an entry point, a system file or 
 ## Entry points
 
 - `AGENTS.md` — the agent's rules, what the project is, the task → skill table, commands.
-- `README.md` — the purpose of the project for a person.
+- `README.md` (English, main) and `README.ru.md` (Russian) — the same text for a person from the street: what the factory is, install and start, the key, who draws, the editor, export, working through an agent, stopping, the license.
 - `LICENSE` — MIT for the code and documents; the reference images in `styles/scapes/references/` are excluded.
 - `ccf.mjs` — the factory's commands for an agent in the terminal (`node ccf.mjs --help`): `card make`, `card regenerate`, `card wish`, `card title`, `card edit`, `card adjust`, `card import`, `card choose`, `card prompt`, `card check`, `cards make`, `models`, `credits`, and from `core/set/cli.js` `set plan|check|save|make|sheet`, `collection plan|check|make`, and from `core/store/cli.js` `collection list|create|show`, `export`; thin calls of `core/` operations, `--json` for agents.
 - `docs/plans/VISION.md` — the author's accepted vision of the project (not a log).
