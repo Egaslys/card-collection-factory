@@ -258,12 +258,14 @@ textarea.input { height: auto; min-height: calc(var(--c-field-height) * 2.4); pa
 .sheet__head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-s3); padding: var(--spacing-s4) var(--spacing-s4) var(--spacing-s4) var(--spacing-s5); border-bottom: 1px solid var(--color-line); }
 .sheet__head h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sheet__body { flex: 1; overflow: auto; padding: var(--spacing-s5); overscroll-behavior: contain; }
-.sheet__foot { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--spacing-s2); padding: var(--spacing-s4); border-top: 1px solid var(--color-line); }
+/* the footer's buttons stand on the same edge as the body's fields */
+.sheet__foot { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--spacing-s2); padding: var(--spacing-s4) var(--spacing-s5); border-top: 1px solid var(--color-line); }
 @keyframes ds-fade { from { opacity: 0; } }
 @keyframes ds-sheet { from { opacity: 0; transform: translateX(var(--spacing-s5)); } }
 @media (max-width: 640px) {
   .sheet, .sheet--wide { top: auto; left: 0; right: 0; bottom: 0; width: 100%; max-height: calc(100dvh - var(--spacing-s5)); border-radius: var(--rounded-lg) var(--rounded-lg) 0 0; border-bottom: 0; }
   .sheet__body { padding: var(--spacing-s4); }
+  .sheet__foot { padding-inline: var(--spacing-s4); }
   @keyframes ds-sheet { from { opacity: 0; transform: translateY(var(--spacing-s5)); } }
 }
 @media (prefers-reduced-motion: reduce) { .scrim, .sheet { animation: none; } }

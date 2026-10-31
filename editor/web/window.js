@@ -14,6 +14,41 @@ const t = words({
   en: { place: 'Place {n}: {title}', empty: 'Place {n}: empty', number: 'Set {n}', of: 'Set {n}/{total}', colour: 'Window colour', noWindow: 'The style «{style}» has no window templates.' },
 });
 
+/** A window kept on the screen is never made narrower than this, px: below it the cards are too small to read. */
+const FIT_MIN_WIDTH = 360;
+
+/**
+ * Keeps set windows whole on the screen without scrolling (the author: «приходится листать туда-сюда»): scales the
+ * boxes down, keeping the window's aspect, so that with the page at its top the first of them (the first row of a
+ * grid) ends a gutter (the design system's) above the bottom of the viewport; the others get the same height. A box
+ * holds one `.wnd` or `.newtile` (the part that scales with the width) and may hold parts of a fixed height (the
+ * frame's padding, a caption row); it gets back its full width when there is room. Call it after every redraw that
+ * moves the boxes; it follows the viewport's size by itself while the screen is on the page.
+ * @param {HTMLElement} el  the screen @param {string} selector  its boxes to keep whole, found anew on each call
+ * @returns {() => void}  fits the boxes now
+ */
+export function keepWhole(el, selector) {
+  const fit = () => {
+    const gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--spacing-gutter')) || 0;
+    const all = [.../** @type {NodeListOf<HTMLElement>} */ (el.querySelectorAll(selector))];
+    for (const box of all) box.style.maxWidth = '';
+    if (!all.length) return;
+    const room = innerHeight - (all[0].getBoundingClientRect().top + scrollY) - gap;
+    for (const box of all) {
+      const stage = /** @type {HTMLElement|null} */ (box.querySelector('.wnd, .newtile'));
+      if (!stage) continue;
+      const b = box.getBoundingClientRect(), s = stage.getBoundingClientRect();
+      if (b.height <= room || !s.height) continue;
+      // height(width) = fixed + (width - padding) / aspect; solve for the width that gives the room
+      const width = b.width - s.width + (room - (b.height - s.height)) * (s.width / s.height);
+      box.style.maxWidth = `${Math.max(FIT_MIN_WIDTH, Math.floor(width))}px`;
+    }
+  };
+  const onResize = () => { if (el.isConnected) fit(); else removeEventListener('resize', onResize); };
+  addEventListener('resize', onResize);
+  return fit;
+}
+
 /** Colour names of the window templates in English; Russian comes from windows.json (`label`). */
 const COLOUR_EN = /** @type {Record<string, string>} */ ({ blue: 'blue', violet: 'violet', crimson: 'crimson', orange: 'orange', crystal: 'crystal' });
 

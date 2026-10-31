@@ -5,7 +5,7 @@
 import { call, jobs } from '../api.js';
 import { attempt, esc, I, jobline, tip, toast } from '../ui.js';
 import { words } from '../i18n.js';
-import { windowHtml, windowsOf } from '../window.js';
+import { keepWhole, windowHtml, windowsOf } from '../window.js';
 import { openSetSettings, PLACES } from '../panels/create.js';
 import { app } from '../state.js';
 import { bindPicked, pickClick, poolClick, poolHtml, poolUpdate } from './pool.js';
@@ -170,6 +170,8 @@ export async function load(collectionId, setId) {
   let d = await read(collectionId, setId);
   /** @type {HTMLElement|null} */
   let root = null;
+  /** keeps the window whole on the screen (window.js keepWhole) */
+  let fit = () => {};
   /** the place whose panel is open */
   let place = /** @type {number|null} */ (null);
   const head = headHtml(d), sec = secHtml(d), win = windowOf(d, null);
@@ -191,6 +193,7 @@ export async function load(collectionId, setId) {
     patchHtml(el.querySelector('[data-head]'), headHtml(d));
     patchHtml(el.querySelector('[data-joblines]'), runningOf(d).map(jobline).join(''));
     patchHtml(el.querySelector('[data-sec]'), secHtml(d));
+    fit();
     drawPlace();
     poolUpdate(el, d.cards, d.sets);
   };
@@ -211,6 +214,8 @@ export async function load(collectionId, setId) {
       </div>`,
     mount: (/** @type {HTMLElement} */ el) => {
       root = el;
+      fit = keepWhole(el, '.cols__main > .window');
+      fit();
       bindPicked(el, drawPlace);
       addEventListener('resize', () => { if (el.isConnected) placePop(el); });
       el.addEventListener('click', async e => {

@@ -4,7 +4,7 @@
 import { call, jobs } from '../api.js';
 import { esc, I, jobline, tip } from '../ui.js';
 import { plural, words } from '../i18n.js';
-import { windowHtml, windowsOf } from '../window.js';
+import { keepWhole, windowHtml, windowsOf } from '../window.js';
 import { openCreateSet, openBuildCollection, openEditCollection, PLACES } from '../panels/create.js';
 import { app } from '../state.js';
 import { bindPicked, pickClick, poolClick, poolHtml, poolUpdate } from './pool.js';
@@ -104,6 +104,8 @@ export async function load(id) {
   let d = await read(id);
   /** @type {HTMLElement|null} */
   let root = null;
+  /** keeps the set tiles whole on the screen (window.js keepWhole) */
+  let fit = () => {};
   const head = headHtml(d), lines = joblinesHtml(id), main = mainHtml(d);
   return {
     where: [{ label: t('collections'), href: '#/' }, { label: d.col.title, href: `#/c/${encodeURIComponent(id)}` }],
@@ -112,6 +114,8 @@ export async function load(id) {
       <div class="cols"><section class="cols__main" aria-label="${esc(t('aria'))}" data-main ${drawn(main)}>${main}</section>${poolHtml(d.cards, d.sets)}</div>`,
     mount: (/** @type {HTMLElement} */ el) => {
       root = el;
+      fit = keepWhole(el, '.setgrid--tiles > .setcard');
+      fit();
       bindPicked(el, () => patchList(el.querySelector('.setgrid--tiles'), tiles(d)));
       el.addEventListener('click', e => {
         const target = /** @type {HTMLElement} */ (e.target);
@@ -140,6 +144,7 @@ export async function load(id) {
       const grid = el.querySelector('.setgrid--tiles');
       if (grid && d.sets.length) patchList(grid, tiles(d));
       else patchHtml(el.querySelector('[data-main]'), mainHtml(d));
+      fit();
       poolUpdate(el, d.cards, d.sets);
       return true;
     },

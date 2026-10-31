@@ -544,7 +544,7 @@ Pills sit only in pill shells or free.
   explains it.
 - **Sheet** — what opens over a screen (settings, a card, export, creating): a surface panel from the right,
   r 24, hairline edge, `float`, over a scrim of ink-1 at 28% (dark theme: background at 64%, so it darkens); head (title, close), scrolling body (p 24), foot with
-  the actions (the sheet's one primary on the right). Width 480, wide 1008; on phones it comes from the bottom,
+  the actions (the sheet's one primary on the right; p 16 × 24, so its buttons stand on the body's edge; p 16 on phones, as the body). Width 480, wide 1008; on phones it comes from the bottom,
   full width. Escape and the scrim close it.
 - **Toast** — a short message at the bottom centre on thick glass, r 24, h ≥ 48; a dot says done or failed; an
   optional text action («Подробности»). Gone by itself after 5 s (a failure after 9 s).
