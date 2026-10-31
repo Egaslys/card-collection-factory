@@ -12,6 +12,7 @@ import { attempt, bindTextHelp, confirmDialog, esc, fromHtml, I, jobline, modelN
 import { lang, plural, words } from '../i18n.js';
 import { app } from '../state.js';
 import { saidText } from '../said.js';
+import { measureText } from '../measure.js';
 import { openExport } from './export.js';
 
 const t = words({
@@ -29,7 +30,7 @@ const t = words({
     lookNone: 'Модель посмотрела на картинку и проблем не нашла.', lookUnknown: 'Смотрящая модель не дала ответа{why}.', lookOff: 'Смотрящая модель на эту версию не смотрела.',
     kind_subject: 'Предмет', kind_staging: 'Постановка', kind_additions: 'Лишнее', kind_costume: 'Костюм', kind_drawing: 'Рисунок', kind_caption: 'Подпись',
     how: 'Как проверяли', inNorm: 'в норме', groupFail: '{n} {w}', groupWarn: '{n} — взглянуть', drawn: 'Что нарисовано', drawnOk: 'модель сверила с заказом: совпадает',
-    drawnIssues: '{n} {w} — см. выше', drawnNone: 'модель не смотрела', all: 'Все измерения', eyes: 'Проверить глазами', notMeasured: 'не измерено',
+    drawnIssues: '{n} {w} — см. выше', drawnNone: 'модель не смотрела', all: 'Все измерения', eyes: 'Проверить глазами', notMeasured: 'не измерено', info: 'для справки',
     busyTitle: 'Карточка занята', busyText: 'идёт {what} — действия с карточкой подождут её конца',
     redo: 'Сделать заново', regen: 'Нарисовать заново', edit: 'Отредактировать',
     wishPh: 'Необязательно: ваше пожелание, например «поплавок крупнее, фон теплее»', editPh: 'Что поправить на картинке, например «убрать лампу сверху»',
@@ -64,7 +65,7 @@ const t = words({
     lookNone: 'The model looked at the picture and found no problems.', lookUnknown: 'The vision model gave no answer{why}.', lookOff: 'The vision model did not look at this version.',
     kind_subject: 'Subject', kind_staging: 'Staging', kind_additions: 'Extra', kind_costume: 'Costume', kind_drawing: 'Drawing', kind_caption: 'Caption',
     how: 'How it was checked', inNorm: 'fine', groupFail: '{n} {w}', groupWarn: '{n} — have a look', drawn: 'What is drawn', drawnOk: 'the model compared it with the order: it matches',
-    drawnIssues: '{n} {w} — see above', drawnNone: 'the model did not look', all: 'All measurements', eyes: 'Check by eye', notMeasured: 'not measured',
+    drawnIssues: '{n} {w} — see above', drawnNone: 'the model did not look', all: 'All measurements', eyes: 'Check by eye', notMeasured: 'not measured', info: 'for reference',
     busyTitle: 'The card is busy', busyText: '{what} is under way — the card’s actions wait for it to end',
     redo: 'Make it again', regen: 'Draw again', edit: 'Edit',
     wishPh: 'Optional: your wish, for example “a bigger float, a warmer backdrop”', editPh: 'What to change in the picture, for example “remove the lamp at the top”',
@@ -224,9 +225,12 @@ export async function openCard(collectionId, cardId, { version, wish: typed = ''
       ${howHtml(a)}</section>`;
   }
 
-  /** «Как проверяли»: the bible's areas in words, then every measurement and the checklist for eyes. @param {any} a */
+  /** «Как проверяли»: the bible's areas in words, then every measurement and the checklist for eyes — each in the check's
+   * plain words, its measured value in the page's language (editor/web/measure.js) and its id as a small label; the
+   * checker's own English notes are for agents and stay in their report. @param {any} a */
   function howHtml(a) {
     const results = /** @type {any[]} */ (a.details?.results ?? []);
+    const outline = new Set((a.check?.fails ?? []).filter((/** @type {any} */ f) => f.needsMask).map((/** @type {any} */ f) => f.id));
     const visual = /** @type {any[]} */ (a.details?.visual ?? []);
     const groups = /** @type {Record<string, any>} */ (data.explain.groups);
     const rows = Object.entries(groups).map(([g, name]) => {
@@ -240,8 +244,12 @@ export async function openCard(collectionId, cardId, { version, wish: typed = ''
     const drawn = !a.look || a.look.verdict === 'unknown' ? ['warn', t('drawnNone')] : issues.length ? [issues.some((/** @type {any} */ i) => i.blocking) ? 'fail' : 'warn', t('drawnIssues', { n: issues.length, w: plural(issues.length, W.remark) })] : ['done', t('drawnOk')];
     const shownResults = results.filter(r => r.status !== 'PASS' && r.status !== 'N/A');
     const all = shownResults.length || visual.length ? `<details class="disclose"><summary>${I.chev}<span>${esc(t('all'))}</span></summary>
-        ${shownResults.length ? `<ul class="checks">${shownResults.map(r => `<li><span class="badge badge--${r.status === 'FAIL' ? 'fail' : 'warn'}">${esc(r.status === 'NOT_MEASURED' ? '—' : r.status)}</span><span>${esc(explain(r.id))}<br><span class="data ink-3">${esc(r.id)} · ${r.status === 'NOT_MEASURED' ? esc(t('notMeasured')) : `${esc(typeof r.value === 'object' ? JSON.stringify(r.value) : r.value)}${r.threshold ? ` · ${esc(r.threshold)}` : ''}`}</span></span></li>`).join('')}</ul>` : ''}
-        ${visual.length ? `<p class="csum__label">${esc(t('eyes'))}</p><ul class="checks checks--eyes">${visual.map(x => `<li><span class="ink-3 data">${esc(x.id ?? `${x.doc} #${x.check}`)}</span><span>${esc(explain(x.id ?? ''))}</span></li>`).join('')}</ul>` : ''}
+        ${shownResults.length ? `<ul class="mlist">${shownResults.map(r => {
+          const [kind, tag] = r.status === 'FAIL' ? (outline.has(r.id) ? ['warn', t('tagEyes')] : ['fail', t('tagFail')]) : r.status === 'WARN' ? ['warn', t('tagWarn')] : r.status === 'NOT_MEASURED' ? ['warn', t('notMeasured')] : ['info', t('info')];
+          const measured = r.status === 'NOT_MEASURED' ? '' : measureText(r, data.explain.units?.[data.explain.checks[r.id]?.unit]);
+          return `<li><span>${esc(explain(r.id))}<span class="mlist__meta">${measured ? `<span>${esc(measured)}</span>` : ''}<span class="mlist__id">${esc(r.id)}</span></span></span><span class="reasons__tag reasons__tag--${kind}">${esc(tag)}</span></li>`;
+        }).join('')}</ul>` : ''}
+        ${visual.length ? `<p class="csum__label">${esc(t('eyes'))}</p><ul class="mlist">${visual.map(x => `<li><span>${esc(explain(x.id ?? ''))}<span class="mlist__meta"><span class="mlist__id">${esc(x.id ?? `${x.doc} #${x.check}`)}</span></span></span></li>`).join('')}</ul>` : ''}
       </details>` : '';
     return `<details class="disclose csum__how"><summary>${I.chev}<span>${esc(t('how'))}</span></summary><div class="csum__howbody"><ul class="howchecked">${rows}
       <li><i class="dot dot--${drawn[0]}"></i><span>${esc(t('drawn'))}</span><span class="ink-3">${esc(drawn[1])}</span></li></ul>${all}</div></details>`;

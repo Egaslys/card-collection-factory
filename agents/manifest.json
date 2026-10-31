@@ -13,12 +13,12 @@
     },
     ".claude/skills/ccf-make-cards/SKILL.md": {
       "source": "agents/skills/ccf-make-cards/SKILL.md",
-      "sha256": "b15f26f187f2d7c6ec9838f86c8cfd799be618d2c7cbcd9b4692492ffcbcb997",
+      "sha256": "8636a884b1a767ade82a8aa7c067a53e767d7647e3c0bead03972a0b2e7b4cbf",
       "text": true
     },
     ".claude/skills/ccf-make-sets/SKILL.md": {
       "source": "agents/skills/ccf-make-sets/SKILL.md",
-      "sha256": "eb8e49443ada9c8841216508f68d223bf0a902872d1d8ae4d06699e318e31d72",
+      "sha256": "cc5f8e70f6bf39c071bcd5cb0cc95a29108c92b8a124a7317a7ee564c9640a84",
       "text": true
     },
     ".claude/skills/ccf-review-cards/SKILL.md": {
@@ -28,7 +28,7 @@
     },
     ".claude/skills/ccf-style/SKILL.md": {
       "source": "agents/skills/ccf-style/SKILL.md",
-      "sha256": "1fa5ae439d210773db1d249ed07bd027ae851a0c12ab0abce0d79dff16e2ab44",
+      "sha256": "49e5b70c45e481ca17bd86f07e7ae45b2ef8a4161b5788c07d258b745f1a4a0c",
       "text": true
     },
     ".agents/skills/ccf-core/SKILL.md": {
@@ -43,12 +43,12 @@
     },
     ".agents/skills/ccf-make-cards/SKILL.md": {
       "source": "agents/skills/ccf-make-cards/SKILL.md",
-      "sha256": "b15f26f187f2d7c6ec9838f86c8cfd799be618d2c7cbcd9b4692492ffcbcb997",
+      "sha256": "8636a884b1a767ade82a8aa7c067a53e767d7647e3c0bead03972a0b2e7b4cbf",
       "text": true
     },
     ".agents/skills/ccf-make-sets/SKILL.md": {
       "source": "agents/skills/ccf-make-sets/SKILL.md",
-      "sha256": "eb8e49443ada9c8841216508f68d223bf0a902872d1d8ae4d06699e318e31d72",
+      "sha256": "cc5f8e70f6bf39c071bcd5cb0cc95a29108c92b8a124a7317a7ee564c9640a84",
       "text": true
     },
     ".agents/skills/ccf-review-cards/SKILL.md": {
@@ -58,7 +58,7 @@
     },
     ".agents/skills/ccf-style/SKILL.md": {
       "source": "agents/skills/ccf-style/SKILL.md",
-      "sha256": "1fa5ae439d210773db1d249ed07bd027ae851a0c12ab0abce0d79dff16e2ab44",
+      "sha256": "49e5b70c45e481ca17bd86f07e7ae45b2ef8a4161b5788c07d258b745f1a4a0c",
       "text": true
     }
   }

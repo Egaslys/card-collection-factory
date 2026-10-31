@@ -115,13 +115,16 @@ function threshText(t, norm = t.norm, limit = t.limit) {
 function make(id, status, value, threshold, note) {
   const t = T[id]; return { id, doc: t.doc, check: t.check, title: t.title, status, value, threshold, note: note || null };
 }
+// a numeric check also carries its norm and limit as data ({min, max} or null), so a reader that words them itself (the
+// editor's card sheet, in the page's language) does not parse the threshold text
 function range(id, v, { norm, limit, note, soft } = {}) {
   const t = T[id]; norm = norm ?? t.norm; limit = limit ?? t.limit;
-  if (v == null || Number.isNaN(v)) return make(id, 'NOT_MEASURED', null, threshText(t, norm, limit), note || 'no value');
+  const bounds = { norm: norm ?? null, limit: limit ?? null };
+  if (v == null || Number.isNaN(v)) return { ...make(id, 'NOT_MEASURED', null, threshText(t, norm, limit), note || 'no value'), ...bounds };
   let st = 'PASS';
   if (!inRange(v, limit)) st = t.proposed || t.soft || soft ? 'WARN' : 'FAIL';
   else if (!inRange(v, norm)) st = 'WARN';
-  return make(id, st, v, threshText(t, norm, limit), st !== 'PASS' ? (note || t.note) : null);
+  return { ...make(id, st, v, threshText(t, norm, limit), st !== 'PASS' ? (note || t.note) : null), ...bounds };
 }
 const na = (id, why) => make(id, 'N/A', null, null, why);
 const nm = (id, why) => make(id, 'NOT_MEASURED', null, null, why);
@@ -361,7 +364,7 @@ export async function checkCard(card, { baseDir, overlaysDir, outline } = {}) {
   res.push(range('RENDERING.16a', VALUE_OF['RENDERING.16a']({ tr })));
   { const g = T['RENDERING.16b'].grid_max, both = tr.jpeg_grid_h > g && tr.jpeg_grid_v > g; res.push(make('RENDERING.16b', both ? 'FAIL' : 'PASS', `h ${tr.jpeg_grid_h}, v ${tr.jpeg_grid_v}`, `not both > ${g}`)); }
   const ov = M.overshoot(P); meas.overshoot = ov;
-  { const t = T['RENDERING.17a']; const r = range('RENDERING.17a', VALUE_OF['RENDERING.17a']({ ov })); if (r.status === 'PASS' && ov.overshoot_med >= t.halo_warn) { r.status = 'WARN'; r.note = `≥ ${t.halo_warn}: visible halos, stronger than most reference cards`; } res.push(r); }
+  { const t = T['RENDERING.17a']; const r = range('RENDERING.17a', VALUE_OF['RENDERING.17a']({ ov })); if (r.status === 'PASS' && ov.overshoot_med >= t.halo_warn) { r.status = 'WARN'; r.norm = { max: t.halo_warn }; r.note = `≥ ${t.halo_warn}: visible halos, stronger than most reference cards`; } res.push(r); }
   res.push(range('RENDERING.17b', VALUE_OF['RENDERING.17b']({ ov }), { note: `${ov.steps} steps` }));
   {
     const b = busyness(P.Y, METHOD.busyness_luma_step_min); meas.busyness = b;

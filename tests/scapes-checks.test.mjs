@@ -23,14 +23,17 @@ test('проверки Scapes: --help печатает справку, неиз�
 
 test('проверки Scapes: каждая проверка объяснена простыми словами по-русски и по-английски (explain.json), лишних нет', () => {
   const cfg = JSON.parse(fs.readFileSync(path.join(DIR, 'thresholds.json'), 'utf8'));
-  const { checks, groups } = JSON.parse(fs.readFileSync(path.join(DIR, 'explain.json'), 'utf8'));
+  const { checks, groups, units } = JSON.parse(fs.readFileSync(path.join(DIR, 'explain.json'), 'utf8'));
   const ids = new Set([...Object.keys(cfg.checks), ...cfg.visual.map((/** @type {{id: string}} */ v) => v.id)]);
   assert.deepEqual(Object.keys(checks).sort(), [...ids].sort());
   for (const [id, t] of Object.entries(checks)) {
     assert.ok(t.ru?.trim() && /[а-яё]/i.test(t.ru), `${id}: ru`);
     assert.ok(t.en?.trim() && !/[а-яё]/i.test(t.en), `${id}: en`);
     assert.ok(groups[id.split('.')[0]]?.ru && groups[id.split('.')[0]]?.en, `${id}: область`);
+    if (t.unit != null) assert.ok(units[t.unit]?.ru && units[t.unit]?.en, `${id}: единица ${t.unit}`);
   }
+  // a check compared with a norm or a limit is read in a unit
+  for (const [id, c] of Object.entries(cfg.checks)) if (c.norm || c.limit || c.groups) assert.ok(checks[id].unit, `${id}: нет единицы`);
 });
 
 test('проверки Scapes: у каждой проверки в thresholds.json есть документ библии и номер', () => {

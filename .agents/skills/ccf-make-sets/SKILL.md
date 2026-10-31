@@ -60,7 +60,7 @@ Progress: one stderr line per card event. Stop: one Ctrl+C — no new card start
 
 - Each card: ccf-review-cards.
 - The set as a whole: `ccf.mjs set sheet --collection ID --set SET_ID --out FILE.png`, look at the sheet, go through `SETS.md` §9 and the set part of `styles/<style>/CHECKLIST.md`; a collection: its collection part.
-- Fix a slot: the card fixes of ccf-review-cards, or remake it with `set make --collection ID --set SET_ID --slots N --redo`; swap cards with the Store API `moveCard` (`core/README.md`) or in the editor by dragging.
+- Fix a slot: the card fixes of ccf-review-cards, or remake it with `set make --collection ID --set SET_ID --slots N --redo`; swap cards with the Store API `moveCard` (`core/README.md`, section «Store API») or in the editor by dragging.
 
 ## 5. Show
 

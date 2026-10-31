@@ -118,7 +118,7 @@ async function getCard(a) {
   const explain = fs.existsSync(explainFile) ? JSON.parse(fs.readFileSync(explainFile, 'utf8')) : { groups: {}, checks: {} };
   return {
     summary, order: file.order, chosen: file.chosen, chosenBy: file.chosenBy ?? 'checks', attempts, dir,
-    processing: { neutral: style.neutral, bounds: style.bounds, manual: style.manual ?? {}, sharpenMax: style.sharpen_amount_max }, explain: { groups: explain.groups, checks: explain.checks },
+    processing: { neutral: style.neutral, bounds: style.bounds, manual: style.manual ?? {}, sharpenMax: style.sharpen_amount_max }, explain: { groups: explain.groups, units: explain.units ?? {}, checks: explain.checks },
   };
 }
 
