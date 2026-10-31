@@ -28,6 +28,8 @@ import { saidError, saidOf, saidOfText, textSaid } from '../say.js';
  * @property {number} spent
  * @property {number|null} [blocking]  blocking FAILs of the chosen attempt
  * @property {string|null} [image]
+ * @property {boolean} [drawn]  made: this run drew a picture (CardReport.drawn)
+ * @property {boolean} [fresh]  made: the card's picture is from this run (false: it kept its earlier one)
  * @property {string} [error]
  */
 
@@ -129,8 +131,9 @@ export async function saveSetPlan({ collection, plan: input, set, store, keepVer
  * What the editor's page needs to word a card's line in the person's language (the text stays Russian): `image`
  * whether a made card got a picture, `stop` why its run ended, `blocking` its FAILs, `why` of a skipped or cancelled
  * card (cap: the spend cap; key: no access to the service), `error` of a failed one (as thrown).
- * @typedef {{image?: boolean, stop?: string, blocking?: number|null, why?: 'cap'|'key', error?: string, errorSaid?: import('../say.js').Said}} RowFacts
- *   errorSaid: the failed card's error as data, when it has one (core/say.js)
+ * @typedef {{image?: boolean, drawn?: boolean, fresh?: boolean, stop?: string, blocking?: number|null, why?: 'cap'|'key', error?: string, errorSaid?: import('../say.js').Said}} RowFacts
+ *   drawn / fresh: of a made card, whether this run drew a picture and whether the card's picture is from this run
+ *   (a redo the service refused keeps the earlier one); errorSaid: the failed card's error as data, when it has one
  */
 /** A line the page words by its code (core/say.js), e.g. «the plan is ready, making the cards». @typedef {{say: ({k: 'note', code: string, number?: number, title?: string} & Record<string, unknown>) | ({k: 'said'} & import('../say.js').Said)}} NoteEvent */
 /**
@@ -247,9 +250,8 @@ export async function makeSet({ collection, plan: input, set: setId, settings, p
       used.spent = r.spent ?? 0;
       used.prices = r.attempts.map(x => x.cost ?? 0);
       if (r.stop === 'key' && r.keyProblem) keyProblem ??= r.keyProblem;
-      const blocking = r.chosenCheck?.blocking ?? null;
-      report({ slot: i + 1, title, card: r.id, result: 'made', stop: r.stop, spent: r.spent ?? 0, blocking, image: r.image },
-        `${r.image ? `готово (блокирующих FAIL ${blocking ?? '—'})` : r.stop === 'key' ? 'картинки нет: нет доступа к сервису (ключ, вход в Codex или лимит)' : 'картинки нет'}, $${(r.spent ?? 0).toFixed(4)}`);
+      const row = madeRow(r);
+      report({ slot: i + 1, title, card: r.id, result: 'made', spent: r.spent ?? 0, ...row.card }, `${row.text}, $${(r.spent ?? 0).toFixed(4)}`);
     } catch (/** @type {any} */ e) {
       keyProblem ??= await keyProblemOf(e);
       report({ slot: i + 1, title, card: existing, result: 'failed', spent: 0, error: String(e?.message ?? e) }, `ошибка: ${e?.message ?? e}`, 'failed', undefined, e);
@@ -304,13 +306,30 @@ const skippedWarning = s => { const k = saidOfText(s); return k ? textSaid(`Пр
 
 /**
  * A card report's facts for its progress line (RowFacts); `thrown` is what a failed card threw.
- * @param {{image?: string|null, stop?: string, blocking?: number|null, error?: string}} r @param {RowFacts['why']} [why] @param {unknown} [thrown]
+ * @param {{image?: string|null, drawn?: boolean, fresh?: boolean, stop?: string, blocking?: number|null, error?: string}} r @param {RowFacts['why']} [why] @param {unknown} [thrown]
  * @returns {RowFacts}
  */
 export const rowFacts = (r, why, thrown) => ({
-  ...('image' in r ? { image: !!r.image } : {}), ...(r.stop ? { stop: r.stop } : {}), ...(r.blocking != null ? { blocking: r.blocking } : {}),
+  ...('image' in r ? { image: !!r.image } : {}), ...(r.drawn != null ? { drawn: r.drawn } : {}), ...(r.fresh != null ? { fresh: r.fresh } : {}),
+  ...(r.stop ? { stop: r.stop } : {}), ...(r.blocking != null ? { blocking: r.blocking } : {}),
   ...(why ? { why } : {}), ...(r.error ? { error: r.error } : {}), ...(saidOf(thrown) ? { errorSaid: /** @type {import('../say.js').Said} */ (saidOf(thrown)) } : {}),
 });
+
+/**
+ * What a made card's line says (Russian, for the journal and the terminal) and its report fields: done with a new
+ * picture; new versions drawn but an earlier one stayed the card; nothing new drawn — the card kept its earlier
+ * picture (a redo the service refused); no picture at all.
+ * @param {import('../card/make.js').CardReport} r
+ * @returns {{text: string, card: {stop?: CardReport['stop'], blocking: number|null, image: string|null, drawn: boolean, fresh: boolean}}}
+ */
+export function madeRow(r) {
+  const blocking = r.chosenCheck?.blocking ?? null;
+  const drawn = !!r.drawn, fresh = !!r.image && r.attempts.some(a => a.n === r.chosen);
+  const noAccess = r.stop === 'key' ? ': нет доступа к сервису (ключ, вход в Codex или лимит)' : '';
+  const text = !r.image ? `картинки нет${noAccess}` : fresh ? `готово (блокирующих FAIL ${blocking ?? '—'})`
+    : drawn ? 'новые версии нарисованы, но карточкой осталась прежняя' : `новой картинки нет${noAccess}; осталась прежняя карточка`;
+  return { text, card: { stop: r.stop, blocking, image: r.image, drawn, fresh } };
+}
 
 /**
  * Makes the sets of a collection in their order (by number; variants of one number one after another), or only the

@@ -3,7 +3,7 @@
 // (the top bar shows what has been spent). One scroll: the sheet's own. A running job that supports it can be stopped.
 import { cancelJob, jobs, onEvent } from '../api.js';
 import { lang, words } from '../i18n.js';
-import { attempt, esc, I, itemSay, jobCount, jobEnd, jobTitle, openSheet } from '../ui.js';
+import { attempt, esc, I, itemDot, itemSay, jobCount, jobEnding, jobTitle, openSheet } from '../ui.js';
 import { logText, saidText } from '../said.js';
 
 const t = words({
@@ -17,29 +17,31 @@ const t = words({
   },
 });
 
-/** A card row's status: its dot and colour. @type {Record<string, string>} */
-const ITEM_DOT = { start: 'work', made: 'done', kept: 'done', skipped: 'warn', failed: 'fail', cancelled: 'idle' };
-const JOB_DOT = { running: 'work', done: 'done', failed: 'fail', cancelled: 'idle' };
 
 /** @param {string} iso */
 const time = iso => new Date(iso).toLocaleTimeString(lang() === 'ru' ? 'ru-RU' : 'en-GB', { hour: '2-digit', minute: '2-digit' });
 
 /** @param {any} j */
 function section(j) {
-  const st = /** @type {keyof typeof JOB_DOT} */ (j.status);
-  const count = jobCount(j);
+  const st = j.status;
+  const end = jobEnding(j);
+  // a finished job that counted its cards says it in its ending («Готово: 2 из 3»)
+  const count = st === 'running' || !j.outcome ? jobCount(j) : '';
   const total = j.about?.count;
-  const done = (j.items ?? []).filter((/** @type {any} */ i) => i.status === 'made' || i.status === 'kept').length;
+  const done = j.outcome?.made ?? (j.items ?? []).filter((/** @type {any} */ i) => itemDot(i) === 'done').length;
+  // why nothing or not all was drawn, when the warnings do not say it already
+  const reason = j.outcome?.reason && !j.warnings?.length && !j.error ? saidText(j.outcome.reasonSaid, j.outcome.reason) : '';
   const items = j.items?.length ? `<ul class="qitems">${j.items.map((/** @type {any} */ i) => `<li class="qitem"><span class="qitem__img">${I.image}</span>
       <span class="qitem__text"><span class="qitem__name">${i.slot != null ? `<span class="data ink-3">${String(i.slot).padStart(2, '0')}</span> ` : ''}${esc(i.title)}</span>
-      <span class="qitem__say qitem__say--${ITEM_DOT[i.status] ?? 'idle'}"><i class="dot dot--${ITEM_DOT[i.status] ?? 'idle'}"></i>${esc(itemSay(i))}</span></span></li>`).join('')}</ul>` : '';
+      <span class="qitem__say qitem__say--${itemDot(i)}"><i class="dot dot--${itemDot(i)}"></i>${esc(itemSay(i))}</span></span></li>`).join('')}</ul>` : '';
   return `<section class="qjob" data-job="${esc(j.id)}">
     <div class="qjob__head"><span class="qjob__title">${esc(jobTitle(j))}</span>${st === 'running' && j.cancellable ? `<button type="button" class="btn btn--secondary btn--s" data-cancel="${esc(j.id)}">${I.stop}<span>${esc(t('stop'))}</span></button>` : ''}</div>
-    <p class="qjob__say qjob__say--${JOB_DOT[st]}"><i class="dot dot--${JOB_DOT[st]}"></i><span>${esc(jobEnd(j))}</span></p>
+    <p class="qjob__say qjob__say--${end.kind}"><i class="dot dot--${end.kind}"></i><span>${esc(end.text)}</span></p>
     ${j.about?.codex ? `<p class="qjob__count">${esc(t('codex'))}</p>` : ''}
     ${j.error ? `<p class="qjob__error">${esc(saidText(j.errorSaid, j.error))}</p>` : ''}
+    ${reason ? `<p class="qjob__error">${esc(reason)}</p>` : ''}
     ${(j.warnings ?? []).map((/** @type {string} */ w, /** @type {number} */ k) => `<p class="qjob__error">${esc(saidText(j.warningSaid?.[k], w))}</p>`).join('')}
-    ${total ? `<div class="progress${st === 'done' ? ' progress--done' : st === 'failed' ? ' progress--fail' : ''}"><i style="--p:${Math.round(100 * done / total)}%"></i></div>` : ''}
+    ${total ? `<div class="progress${end.kind === 'done' ? ' progress--done' : end.kind === 'fail' ? ' progress--fail' : ''}"><i style="--p:${Math.round(100 * done / total)}%"></i></div>` : ''}
     ${count ? `<p class="qjob__count">${esc(count)}</p>` : ''}
     ${items}
     ${j.log.length ? `<details class="disclose" data-log><summary>${I.chev}${esc(t('log'))}</summary><div><ol class="qlog">${j.log.map((/** @type {any} */ l) => `<li><time>${time(l.at)}</time> · ${esc(logText(l))}</li>`).join('')}</ol></div></details>` : ''}

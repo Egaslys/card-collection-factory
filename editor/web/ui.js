@@ -15,8 +15,9 @@ const t = words({
     generatingMore: 'Генерируется картинка «{title}» и ещё {n}', generatingOne: 'Генерируется картинка', retry: 'Не получилось, пробую ещё раз ({n} из {of})',
     retryCard: '«{title}»: не получилось, пробую ещё раз ({n} из {of})',
     processing: 'Обрабатываю и проверяю картинку', stopping: 'Останавливаю: доделываю начатый шаг', doneOf: 'Готово: {done} из {total}', doneN: 'Готово: {done}',
-    jobDone: 'Готово', jobWarn: 'Готово, но есть замечания', jobFailed: 'Не получилось', jobCancelled: 'Остановлено',
+    jobDone: 'Готово', jobWarn: 'Готово, но есть замечания', jobFailed: 'Не получилось', jobCancelled: 'Остановлено', jobNothing: 'Не нарисовано',
     itemStart: 'Генерируется картинка', itemMade: 'Готово', itemKept: 'Уже была готова', itemSkipped: 'Пропущена: потолок расходов',
+    itemNoImage: 'Картинки нет', itemKeptOld: 'Новой картинки нет, осталась прежняя', itemEarlier: 'Новые версии есть, карточкой осталась прежняя',
     itemFailed: 'Не получилось', itemCancelled: 'Не начата',
     op_makeCard: 'Карточка «{title}»', op_regenerateCard: 'Карточка заново', op_editCard: 'Правка картинки', op_planSet: 'План набора «{theme}»',
     op_makeSet: 'Карточки набора', op_planCollection: 'План коллекции', op_makeCollection: 'Карточки всех наборов коллекции', op_makeCards: 'Карточки «{theme}»',
@@ -33,8 +34,9 @@ const t = words({
     generatingMore: 'Drawing “{title}” and {n} more', generatingOne: 'Drawing the picture', retry: 'Did not work, trying again ({n} of {of})',
     retryCard: '“{title}”: did not work, trying again ({n} of {of})',
     processing: 'Processing and checking the picture', stopping: 'Stopping: finishing the step under way', doneOf: 'Done: {done} of {total}', doneN: 'Done: {done}',
-    jobDone: 'Done', jobWarn: 'Done, with remarks', jobFailed: 'Did not work', jobCancelled: 'Stopped',
+    jobDone: 'Done', jobWarn: 'Done, with remarks', jobFailed: 'Did not work', jobCancelled: 'Stopped', jobNothing: 'Nothing drawn',
     itemStart: 'Drawing', itemMade: 'Done', itemKept: 'Was already done', itemSkipped: 'Skipped: spend cap',
+    itemNoImage: 'No picture', itemKeptOld: 'No new picture, the earlier one stayed', itemEarlier: 'New versions drawn, an earlier one stayed the card',
     itemFailed: 'Did not work', itemCancelled: 'Not started',
     op_makeCard: 'Card “{title}”', op_regenerateCard: 'Card anew', op_editCard: 'Editing a picture', op_planSet: 'Set plan “{theme}”',
     op_makeSet: 'Set cards', op_planCollection: 'Collection plan', op_makeCollection: 'Cards of every set', op_makeCards: 'Cards “{theme}”',
@@ -177,6 +179,28 @@ export const itemWords = status => {
   return key ? t(key) : status;
 };
 
+/** A card row's state colour (dot--…) by its status. @type {Record<string, string>} */
+const ITEM_DOT = { start: 'work', made: 'done', kept: 'done', skipped: 'warn', failed: 'fail', cancelled: 'idle' };
+
+/**
+ * A finished card row as it truly ended (server/jobs.js JobItem): a made card without a picture, or one whose run drew
+ * nothing (it kept its earlier picture), or whose new versions lost to an earlier one, is not plain «done».
+ * @param {any} i @returns {{key: 'itemNoImage'|'itemKeptOld'|'itemEarlier', dot: string}|null}
+ */
+function madeState(i) {
+  if (i.status !== 'made') return null;
+  if (i.image === false) return { key: 'itemNoImage', dot: 'fail' };
+  if (i.drawn === false) return { key: 'itemKeptOld', dot: 'warn' };
+  if (i.fresh === false) return { key: 'itemEarlier', dot: 'warn' };
+  return null;
+}
+
+/** A card row that ended with a card (as server/jobs.js counts it). @param {any} i */
+const itemDone = i => i.status === 'kept' || (i.status === 'made' && i.image !== false && i.drawn !== false);
+
+/** A card row's dot colour. @param {any} i */
+export const itemDot = i => madeState(i)?.dot ?? ITEM_DOT[i.status] ?? 'idle';
+
 /** A card row being made tries again: its attempt in this run is past the first. @param {any} i */
 const retrying = i => i.status === 'start' && i.attempt?.stage === 'generate' && i.attempt.k > 1;
 
@@ -189,7 +213,12 @@ const retrying = i => i.status === 'start' && i.attempt?.stage === 'generate' &&
 const runAttempt = say => say.done + 1;
 
 /** A card row of a job in words: its status, or its attempt while it is drawn again. @param {any} i */
-export const itemSay = i => (retrying(i) ? t('retry', { n: i.attempt.k, of: i.attempt.of }) : i.status === 'start' && i.attempt?.stage === 'process' ? t('processing') : itemWords(i.status));
+export const itemSay = i => {
+  if (retrying(i)) return t('retry', { n: i.attempt.k, of: i.attempt.of });
+  if (i.status === 'start' && i.attempt?.stage === 'process') return t('processing');
+  const made = madeState(i);
+  return made ? t(made.key) : itemWords(i.status);
+};
 
 /** What a running job is doing now, in a sentence. @param {any} j */
 export function jobStep(j) {
@@ -209,13 +238,28 @@ export function jobStep(j) {
   return t('starting');
 }
 
+/**
+ * How a job stands, in words, with its colour (dot--…): by what it made, not only by whether it threw. A job that
+ * draws cards (server/jobs.js `outcome`) and drew none ends as a failure; one that made some of them says how many.
+ * @param {any} j @returns {{kind: 'work'|'done'|'warn'|'fail'|'idle', text: string}}
+ */
+export function jobEnding(j) {
+  if (j.status === 'running') return { kind: 'work', text: jobStep(j) };
+  if (j.status === 'failed') return { kind: 'fail', text: t('jobFailed') };
+  if (j.status === 'cancelled') return { kind: 'idle', text: t('jobCancelled') };
+  const o = j.outcome;
+  if (o && o.of > 0 && o.made === 0) return { kind: 'fail', text: t('jobNothing') };
+  if (o && o.made < o.of) return { kind: 'warn', text: t('doneOf', { done: o.made, total: o.of }) };
+  return j.warnings?.length ? { kind: 'warn', text: t('jobWarn') } : { kind: 'done', text: t('jobDone') };
+}
+
 /** How a job ended, in words. @param {any} j */
-export const jobEnd = j => (j.status === 'done' ? t(j.warnings?.length ? 'jobWarn' : 'jobDone') : j.status === 'failed' ? t('jobFailed') : j.status === 'cancelled' ? t('jobCancelled') : jobStep(j));
+export const jobEnd = j => jobEnding(j).text;
 
 /** «Готово: 3 из 5» — the cards made so far, of how many when that is known. @param {any} j */
 export function jobCount(j) {
   if (!j.items?.length && !j.about?.count) return '';
-  const done = (j.items ?? []).filter((/** @type {any} */ i) => i.status === 'made' || i.status === 'kept').length;
+  const done = (j.items ?? []).filter(itemDone).length;
   return j.about?.count ? t('doneOf', { done, total: j.about.count }) : t('doneN', { done });
 }
 

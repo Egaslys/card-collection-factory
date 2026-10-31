@@ -101,3 +101,43 @@ test('страница: по-английски — слова кода с от�
     assert.equal(logText({ text: 'слот 1: «Волна» — готово', say: { k: 'card', status: 'made', title: 'Волна' } }), 'слот 1: «Волна» — готово');
   } finally { setLang('ru'); }
 });
+
+test('строка сделанной карточки честна: новая картинка, новые версии проиграли прежней, ничего нового (место сохранило прежнюю карточку), картинки нет', async () => {
+  const { madeRow } = await import('../core/set/make.js');
+  const report = (/** @type {any} */ o) => /** @type {any} */ ({ id: 'c', chosenCheck: { blocking: 0 }, image: '/c/card.png', chosen: 2, attempts: [{ n: 2 }], drawn: true, stop: 'passed', ...o });
+  assert.equal(madeRow(report({})).text, 'готово (блокирующих FAIL 0)');
+  assert.deepEqual(madeRow(report({})).card, { stop: 'passed', blocking: 0, image: '/c/card.png', drawn: true, fresh: true });
+  assert.equal(madeRow(report({ chosen: 1 })).text, 'новые версии нарисованы, но карточкой осталась прежняя');
+  const refused = madeRow(report({ chosen: 1, attempts: [{ n: 2, error: { message: '401' } }], drawn: false, stop: 'key' }));
+  assert.equal(refused.text, 'новой картинки нет: нет доступа к сервису (ключ, вход в Codex или лимит); осталась прежняя карточка');
+  assert.deepEqual([refused.card.drawn, refused.card.fresh], [false, false]);
+  assert.equal(madeRow(report({ image: null, chosen: null, drawn: false, stop: 'key' })).text, 'картинки нет: нет доступа к сервису (ключ, вход в Codex или лимит)');
+});
+
+test('задачи: исход по сделанному — ничего не нарисовано (с причиной), часть, всё; задачи без карточек исхода не имеют', async () => {
+  const jobs = createJobs(() => {});
+  const run = async (/** @type {any} */ fn) => { const j = jobs.start({ op: 'makeSet', title: 'x', run: fn }); await jobs.wait(j.id); return j; };
+  const key = textSaid('С ключом проблема: тест', 'key.auth', { reply: 'User not found.' });
+  // a redo the service refused: the rows are «made» but drew nothing
+  const nothing = await run(async ({ progress }) => {
+    for (const slot of [1, 2]) progress(`слот ${slot}`, { set: 's', slot, title: `T${slot}`, status: 'made', image: true, drawn: false, fresh: false, stop: 'key' });
+    return { warnings: [key] };
+  });
+  assert.equal(nothing.status, 'done');
+  assert.deepEqual(nothing.outcome, { made: 0, of: 2, reason: key, reasonSaid: { code: 'key.auth', params: { reply: 'User not found.' } } });
+  assert.deepEqual(nothing.items?.map(i => [i.drawn, i.fresh]), [[false, false], [false, false]]);
+  const some = await run(async ({ progress }) => {
+    progress('слот 1', { set: 's', slot: 1, title: 'A', status: 'made', image: true, drawn: true, fresh: true });
+    progress('слот 2', { set: 's', slot: 2, title: 'B', status: 'kept' });
+    progress('слот 3', { set: 's', slot: 3, title: 'C', status: 'failed', error: 'Провайдер вернул HTTP 500 (/x): oops' });
+    return { warnings: [] };
+  });
+  assert.deepEqual(some.outcome, { made: 2, of: 3, reason: 'Провайдер вернул HTTP 500 (/x): oops' });
+  const all = await run(async ({ progress }) => { progress('слот 1', { set: 's', slot: 1, title: 'A', status: 'made', image: true, drawn: true, fresh: true }); return {}; });
+  assert.deepEqual(all.outcome, { made: 1, of: 1 });
+  // one card: its report says whether the run drew; the reason is the last failed attempt's error
+  const card = await run(async () => ({ drawn: false, attempts: [{ n: 5, error: { message: 'Codex CLI не вошёл…', said: { code: 'codex.login' } } }], warnings: [] }));
+  assert.deepEqual(card.outcome, { made: 0, of: 1, reason: 'Codex CLI не вошёл…', reasonSaid: { code: 'codex.login' } });
+  const plan = await run(async () => ({ plans: [] }));
+  assert.equal(plan.outcome, undefined);
+});

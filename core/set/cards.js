@@ -10,7 +10,7 @@ import { presetOf } from '../providers/preset.js';
 import { normalizePlan, slotLookErrors, wishWarnings } from './plan.js';
 import { answerParts, glue, parseAnswer, setFragment, slotFromAnswer } from './planner.js';
 import { cardBudget, kindKey, loadSetRules, rowCategories, stagingRow } from './rules.js';
-import { cardSteps, keyStopText, rowFacts } from './make.js';
+import { cardSteps, keyStopText, madeRow, rowFacts } from './make.js';
 import { saidError } from '../say.js';
 
 /** @typedef {import('./plan.js').SlotPlan} LooseCard  a planned card: kind, wishes, props, hue, order (no stars or frame) */
@@ -162,6 +162,7 @@ export async function planCards({ style, theme, wishes, collectionTheme, count, 
  * @property {'made'|'skipped'|'failed'|'cancelled'} result
  * @property {import('../card/make.js').CardReport['stop']} [stop]
  * @property {number} spent @property {number|null} [blocking] @property {string|null} [image] @property {string} [error]
+ * @property {boolean} [drawn] @property {boolean} [fresh]  as SlotReport's
  */
 
 /**
@@ -262,9 +263,8 @@ export async function makeCardsInto({ collection, theme, wishes, count, scenes =
       used.spent = r.spent ?? 0;
       used.prices = r.attempts.map(x => x.cost ?? 0);
       if (r.stop === 'key' && r.keyProblem) keyProblem ??= r.keyProblem;
-      const blocking = r.chosenCheck?.blocking ?? null;
-      report({ title, card: r.id, result: 'made', stop: r.stop, spent: r.spent ?? 0, blocking, image: r.image },
-        `${r.image ? `готово (блокирующих FAIL ${blocking ?? '—'})` : r.stop === 'key' ? 'картинки нет: нет доступа к сервису (ключ, вход в Codex или лимит)' : 'картинки нет'}, $${(r.spent ?? 0).toFixed(4)}`);
+      const row = madeRow(r);
+      report({ title, card: r.id, result: 'made', spent: r.spent ?? 0, ...row.card }, `${row.text}, $${(r.spent ?? 0).toFixed(4)}`);
     } catch (/** @type {any} */ e) {
       keyProblem ??= await keyProblemOf(e);
       report({ title, card: null, result: 'failed', spent: 0, error: String(e?.message ?? e) }, `ошибка: ${e?.message ?? e}`, undefined, e);

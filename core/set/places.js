@@ -161,9 +161,10 @@ export async function fillPlace({ collection, set: setId, slot, about, settings,
     const make = makeCard ?? (await import('../card/make.js')).makeCard;
     progress(`место ${slot + 1}: «${order.title}» — генерация`, { set: setId, slot: slot + 1, title: order.title, status: 'start', spent: 0 });
     try {
-      const { cardSteps, rowFacts } = await import('./make.js');
+      const { cardSteps, madeRow, rowFacts } = await import('./make.js');
       const r = await make({ order, collection, place: { setId, slot }, settings, provider, store: st, ...(signal ? { signal } : {}), onProgress: cardSteps(progress, { set: setId, slot: slot + 1, cardId: null, title: String(order.title) }) });
-      progress(`место ${slot + 1}: «${order.title}» — ${r.image ? 'готово' : 'картинки нет'}`, { set: setId, slot: slot + 1, cardId: r.id, title: order.title, status: 'made', spent: r.spent ?? 0, ...rowFacts({ image: r.image, stop: r.stop, blocking: r.chosenCheck?.blocking ?? null }) });
+      const row = madeRow(r);
+      progress(`место ${slot + 1}: «${order.title}» — ${row.text}`, { set: setId, slot: slot + 1, cardId: r.id, title: order.title, status: 'made', spent: r.spent ?? 0, ...rowFacts(row.card) });
       return { spent: r.spent ?? 0, card: r.id, warnings: r.stop === 'key' && r.keyProblem ? [r.keyProblem.message] : [], errors: [] };
     } catch (/** @type {any} */ e) {
       return { spent: 0, card: null, warnings: [], errors: [String(e?.message ?? e)] };

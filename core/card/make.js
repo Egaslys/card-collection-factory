@@ -157,6 +157,8 @@ export function keyProblemOf(e) {
  * @property {StopReason} [stop]  make only
  * @property {KeyProblem} [keyProblem]  with stop "key"
  * @property {number} [spent]  make only: USD spent by this run (known costs)
+ * @property {boolean} [drawn]  make only: an attempt of this run has a finished picture (false: the run drew nothing —
+ *   the card, if it has one, keeps its earlier picture)
  * @property {{attempts: number, maxSpendUsd: number}} [limits]  make only
  */
 
@@ -753,7 +755,10 @@ function cardFolder({ store, collection, card, order }) {
  * @param {{stop: StopReason, spent: number, warnings: string[], keyProblem?: KeyProblem}} run @param {{attempts: number, maxSpendUsd: number}} limits
  * @returns {CardReport}
  */
-const runReport = (dir, card, ns, run, limits) => ({ ...cardReport(dir, card, ns), stop: run.stop, spent: run.spent, limits, warnings: run.warnings, ...(run.keyProblem ? { keyProblem: run.keyProblem } : {}) });
+const runReport = (dir, card, ns, run, limits) => {
+  const r = cardReport(dir, card, ns);
+  return { ...r, stop: run.stop, spent: run.spent, limits, warnings: run.warnings, drawn: r.attempts.some(a => a.files.card && !a.error), ...(run.keyProblem ? { keyProblem: run.keyProblem } : {}) };
+};
 
 /** @param {string} dir @returns {CardFile} */
 function needCard(dir) {

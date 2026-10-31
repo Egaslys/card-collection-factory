@@ -5,7 +5,7 @@
 import { loadDesign } from '/design-system/tokens.js';
 import { call, connect, jobs, onEvent } from './api.js';
 import { LANGS, lang, setLang, words } from './i18n.js';
-import { attempt, closeSheet, enableDrag, esc, fromHtml, I, jobline, jobTitle, setTheme, SPENT_EVENT, toast, usd } from './ui.js';
+import { attempt, closeSheet, enableDrag, esc, fromHtml, I, jobEnding, jobline, jobTitle, setTheme, SPENT_EVENT, toast, usd } from './ui.js';
 import * as collections from './screens/collections.js';
 import * as collection from './screens/collection.js';
 import * as setScreen from './screens/set.js';
@@ -29,6 +29,7 @@ const t = words({
     keyTip: 'Постоянный ключ из файла .env ({envVar}). Нажмите, чтобы открыть настройки сервиса.',
     generation: 'Генерация', generationN: 'Генерация: {n}', queue: 'Очередь генерации',
     done: 'Готово: {title}', doneWarn: 'Готово с оговорками: {title}. {warning}', failed: 'Не получилось: {title}. {error}', cancelled: 'Остановлено: {title}',
+    nothing: 'Не нарисовано: {title}.{reason}', partial: 'Готово {made} из {of}: {title}.{reason}',
     details: 'Подробности', stopped: 'Редактор выключен', stoppedText: 'Чтобы продолжить, запустите фабрику снова (файл запуска или node editor/server.mjs) — страница подключится сама.',
   },
   en: {
@@ -43,6 +44,7 @@ const t = words({
     keyTip: 'Permanent key from the .env file ({envVar}). Click to open the service settings.',
     generation: 'Generation', generationN: 'Generation: {n}', queue: 'Generation queue',
     done: 'Done: {title}', doneWarn: 'Done with remarks: {title}. {warning}', failed: 'Did not work: {title}. {error}', cancelled: 'Stopped: {title}',
+    nothing: 'Nothing drawn: {title}.{reason}', partial: 'Done {made} of {of}: {title}.{reason}',
     details: 'Details', stopped: 'The editor is off', stoppedText: 'To go on, start the factory again (its launcher or node editor/server.mjs) — the page reconnects by itself.',
   },
 });
@@ -153,7 +155,8 @@ function topbar() {
 /** The status block: the generation under way, what has been spent, the key. */
 function statusBlock() {
   const running = [...jobs.values()].filter(j => j.status === 'running').length;
-  const failed = [...jobs.values()].some(j => j.status === 'failed' && !j.seen);
+  // a job that threw or drew nothing, not yet seen in the queue
+  const failed = [...jobs.values()].some(j => jobEnding(j).kind === 'fail' && !j.seen);
   const gen = running || jobs.size
     ? `<button type="button" class="tb__text${running ? ' tb__text--work' : ''}" data-open-jobs aria-label="${esc(t('queue'))}"><i class="dot ${running ? 'dot--work' : failed ? 'dot--fail' : 'dot--done'}"></i><span class="tb__long">${esc(running ? t('generationN', { n: running }) : t('generation'))}</span>${running ? `<span class="tb__short data">${running}</span>` : ''}</button><span class="tb__sep"></span>`
     : '';
@@ -222,9 +225,15 @@ onEvent(e => {
     redrawStatus();
     if (j.status !== 'running') spendSoon();
     const title = jobTitle(j);
-    if (j.status === 'done' && !j.warnings?.length) toast(t('done', { title }), { kind: 'done' });
-    if (j.status === 'done' && j.warnings?.length) toast(t('doneWarn', { title, warning: saidText(j.warningSaid?.[0], j.warnings[0]) }), { kind: 'fail', action: { label: t('details'), run: openJobs } });
-    if (j.status === 'failed') toast(t('failed', { title, error: saidText(j.errorSaid, j.error ?? '') }), { kind: 'fail', action: { label: t('details'), run: openJobs } });
+    const o = j.status === 'done' ? j.outcome : undefined;
+    const details = { label: t('details'), run: openJobs };
+    // what the job made decides its toast: nothing drawn, some of the cards, or all of them (with remarks or not)
+    const reason = o?.reason ? ` ${saidText(o.reasonSaid, o.reason)}` : '';
+    if (o && o.of > 0 && o.made === 0) toast(t('nothing', { title, reason }), { kind: 'fail', action: details });
+    else if (o && o.made < o.of) toast(t('partial', { title, made: o.made, of: o.of, reason }), { kind: 'fail', action: details });
+    else if (j.status === 'done' && !j.warnings?.length) toast(t('done', { title }), { kind: 'done' });
+    else if (j.status === 'done') toast(t('doneWarn', { title, warning: saidText(j.warningSaid?.[0], j.warnings[0]) }), { kind: 'fail', action: details });
+    if (j.status === 'failed') toast(t('failed', { title, error: saidText(j.errorSaid, j.error ?? '') }), { kind: 'fail', action: details });
     if (j.status === 'cancelled') toast(t('cancelled', { title }));
     const line = appEl.querySelector(`[data-jobline="${j.id}"]`);
     if (line && j.status === 'running') line.replaceWith(fromHtml(jobline(j)));

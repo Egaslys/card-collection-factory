@@ -25,6 +25,7 @@ import { saidError, saidOf, saidOfText } from '../../core/say.js';
  * @property {string} [error]
  * @property {import('../../core/say.js').Said} [errorSaid]  the error as data, for the page to say it in the person's language
  * @property {string[]} [warnings]  what did not work in a job that finished (the result's `warnings`)
+ * @property {Outcome} [outcome]  of a job that draws cards, once it is done
  * @property {(import('../../core/say.js').Said|null)[]} [warningSaid]  the warnings as data, where core gave one;
  *   null = the page shows the warning's text
  */
@@ -38,6 +39,9 @@ import { saidError, saidOf, saidOfText } from '../../core/say.js';
  * @property {string} status  start | made | kept | skipped | failed | cancelled …, as core/set reports it
  * @property {number} spent
  * @property {{stage: string, k: number, of: number}} [attempt]  the card's attempt under way: the k-th of this run's `of`
+ * @property {boolean} [image]  made: the card has a picture
+ * @property {boolean} [drawn]  made: this run drew a picture (false: nothing new, the card kept its earlier one)
+ * @property {boolean} [fresh]  made: the card's picture is from this run
  *   (from its last `attempt` say: `done` + 1 — not `n`, the card's version number, which counts earlier runs too)
  */
 
@@ -58,7 +62,7 @@ import { saidError, saidOf, saidOfText } from '../../core/say.js';
  */
 /**
  * A card's line: its status and what the page needs to word it (core/set's RowFacts).
- * @typedef {{k: 'card', status: string, title: string, slot?: number, image?: boolean, stop?: string, blocking?: number, why?: string, error?: string,
+ * @typedef {{k: 'card', status: string, title: string, slot?: number, image?: boolean, drawn?: boolean, fresh?: boolean, stop?: string, blocking?: number, why?: string, error?: string,
  *   errorSaid?: import('../../core/say.js').Said, spent?: number}} CardSay
  */
 /** A planning line. @typedef {{k: 'plan', status: string, title?: string, number?: number, errors?: number, error?: string, count?: number, set?: string}} PlanSay */
@@ -66,6 +70,35 @@ import { saidError, saidOf, saidOfText } from '../../core/say.js';
 /** The statuses of a card row (core/set's progress); others (planning, planned, invalid) are lines of the plan. */
 const CARD_STATUSES = new Set(['start', 'made', 'kept', 'skipped', 'failed', 'cancelled']);
 const PLAN_STATUSES = new Set(['planning', 'planned', 'invalid']);
+
+/**
+ * What a job that draws cards came to: `made` of `of` cards have a picture from it (a card already made counts; a
+ * made card that drew nothing — the service refused the key, every attempt failed — does not); `reason`: why not all,
+ * the first of the job's warnings, or else the error of the last failed attempt or card, with its data.
+ * @typedef {{made: number, of: number, reason?: string, reasonSaid?: import('../../core/say.js').Said}} Outcome
+ */
+
+/** A card row that ended with a card. @param {JobItem} i */
+const madeItem = i => i.status === 'kept' || (i.status === 'made' && i.image !== false && i.drawn !== false);
+
+/**
+ * The outcome of a finished job from its card rows, or from a single card's report (core/card makeCard and its
+ * kin: `drawn`); undefined for a job that draws nothing (plans, edits of stored data).
+ * @param {Job} job @returns {Outcome|undefined}
+ */
+function outcomeOf(job) {
+  const r = /** @type {any} */ (job.result);
+  const rows = job.items ?? [];
+  const counted = rows.length ? { made: rows.filter(madeItem).length, of: rows.length } : typeof r?.drawn === 'boolean' ? { made: r.drawn ? 1 : 0, of: 1 } : null;
+  if (!counted) return undefined;
+  if (counted.made === counted.of) return counted;
+  const failedRow = [...job.log].reverse().find(l => l.say?.k === 'card' && /** @type {CardSay} */ (l.say).status === 'failed')?.say;
+  const lastError = Array.isArray(r?.attempts) ? [...r.attempts].reverse().find(a => a.error)?.error : undefined;
+  const reason = job.warnings?.[0] ? { reason: job.warnings[0], reasonSaid: job.warningSaid?.[0] ?? undefined }
+    : lastError ? { reason: String(lastError.message), reasonSaid: lastError.said }
+      : failedRow ? { reason: /** @type {CardSay} */ (failedRow).error, reasonSaid: /** @type {CardSay} */ (failedRow).errorSaid } : {};
+  return /** @type {Outcome} */ ({ ...counted, ...defined(reason) });
+}
 
 /** Drops the fields that are not set. @param {Record<string, unknown>} o */
 const defined = o => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== null));
@@ -79,7 +112,7 @@ const defined = o => Object.fromEntries(Object.entries(o).filter(([, v]) => v !=
 function sayOf(text, o) {
   if (o.say) return o.say.k === 'attempt' ? { ...defined({ title: o.title, slot: o.slot }), ...o.say } : o.say;
   if (o.title && CARD_STATUSES.has(o.status)) {
-    return /** @type {CardSay} */ ({ k: 'card', ...defined({ status: o.status, title: o.title, slot: o.slot, image: o.image, stop: o.stop, blocking: o.blocking, why: o.why, error: o.error, errorSaid: o.errorSaid, spent: o.status === 'made' ? o.spent : undefined }) });
+    return /** @type {CardSay} */ ({ k: 'card', ...defined({ status: o.status, title: o.title, slot: o.slot, image: o.image, drawn: o.drawn, fresh: o.fresh, stop: o.stop, blocking: o.blocking, why: o.why, error: o.error, errorSaid: o.errorSaid, spent: o.status === 'made' ? o.spent : undefined }) });
   }
   if (PLAN_STATUSES.has(o.status)) return /** @type {PlanSay} */ ({ k: 'plan', ...defined({ status: o.status, title: o.title, number: o.number, errors: o.errors, error: o.error, count: o.count, set: o.set }) });
   const s = saidOfText(text);
@@ -118,7 +151,7 @@ export function createJobs(emit) {
      * A line of the journal; `o.slot` (with `o.set`) updates the row of that card in the job's queue (core/set's
      * progress data) — a card made into the pool has no slot, its row is its title —, `o.total` sets the spend of the
      * whole job, `o.spent` of the row, `o.say` is the line as data for the page.
-     * @param {string} text @param {{set?: string, slot?: number, cardId?: string|null, title?: string, status?: string, spent?: number, total?: number, say?: Say}} [o]
+     * @param {string} text @param {{set?: string, slot?: number, cardId?: string|null, title?: string, status?: string, spent?: number, total?: number, say?: Say, image?: boolean, drawn?: boolean, fresh?: boolean}} [o]
      */
     const progress = (text, o = {}) => {
       const say = sayOf(text, o);
@@ -127,7 +160,8 @@ export function createJobs(emit) {
       const key = o.slot != null ? `${o.set ?? ''}:${o.slot}` : o.title && CARD_STATUSES.has(o.status ?? '') ? `card:${o.title}` : null;
       if (key) {
         const attempt = o.say?.k === 'attempt' ? { stage: o.say.stage, k: o.say.done + 1, of: o.say.of } : items.get(key)?.attempt;
-        items.set(key, { ...items.get(key), set: o.set ?? null, slot: o.slot ?? null, cardId: o.cardId ?? items.get(key)?.cardId ?? null, title: o.title ?? '', status: o.status ?? '', spent: o.spent ?? 0, attempt: o.status === 'start' ? attempt : undefined });
+        items.set(key, { ...items.get(key), set: o.set ?? null, slot: o.slot ?? null, cardId: o.cardId ?? items.get(key)?.cardId ?? null, title: o.title ?? '', status: o.status ?? '', spent: o.spent ?? 0, attempt: o.status === 'start' ? attempt : undefined,
+          image: o.image, drawn: o.drawn, fresh: o.fresh });
         job.items = [...items.values()];
         job.spent = (base ?? 0) + job.items.reduce((s, i) => s + (i.spent ?? 0), 0);
       }
@@ -150,6 +184,8 @@ export function createJobs(emit) {
           if (ws.some(Boolean)) job.warningSaid = ws;
         }
         job.status = abort.signal.aborted ? 'cancelled' : 'done';
+        const outcome = outcomeOf(job);
+        if (outcome) job.outcome = outcome;
       } catch (/** @type {any} */ e) {
         job.status = abort.signal.aborted ? 'cancelled' : 'failed';
         job.error = String(e?.message ?? e);

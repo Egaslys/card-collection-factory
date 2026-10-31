@@ -89,7 +89,13 @@ const CARD = {
   skipped: s => `${card(s)} — skipped: the spend cap`,
   cancelled: s => `${card(s)} — ${s.why === 'key' ? 'not started: no access to the service' : 'cancelled'}`,
   failed: s => `${card(s)} — error: ${saidText(s.errorSaid, s.error ?? '')}`,
-  made: s => `${card(s)} — ${s.image ? `done${s.blocking != null ? ` (blocking FAILs: ${s.blocking})` : ''}` : s.stop === 'key' ? 'no picture: no access to the service (the key, the Codex sign-in or the limit)' : 'no picture'}${s.spent != null ? `, ${money(s.spent)}` : ''}`,
+  made: s => {
+    const noAccess = s.stop === 'key' ? ': no access to the service (the key, the Codex sign-in or the limit)' : '';
+    const what = !s.image ? `no picture${noAccess}` : s.fresh === false
+      ? (s.drawn ? 'new versions drawn, but an earlier one stayed the card' : `no new picture${noAccess}; the earlier card stayed`)
+      : `done${s.blocking != null ? ` (blocking FAILs: ${s.blocking})` : ''}`;
+    return `${card(s)} — ${what}${s.spent != null ? `, ${money(s.spent)}` : ''}`;
+  },
 };
 
 /** @type {Record<string, (s: any) => string>} */

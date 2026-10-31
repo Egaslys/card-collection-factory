@@ -127,7 +127,7 @@ button.tb__text:hover { background: var(--color-surface-sunken); }
 .qjob__head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-s3); min-height: var(--c-button-sm-height); }
 .qjob__title { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
 .qjob__say { display: flex; align-items: center; flex-wrap: wrap; gap: 0 var(--spacing-s2); font: var(--type-body-sm-weight) var(--type-body-sm-size)/var(--type-body-sm-line) var(--type-body-sm-family); }
-.qjob__say--work { color: var(--color-state-ink); } .qjob__say--done { color: var(--color-accent-ink); } .qjob__say--fail { color: var(--color-error-ink); }
+.qjob__say--work { color: var(--color-state-ink); } .qjob__say--done { color: var(--color-accent-ink); } .qjob__say--fail { color: var(--color-error-ink); } .qjob__say--warn { color: var(--color-warning-ink); }
 .qjob__error { color: var(--color-error-ink); font: var(--type-body-sm-weight) var(--type-body-sm-size)/var(--type-body-sm-line) var(--type-body-sm-family); }
 .qjob__count { color: var(--color-ink-3); font: var(--type-body-sm-weight) var(--type-body-sm-size)/var(--type-body-sm-line) var(--type-body-sm-family); }
 .qitems { display: grid; gap: var(--spacing-s1); }
