@@ -23,6 +23,7 @@ The only style so far is `styles/scapes/`. Its entry point is `styles/scapes/REA
 - Every rule is marked as the author's decision, measured, or by eye. What is not decided or measured goes in each document's last section and is not a rule.
 - One place per fact; other documents link to it. The same holds for the JSON files: a number lives in one of them, the bible names the rule.
 - A fragment keeps its `<!-- fragment: id -->` marker when its text is edited. A changed fragment is unproven until a generation run has used it: say so.
+- Every check has its plain words for a person in `checks/explain.json` (Russian and English; a test fails on a check without them): a new or renamed check adds its line there.
 - A number in a bible check and in `checks/thresholds.json` change together, in one task, followed by the full control run.
 - A staging no reference card shows is never added as the agent's own choice: only the author decides art (`docs/plans/VISION.md`).
 - `research/` is local and ignored by Git; nothing tracked depends on it.
