@@ -1,4 +1,6 @@
-# card-collection-factory
+# Card Collection Factory
+
+https://github.com/user-attachments/assets/753e2e21-04ff-4be7-afd3-891fc9371a44
 
 [English](README.md) | [Русский](README.ru.md)
 
