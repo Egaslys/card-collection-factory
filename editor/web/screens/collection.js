@@ -1,6 +1,7 @@
 // A collection: what it is (its description sheet holds the fields, the cover and deleting), its sets shown in their
 // windows (one per variant group) with a tile to create one more, and the card pool («Хранилище») — cards are dragged
-// from the pool into set places and back. Live events redraw only what changed (patch.js).
+// from the pool into set places and back. The «Следующий шаг» line sits in the sets' header row (hints.js). Live events
+// redraw only what changed (patch.js).
 import { call, jobs } from '../api.js';
 import { esc, I, jobline, tip } from '../ui.js';
 import { plural, words } from '../i18n.js';
@@ -9,20 +10,22 @@ import { openCreateSet, openBuildCollection, openEditCollection, PLACES } from '
 import { app } from '../state.js';
 import { bindPicked, pickClick, poolClick, poolHtml, poolUpdate } from './pool.js';
 import { drawn, keyed, patchHtml, patchList } from './patch.js';
+import { collectionHint } from '../hints.js';
+import { hintHtml, onHints } from '../hints-ui.js';
 
 const t = words({
   ru: {
     collections: 'Коллекции', desc: 'Описание', createSet: 'Создать набор', buildAll: 'Сгенерировать все {n} наборов', buildRest: 'Сгенерировать все наборы',
     noDesc: 'Описания пока нет: расскажите, что это за коллекция.', sets: 'Наборы · {n}',
     setsTip: 'Набор — 10 карточек в окне. В коллекции {n} мест для наборов. Нажмите на окно, чтобы открыть набор.',
-    noSets: 'Наборов пока нет', noSetsText: 'Набор — 10 карточек в окне. Сгенерируйте его по теме или соберите сами из карточек хранилища.',
+    noSets: 'Начните с первого набора', noSetsText: 'Набор — это 10 карточек в одном окне. Фабрика нарисует их по вашей теме — или соберите набор сами из хранилища.',
     newTile: 'Сгенерируйте набор по теме или соберите сами из хранилища.', aria: 'Наборы',
   },
   en: {
     collections: 'Collections', desc: 'Description', createSet: 'Create a set', buildAll: 'Generate all {n} sets', buildRest: 'Generate all sets',
     noDesc: 'No description yet: tell what this collection is.', sets: 'Sets · {n}',
     setsTip: 'A set is 10 cards in a window. A collection has {n} places for sets. Click a window to open its set.',
-    noSets: 'No sets yet', noSetsText: 'A set is 10 cards in a window. Generate one on a theme, or gather it yourself from the pool’s cards.',
+    noSets: 'Start with your first set', noSetsText: 'A set is 10 cards in one window. The factory draws them on your theme — or gather the set yourself from the pool.',
     newTile: 'Generate a set on a theme, or gather one yourself from the pool.', aria: 'Sets',
   },
 });
@@ -87,10 +90,17 @@ function tiles({ col, sets, cards, g }) {
   return list;
 }
 
+/** The sets' header row: their count, and the «Следующий шаг» line. @param {Data} d */
+function secHtml(d) {
+  const groups = new Set(d.sets.map(s => s.variantGroup ?? s.id)).size;
+  const generating = [...jobs.values()].some(j => j.status === 'running' && j.scope?.collectionId === d.col.id);
+  return `<span class="sec-head__l"><span class="label">${esc(t('sets', { n: groups }))}</span>${tip(t('setsTip', { n: PLACES }))}</span>${hintHtml(collectionHint({ sets: groups, generating }))}`;
+}
+
 /** @param {Data} d */
 function mainHtml(d) {
-  const groups = new Set(d.sets.map(s => s.variantGroup ?? s.id)).size;
-  const head = `<div class="sec-head"><span class="sec-head__l"><span class="label">${esc(t('sets', { n: groups }))}</span>${tip(t('setsTip', { n: PLACES }))}</span></div>`;
+  const sec = secHtml(d);
+  const head = `<div class="sec-head" data-sec ${drawn(sec)}>${sec}</div>`;
   if (!d.sets.length) {
     return `${head}<div class="panel empty-sets"><div class="state"><span class="state__icon">${I.spark}</span><h3 class="type-headline-sm">${esc(t('noSets'))}</h3>
       <p>${esc(t('noSetsText'))}</p>
@@ -117,6 +127,7 @@ export async function load(id) {
       fit = keepWhole(el, '.setgrid--tiles > .setcard');
       fit();
       bindPicked(el, () => patchList(el.querySelector('.setgrid--tiles'), tiles(d)));
+      onHints(el, () => { patchHtml(el.querySelector('[data-sec]'), secHtml(d)); fit(); });
       el.addEventListener('click', e => {
         const target = /** @type {HTMLElement} */ (e.target);
         if (pickClick(e, id)) return;
@@ -142,7 +153,7 @@ export async function load(id) {
       patchHtml(el.querySelector('[data-head]'), headHtml(d));
       patchHtml(el.querySelector('[data-joblines]'), joblinesHtml(id));
       const grid = el.querySelector('.setgrid--tiles');
-      if (grid && d.sets.length) patchList(grid, tiles(d));
+      if (grid && d.sets.length) { patchList(grid, tiles(d)); patchHtml(el.querySelector('[data-sec]'), secHtml(d)); }
       else patchHtml(el.querySelector('[data-main]'), mainHtml(d));
       fit();
       poolUpdate(el, d.cards, d.sets);

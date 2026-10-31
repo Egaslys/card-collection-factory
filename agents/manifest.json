@@ -8,7 +8,7 @@
     },
     ".claude/skills/ccf-editor/SKILL.md": {
       "source": "agents/skills/ccf-editor/SKILL.md",
-      "sha256": "bd31b0a5fb7d62f73fd274c491cc385dec49614c24ce32cda038dfb188481da0",
+      "sha256": "cac736b43514e2337afcfa2ccb36ef04d59db793fadab8276707ba3dea55645d",
       "text": true
     },
     ".claude/skills/ccf-make-cards/SKILL.md": {
@@ -38,7 +38,7 @@
     },
     ".agents/skills/ccf-editor/SKILL.md": {
       "source": "agents/skills/ccf-editor/SKILL.md",
-      "sha256": "bd31b0a5fb7d62f73fd274c491cc385dec49614c24ce32cda038dfb188481da0",
+      "sha256": "cac736b43514e2337afcfa2ccb36ef04d59db793fadab8276707ba3dea55645d",
       "text": true
     },
     ".agents/skills/ccf-make-cards/SKILL.md": {

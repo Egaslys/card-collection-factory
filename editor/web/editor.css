@@ -326,6 +326,62 @@ button.tb__text:hover { background: var(--color-surface-sunken); }
 .cover__list > button { padding: 0; }
 .cover__list img { width: 100%; height: 100%; }
 .cover__list > button[aria-pressed="true"] { outline: var(--c-card-thumb-selected-size) solid var(--c-card-thumb-selected-bg); outline-offset: var(--c-card-thumb-selected-size); }
+/* ---------- hints (web/hints.js): the «Следующий шаг» line and a first-use pill at the end of the main section's header
+   row — at most two lines of small text, the row's own height, so the window and the set tiles keep their size —, the
+   first screen's setup card, the pool's empty states ---------- */
+.sec-head > .sec-head__l, .sec-head > .vswitch { flex: none; }
+/* the line takes the rest of the row (a container, so a narrow rest drops its label) and ends at the row's end */
+.sec-head > .nextstep { flex: 1 1 0; justify-content: flex-end; container-type: inline-size; }
+.sec-head > .firstuse { margin-left: auto; }
+.nextstep { display: flex; align-items: center; gap: var(--spacing-s2); min-width: 0; margin: 0; color: var(--color-ink-2);
+  font: var(--type-body-sm-weight) var(--type-body-sm-size)/var(--type-body-sm-line) var(--type-body-sm-family); }
+.nextstep__label { flex: none; white-space: nowrap; }
+.nextstep__text { min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* a rest too narrow for the label and two lines of the step (a set's variant switch takes its place): the step alone */
+@container (max-width: 600px) { .nextstep__label { display: none; } }
+/* the × of every hint: «Больше не показывать»; the same 20px circle as the «i» */
+.hint-x { display: inline-grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; flex: none;
+  background: none; color: var(--color-ink-3); cursor: pointer; }
+.hint-x > .ico { width: 12px; height: 12px; }
+.hint-x:hover, .hint-x:focus-visible { color: var(--color-ink-1); box-shadow: inset 0 0 0 1px var(--color-ink-2); }
+.hint-x:focus-visible { outline: var(--c-focus-ring-size) solid var(--c-focus-ring-bg); outline-offset: 2px; }
+/* a must-know action the first time it is needed: a sunken pill, seen without shouting */
+.firstuse { display: inline-flex; align-items: center; gap: var(--spacing-s2); min-width: 0; min-height: var(--c-button-sm-height);
+  padding: var(--spacing-s1) var(--spacing-s1) var(--spacing-s1) var(--spacing-s3); border-radius: var(--rounded-full); background: var(--color-surface-sunken);
+  color: var(--color-ink-1); font: var(--type-body-sm-weight) var(--type-body-sm-size)/var(--type-body-sm-line) var(--type-body-sm-family); }
+.firstuse > .ico { flex: none; color: var(--color-ink-3); }
+.firstuse > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the pool is beside the window only while .cols has two columns: «справа» is said there only */
+@media (max-width: 1100px) { .hint__wide { display: none; } }
+/* the first screen: what is not ready yet (the key, Codex), each row with what to do */
+.setup { display: grid; gap: var(--spacing-s3); margin-bottom: var(--spacing-s6); }
+.setup__row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: var(--spacing-s4); }
+.setup__row > .hint-x { grid-column: 4; }
+.setup__row + .setup__row { padding-top: var(--spacing-s3); border-top: 1px solid var(--color-line); }
+.setup__icon { width: var(--spacing-s7); height: var(--spacing-s7); border-radius: 50%; display: grid; place-items: center; background: var(--color-surface-sunken); color: var(--color-ink-3); }
+.setup__text { display: grid; gap: var(--spacing-s1); min-width: 0; }
+.setup__title { font-weight: 600; }
+.setup__say { color: var(--color-ink-2); font: var(--type-body-sm-weight) var(--type-body-sm-size)/var(--type-body-sm-line) var(--type-body-sm-family); }
+.setup__say code { white-space: nowrap; color: var(--color-ink-1); }
+/* the pool's empty states: a short headline, one sentence */
+.pool__state { display: grid; gap: var(--spacing-s1); }
+.pool__state-h { color: var(--color-ink-1); font: 600 var(--type-body-sm-size)/var(--type-body-sm-line) var(--type-body-sm-family); }
+@media (max-width: 640px) {
+  /* a phone's window and tiles are as wide as the screen: the hint takes its own line under the section's label */
+  .sec-head { flex-wrap: wrap; }
+  .sec-head > .nextstep { flex: 1 1 100%; display: block; container-type: normal; }
+  .sec-head > .firstuse { margin-left: 0; }
+  .nextstep__label { display: inline; margin-right: var(--spacing-s2); }
+  .nextstep__text { display: inline; }
+  .nextstep .hint-x { margin-left: var(--spacing-s1); vertical-align: middle; }
+  .firstuse > span { white-space: normal; }
+  .setup__row { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "icon text x" "icon act ."; align-items: start; }
+  .setup__icon { grid-area: icon; }
+  .setup__text { grid-area: text; }
+  .setup__act { grid-area: act; justify-self: start; }
+  .setup__row > .hint-x { grid-area: x; }
+}
+
 /* ---------- the card sheet (quality): a verdict in words, what was found, the versions strip ---------- */
 .cardp__figure { justify-items: center; }
 .vstrip { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--spacing-s2); width: min(430px, 100%); }

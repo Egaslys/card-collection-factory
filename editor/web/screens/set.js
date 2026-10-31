@@ -1,15 +1,18 @@
 // A set: its window (the window of its kind, in the template colour of the set), its places — a click opens the
 // place's panel (stars, frame, caption; an empty place can be generated) —, cards dragged between places and from the
-// pool, the set's variants switched like a card's versions, «Настройки набора» for the rest. Live events redraw only
-// what changed (patch.js), so an open place panel and a caption being typed stay as they are.
+// pool, the set's variants switched like a card's versions, «Настройки набора» for the rest. The window's header row
+// carries the screen's hint (hints.js). Live events redraw only what changed (patch.js), so an open place panel and a
+// caption being typed stay as they are.
 import { call, jobs } from '../api.js';
-import { attempt, esc, I, jobline, tip, toast } from '../ui.js';
+import { attempt, esc, I, jobline, tip, toast, verdict } from '../ui.js';
 import { words } from '../i18n.js';
 import { keepWhole, windowHtml, windowsOf } from '../window.js';
 import { openSetSettings, PLACES } from '../panels/create.js';
 import { app } from '../state.js';
 import { bindPicked, pickClick, poolClick, poolHtml, poolUpdate } from './pool.js';
 import { drawn, patchHtml } from './patch.js';
+import { hintDone, setHint } from '../hints.js';
+import { hintHtml, onHints } from '../hints-ui.js';
 
 const t = words({
   ru: {
@@ -106,8 +109,18 @@ function switchHtml(d) {
     </div>`;
 }
 
+/** What the set screen's hint depends on (hints.js setHint). @param {Data} d */
+function hintFacts(d) {
+  const inWindow = d.set.slots.map((/** @type {string|null} */ id) => (id ? d.byId.get(id) : null)).filter(Boolean);
+  return {
+    places: d.set.slots.length, filled: inWindow.length, made: madeOf(d),
+    problems: inWindow.filter(c => verdict(c.checks, c.status).kind === 'fail').length,
+    freeCards: d.cards.filter(c => !c.setId).length,
+  };
+}
+
 /** @param {Data} d */
-const secHtml = d => `<span class="sec-head__l"><span class="label">${esc(t('window', { n: madeOf(d) }))}</span>${tip(t('windowTip'))}</span>${switchHtml(d)}`;
+const secHtml = d => `<span class="sec-head__l"><span class="label">${esc(t('window', { n: madeOf(d) }))}</span>${tip(t('windowTip'))}</span>${switchHtml(d)}${hintHtml(setHint(hintFacts(d)))}`;
 
 /** @param {Data} d @param {number|null} place */
 const windowOf = (d, place) => windowHtml(d.g, {
@@ -217,6 +230,7 @@ export async function load(collectionId, setId) {
       fit = keepWhole(el, '.cols__main > .window');
       fit();
       bindPicked(el, drawPlace);
+      onHints(el, () => { patchHtml(el.querySelector('[data-sec]'), secHtml(d)); fit(); });
       addEventListener('resize', () => { if (el.isConnected) placePop(el); });
       el.addEventListener('click', async e => {
         const target = /** @type {HTMLElement} */ (e.target);
@@ -250,7 +264,14 @@ export async function load(collectionId, setId) {
           return;
         }
         const slot = /** @type {HTMLElement|null} */ (target.closest('.window [data-slot]'));
-        if (slot) { const i = Number(slot.dataset.slot); place = place === i ? null : i; drawPlace(); return; }
+        if (slot) {
+          const i = Number(slot.dataset.slot);
+          place = place === i ? null : i;
+          // the first click on a card in the window: the hint that says what it opens is done
+          if (d.set.slots[i]) hintDone('set.place');
+          drawPlace();
+          return;
+        }
         const card = /** @type {HTMLElement|null} */ (target.closest('.pool [data-card]'));
         if (card) app.openCard(collectionId, /** @type {string} */ (card.dataset.card));
       });

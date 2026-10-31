@@ -1,7 +1,8 @@
 // The editor's page: the top bar (export on the left; on the right what has been spent, the key, the generation under
 // way, theme, language and settings), the breadcrumbs above the screen, the router over the nesting collections →
 // collection → set (the card opens as a panel over the screen), and live updates: whatever an agent or another window
-// writes appears here by itself. Screens draw their own title and its actions; the bar has no green button.
+// writes appears here by itself. Screens draw their own title and its actions; the bar has no green button. The key's and
+// Codex's status (events hello, key, codex) and the hints' × (hints-ui.js) are the shell's; the screens draw the hints.
 import { loadDesign } from '/design-system/tokens.js';
 import { call, connect, jobs, onEvent } from './api.js';
 import { LANGS, lang, setLang, words } from './i18n.js';
@@ -15,6 +16,8 @@ import { openCard } from './panels/card.js';
 import { openExport } from './panels/export.js';
 import { app } from './state.js';
 import { saidText } from './said.js';
+import { hintDone, hintsChanged } from './hints.js';
+import { bindHintClicks } from './hints-ui.js';
 
 const t = words({
   ru: {
@@ -200,6 +203,8 @@ enableDrag(appEl, async (drag, drop) => {
   } else {
     if (drag.setId === drop.setId && drag.slot === drop.slot) return;
     moved = await attempt(() => call('moveCard', { collectionId, cardId: drag.card, setId: drop.setId, slot: drop.slot }));
+    // the first card a person dragged into a window: the hint that says how is done
+    if (moved) hintDone('set.drag');
   }
   // a screen that updates in place gets the move from the store's event; a failed move is drawn back as it was
   if (!moved || !app.screen?.update) refresh();
@@ -215,11 +220,12 @@ function showStopped() {
 let pending = /** @type {number|undefined} */ (undefined);
 let stopped = false;
 onEvent(e => {
-  if (e.type === 'hello') { app.key = e.key; app.online = true; if (stopped) { stopped = false; refresh(); } else redrawStatus(); return; }
+  if (e.type === 'hello') { app.key = e.key; app.codex = e.codex ?? null; app.online = true; hintsChanged(); if (stopped) { stopped = false; refresh(); } else redrawStatus(); return; }
   if (e.type === 'bye') { stopped = true; showStopped(); return; }
   if (e.type === 'offline') { if (app.online) { app.online = false; redrawStatus(); } return; }
   if (e.type === 'online') { if (!app.online) { app.online = true; redrawStatus(); if (!stopped) refresh(); } return; }
-  if (e.type === 'key') { app.key = e.key; redrawStatus(); return; }
+  if (e.type === 'key') { app.key = e.key; redrawStatus(); hintsChanged(); return; }
+  if (e.type === 'codex') { app.codex = e.codex ?? null; hintsChanged(); return; }
   if (e.type === 'job') {
     const j = e.job;
     redrawStatus();
@@ -260,6 +266,7 @@ async function touch(e) {
 }
 
 window.addEventListener('hashchange', () => { closeSheet(); refresh(); });
+bindHintClicks(appEl);
 connect();
 app.key = (await attempt(() => call('health')))?.key ?? app.key;
 refresh();

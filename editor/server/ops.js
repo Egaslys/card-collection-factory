@@ -10,6 +10,7 @@ import { loadSettings, readLocalSettings, saveLocalSettings, ROOT } from '../../
 import { readCardFile, attemptDir, attemptSpend, ATTEMPT_FILES } from '../../core/card/card-file.js';
 import { PRESETS, PRESET_TITLES, apiOf, presetOf, runSettings } from '../../core/providers/preset.js';
 import { clearTemporaryKey, currentKey, initKey, keyStatus, setTemporaryKey } from './key.js';
+import { codexState } from './codex.js';
 import { stepText } from '../../core/set/make.js';
 import { saidError } from '../../core/say.js';
 
@@ -144,8 +145,9 @@ async function withPlaces(sets, style, collectionId) {
 /** @type {Record<string, Op>} */
 export const OPS = {
   // ---------- status and settings ----------
-  // key: the key of the settings' preset; keys: of every preset (the settings screen shows the one chosen there)
-  health: { run: async () => { settings(); return { ok: true, key: keyStatus() }; } },
+  // key: the key of the settings' preset; keys: of every preset (the settings screen shows the one chosen there);
+  // codex: whether Codex is ready to draw, null when it does not draw (server/codex.js)
+  health: { run: async () => { settings(); return { ok: true, key: keyStatus(), codex: codexState() }; } },
   getSettings: { run: async () => { const s = settings(); return { settings: s, local: readLocalSettings(), key: keyStatus(), keys: keysOf(s), platform: process.platform }; } },
   // reset: dotted paths back to their default (the page's emptied fields)
   saveSettings: { run: async ({ patch, reset }) => { saveLocalSettings(need('patch', patch), { reset: Array.isArray(reset) ? reset.map(String) : [] }); const s = settings(); return { settings: s, local: readLocalSettings(), key: keyStatus(), keys: keysOf(s) }; } },

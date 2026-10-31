@@ -110,6 +110,24 @@ function run(spawnImpl, command, args, cwd, input, timeoutMs, env) {
 }
 
 /**
+ * Whether Codex can draw on this computer, asked with `codex login status` (free, answers at once): 'ready' — it is
+ * installed and logged in; 'login' — installed, not logged in (any non-zero exit, as generateImage reads it);
+ * 'missing' — the command is not found; 'error' — it could not be asked (another start failure, a timeout).
+ * @param {{settings: CodexSettings, withoutEnv?: string[], net?: CodexNet}} o  withoutEnv: as in generateImage
+ * @returns {Promise<'ready'|'login'|'missing'|'error'>}
+ */
+export async function codexStatus({ settings: d, withoutEnv = [], net = {} }) {
+  const env = { ...process.env };
+  for (const k of withoutEnv) delete env[k];
+  try {
+    const r = await run(net.spawnImpl ?? spawn, d.command, ['login', 'status'], os.tmpdir(), '', net.timeoutMs ?? d.timeoutMs, env);
+    return r.code === 0 ? 'ready' : 'login';
+  } catch (/** @type {any} */ e) {
+    return e?.said?.code === 'codex.missing' ? 'missing' : 'error';
+  }
+}
+
+/**
  * Generates one image through `codex exec`. Arguments follow openrouter.js generateImage; `endpoint`/`apiKey`
  * do not exist here (Codex uses its own login), `resolution` is ignored, `params` is ignored.
  * @param {object} o

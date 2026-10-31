@@ -1,7 +1,7 @@
 // Settings, reachable from every screen, in sections: Сервис (the service every keyed call goes to — provider.preset:
 // OpenRouter or Google AI Studio —, its key applied as soon as it is pasted, the endpoint), Генерация (who draws: the
 // service's model or Codex CLI, which the factory starts itself; the image model; attempts per card; cards at the same
-// time), Взгляд на карточки, Текстовая модель, Вид (theme, language), and «Выключить редактор». Each section keeps
+// time), Взгляд на карточки, Текстовая модель, Вид (theme, language, hints), and «Выключить редактор». Each section keeps
 // what is rare under «Дополнительные настройки <раздела>». The model fields are searchable lists of the service's own
 // models (op listModels); a typed id is taken too. Spend caps are not shown (the author's decision, 2026-10-31).
 // Saved into settings/local.json through core/settings.js.
@@ -9,6 +9,7 @@ import { call, jobs } from '../api.js';
 import { lang, LANGS, setLang, words } from '../i18n.js';
 import { attempt, confirmDialog, esc, I, openSheet, setTheme, tip, toast, usd } from '../ui.js';
 import { app } from '../state.js';
+import { hintMemory, setHintsOn } from '../hints.js';
 
 const t = words({
   ru: {
@@ -40,6 +41,7 @@ const t = words({
     textSection: 'Текстовая модель', textModel: 'Модель для текста', textNote: 'Модели сервиса, которые пишут текст.',
     textHint: 'Пишет планы наборов и заказы карточек, помогает с текстом («Сформулировать»).',
     view: 'Вид', theme: 'Тема', light: 'Светлая', dark: 'Тёмная', language: 'Язык', languageHint: 'Страница перезагрузится. Подписи на карточках не переводятся.',
+    hints: 'Подсказки', hintsOn: 'Включены', hintsOff: 'Выключены', hintsHint: 'Строка «Следующий шаг», подсказки при первом действии и о ключе на первом экране. Включите снова — вернутся и скрытые.',
     stopEditor: 'Выключить редактор', stopHint: 'Генерация остановится. Открыть снова — файлом запуска фабрики.',
     stopAsk: 'Выключить редактор?', stopAskText: 'Идёт генерация ({n}): она остановится, начатые карточки останутся недоделанными.', stopYes: 'Да, выключить', stopNo: 'Нет, оставить',
     search: 'Найти модель или вписать её id', take: 'Взять «{id}»', loading: 'Загружаю список моделей…', listFailed: 'Список не пришёл: {error} Можно вписать id модели в поиск и нажать Enter.',
@@ -75,6 +77,7 @@ const t = words({
     textSection: 'Text model', textModel: 'Model for text', textNote: 'The service’s models that write text.',
     textHint: 'Writes set plans and card orders, helps with texts (“Write it for me”).',
     view: 'Look', theme: 'Theme', light: 'Light', dark: 'Dark', language: 'Language', languageHint: 'The page reloads. Card captions are not translated.',
+    hints: 'Hints', hintsOn: 'On', hintsOff: 'Off', hintsHint: 'The “Next step” line, first-action hints and the key hint on the first screen. Turn them on again and the hidden ones come back.',
     stopEditor: 'Switch the editor off', stopHint: 'Generation stops. To open it again, use the factory’s launcher.',
     stopAsk: 'Switch the editor off?', stopAskText: 'Generation is under way ({n}): it will stop, cards started stay unfinished.', stopYes: 'Yes, switch off', stopNo: 'No, keep it',
     search: 'Find a model or type its id', take: 'Use “{id}”', loading: 'Loading the model list…', listFailed: 'The list did not come: {error} You can type a model id into the search and press Enter.',
@@ -184,7 +187,8 @@ export async function openSettings() {
 
       <section class="sset" aria-label="${esc(t('view'))}"><h3 class="sset__title">${esc(t('view'))}</h3>
         <div class="field"><span class="field__label">${esc(t('theme'))}</span>${seg('theme', [['light', `${I.sun}${esc(t('light'))}`], ['dark', `${I.moon}${esc(t('dark'))}`]], theme)}</div>
-        <div class="field"><span class="field__label">${esc(t('language'))}</span>${seg('lang', LANGS.map(l => [l, l === 'ru' ? 'Русский' : 'English']), lang())}<span class="field__hint">${esc(t('languageHint'))}</span></div></section>
+        <div class="field"><span class="field__label">${esc(t('language'))}</span>${seg('lang', LANGS.map(l => [l, l === 'ru' ? 'Русский' : 'English']), lang())}<span class="field__hint">${esc(t('languageHint'))}</span></div>
+        <div class="field"><span class="field__label">${esc(t('hints'))}</span>${seg('hints', [['on', esc(t('hintsOn'))], ['off', esc(t('hintsOff'))]], hintMemory().on ? 'on' : 'off')}<span class="field__hint">${esc(t('hintsHint'))}</span></div></section>
 
       <section class="sset sset--off" aria-label="${esc(t('stopEditor'))}"><button type="button" class="btn btn--secondary" data-stop>${I.power}<span>${esc(t('stopEditor'))}</span></button>
         <span class="field__hint">${esc(t('stopHint'))}</span></section>
@@ -338,6 +342,8 @@ export async function openSettings() {
       if (name === 'lang') { setLang(/** @type {import('../i18n.js').Lang} */ (b.dataset.v)); return; }
       for (const x of /** @type {HTMLElement} */ (b.parentElement).children) x.setAttribute('aria-pressed', String(x === b));
       if (name === 'theme') setTheme(/** @type {string} */ (b.dataset.v));
+      // at once, like the theme; «on» again brings back the hints hidden with ×
+      if (name === 'hints') setHintsOn(b.dataset.v === 'on');
       if (name === 'preset') { closeCombo(); preset = /** @type {string} */ (b.dataset.v); showPreset(); }
       if (name === 'use') {
         /** @type {HTMLElement} */ (sheet.querySelector('[data-who-hint]')).innerHTML = whoHint(b.dataset.v ?? 'api');

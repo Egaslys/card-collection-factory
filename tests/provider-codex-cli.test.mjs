@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { generateImage, launchOf } from '../core/providers/codex-cli.js';
+import { codexStatus, generateImage, launchOf } from '../core/providers/codex-cli.js';
 import { ProviderError } from '../core/providers/openrouter.js';
 import { ROOT } from './root.mjs';
 
@@ -210,4 +210,24 @@ test('generateImage: Codex запускается со спрятанным ок
     assert.equal(m.calls[0].opts.windowsHide, true);
     assert.equal(m.logins[0].opts.windowsHide, true);
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('codexStatus: вход есть — ready, нет — login, команды нет — missing, иначе error; только «login status», без ключей сервисов', async t => {
+  const ok = mock();
+  t.after(() => { delete process.env.CCF_TEST_SECRET; });
+  process.env.CCF_TEST_SECRET = 'secret';
+  assert.equal(await codexStatus({ settings: CODEX, withoutEnv: ['CCF_TEST_SECRET'], net: { spawnImpl: ok.spawnImpl } }), 'ready');
+  assert.equal(ok.calls.length, 0, 'codex exec не запускается');
+  assert.deepEqual(ok.logins.map(l => [l.cmd, ...l.args]), [['codex', 'login', 'status']]);
+  assert.equal(ok.logins[0].opts.env.CCF_TEST_SECRET, undefined, 'ключи сервисов Codex не получает');
+  assert.equal(ok.logins[0].opts.windowsHide, true);
+  assert.notEqual(path.resolve(ok.logins[0].opts.cwd), ROOT, 'не в папке проекта');
+  assert.equal(await codexStatus({ settings: CODEX, net: { spawnImpl: mock({ login: 1 }).spawnImpl } }), 'login');
+  const enoent = Object.assign(new Error('x'), { code: 'ENOENT' });
+  assert.equal(await codexStatus({ settings: { ...CODEX, command: 'no-such-codex' }, net: { spawnImpl: mock({ spawnError: enoent }).spawnImpl } }), 'missing');
+  const eacces = Object.assign(new Error('permission denied'), { code: 'EACCES' });
+  assert.equal(await codexStatus({ settings: CODEX, net: { spawnImpl: mock({ spawnError: eacces }).spawnImpl } }), 'error');
+  // a status that never answers: stopped by the timeout, said as «could not be asked»
+  const silent = () => { const c = new EventEmitter(); c.stdout = new EventEmitter(); c.stderr = new EventEmitter(); c.stdin = { on() {}, end() {} }; c.kill = () => {}; return c; };
+  assert.equal(await codexStatus({ settings: CODEX, net: { spawnImpl: /** @type {any} */ (silent), timeoutMs: 20 } }), 'error');
 });

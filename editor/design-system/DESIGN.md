@@ -551,6 +551,10 @@ Pills sit only in pill shells or free.
 - **States** — empty: what is missing and the one action that fixes it; loading: sunken skeletons of the real
   shapes, a slow shimmer (none with reduced motion); error: error ink headline, what happened in plain words,
   "Повторить".
+- **Hints** — what to do next, quiet: «Следующий шаг» is the section label voice in ink-3, then body-sm in ink-2,
+  at the end of the main section's header row and never taller than it (two lines); a first-use action is a sunken
+  pill (h 32, r full) with an ink-3 icon; the setup card of the first screen is a panel, one row per thing not ready.
+  Each has a × (the 20px circle of the «i», ink-3) that hides it.
 
 ## Do's and Don'ts
 

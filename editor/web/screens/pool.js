@@ -11,14 +11,18 @@ const t = words({
   ru: {
     title: 'Хранилище', aria: 'Хранилище карточек', which: 'Какие карточки показать', all: 'Все', free: 'Вне наборов', in: 'В наборах',
     tip: 'Все карточки коллекции. Перетащите карточку в окно набора — она займёт место. Перетащите обратно — она уйдёт из набора. ⌘ или Ctrl + щелчок — выбрать карточку для экспорта.',
-    make: 'Создать карточки', where: 'Набор {n} · место {slot}', none: 'Карточек пока нет. Создайте карточки по теме — они лягут сюда, а отсюда их можно разложить по наборам.',
-    allPlaced: 'Все карточки разложены по наборам. Перетащите сюда карточку из окна, чтобы убрать её из набора.', noneInSets: 'В наборах карточек пока нет.',
+    make: 'Создать карточки', where: 'Набор {n} · место {slot}',
+    none: 'Здесь будут ваши карточки', noneText: 'Нажмите «Создать карточки» — новые карточки лягут сюда. Отсюда их перетаскивают в окна наборов.',
+    allPlaced: 'Все карточки в наборах', allPlacedText: 'Чтобы убрать карточку из набора, перетащите её сюда из окна.',
+    noneInSets: 'В наборах пока пусто', noneInSetsText: 'Перетащите карточку в окно набора — она появится здесь.',
   },
   en: {
     title: 'Pool', aria: 'Card pool', which: 'Which cards to show', all: 'All', free: 'Not in sets', in: 'In sets',
     tip: 'Every card of the collection. Drag a card into a set window and it takes the place. Drag it back and it leaves the set. ⌘ or Ctrl + click picks a card for the export.',
-    make: 'Create cards', where: 'Set {n} · place {slot}', none: 'No cards yet. Create cards on a theme: they land here, and from here you lay them out into sets.',
-    allPlaced: 'Every card is in a set. Drag a card here from a window to take it out of its set.', noneInSets: 'No cards in sets yet.',
+    make: 'Create cards', where: 'Set {n} · place {slot}',
+    none: 'Your cards will be here', noneText: 'Click “Create cards” — new cards land here. From here they are dragged into set windows.',
+    allPlaced: 'Every card is in a set', allPlacedText: 'To take a card out of its set, drag it here from the window.',
+    noneInSets: 'Nothing in sets yet', noneInSetsText: 'Drag a card into a set window — it shows up here.',
   },
 });
 
@@ -52,7 +56,8 @@ function filterHtml(cards) {
 function bodyHtml(cards, sets) {
   const list = items(cards, sets);
   if (list.length) return `<div class="thumb-grid pool__grid">${keyed(list)}</div>`;
-  return `<p class="pool__empty ink-2">${esc(!cards.length ? t('none') : poolView.show === 'in' ? t('noneInSets') : t('allPlaced'))}</p>`;
+  const k = !cards.length ? 'none' : poolView.show === 'in' ? 'noneInSets' : 'allPlaced';
+  return `<div class="pool__state"><p class="pool__state-h">${esc(t(k))}</p><p class="pool__empty ink-2">${esc(t(/** @type {'noneText'} */ (`${k}Text`)))}</p></div>`;
 }
 
 /** @param {any[]} cards  all cards of the collection @param {any[]} sets  its sets (for «Набор N · место M») */

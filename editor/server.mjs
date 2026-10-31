@@ -22,6 +22,7 @@ import { COLLECTIONS_DIR, SLOT_COUNT } from '../core/store/layout.js';
 import { createJobs } from './server/jobs.js';
 import { presetOf } from '../core/providers/preset.js';
 import { initKey, keyStatus } from './server/key.js';
+import { checkCodex, codexState } from './server/codex.js';
 import { saidOf } from '../core/say.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -206,6 +207,9 @@ export async function startEditor({ port, quiet = false, discovery = true, onSto
     for (const c of clients) c.write(data);
   };
   const jobs = createJobs(broadcast);
+  /** Codex's readiness, asked again; a change goes to every page. */
+  const askCodex = () => { checkCodex(loadSettings(), codex => broadcast({ type: 'codex', codex })).catch(() => {}); };
+  askCodex();
   /** The page's «Выключить редактор»: every page is told, the answer goes out, then the server closes. */
   const shutdown = () => {
     broadcast({ type: 'bye' });
@@ -237,8 +241,9 @@ export async function startEditor({ port, quiet = false, discovery = true, onSto
       if (!tokenOk(req, url)) { sendJson(res, 403, { error: 'Нет доступа: обновите страницу редактора.' }); return; }
       if (p === '/api/events' && req.method === 'GET') {
         res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
-        res.write(`data: ${JSON.stringify({ type: 'hello', key: keyStatus(), jobs: jobs.list() })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'hello', key: keyStatus(), codex: codexState(), jobs: jobs.list() })}\n\n`);
         clients.add(res);
+        askCodex();
         req.on('close', () => clients.delete(res));
         return;
       }
@@ -280,6 +285,7 @@ export async function startEditor({ port, quiet = false, discovery = true, onSto
           const result = await op.run(args, { progress: () => {}, signal: new AbortController().signal, editor: { running: jobs.running, stop: shutdown } });
           sendJson(res, 200, { result: withUrls(result ?? null) });
           if (KEY_OPS.has(om[1])) broadcast({ type: 'key', key: keyStatus() });
+          if (om[1] === 'saveSettings') askCodex();
         } catch (/** @type {any} */ e) {
           sendJson(res, 400, errorBody(e));
         }

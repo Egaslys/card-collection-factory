@@ -34,6 +34,8 @@ const selection = {
 export const app = {
   /** @type {{source: string, envVar: string}} */
   key: { source: 'none', envVar: '' },
+  /** whether Codex is ready to draw: null when it does not draw (editor/server/codex.js) @type {'ready'|'login'|'missing'|'error'|null} */
+  codex: null,
   online: true,
   /** the route from the address, e.g. ['c', collectionId, 's', setId] */
   route: /** @type {string[]} */ ([]),
