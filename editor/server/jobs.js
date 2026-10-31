@@ -32,6 +32,7 @@
  * @property {string} title
  * @property {string} status  start | made | kept | skipped | failed | cancelled …, as core/set reports it
  * @property {number} spent
+ * @property {{stage: string, n: number|null, of: number}} [attempt]  the card's attempt under way (its last `attempt` say)
  */
 
 /**
@@ -46,7 +47,7 @@
 /**
  * A journal line as data: a step of a card's run (core/card's progress: generating or processing attempt `n` of at
  * most `of`), or the job stopping on a person's request.
- * @typedef {{k: 'attempt', stage: string, n: number|null, done: number, of: number} | {k: 'stopping'}} Say
+ * @typedef {{k: 'attempt', stage: string, n: number|null, done: number, of: number, title?: string} | {k: 'stopping'}} Say
  */
 
 /** The statuses of a card row (core/set's progress); others (planning, planned, invalid) are lines of the plan. */
@@ -86,11 +87,14 @@ export function createJobs(emit) {
      * @param {string} text @param {{set?: string, slot?: number, cardId?: string|null, title?: string, status?: string, spent?: number, total?: number, say?: Say}} [o]
      */
     const progress = (text, o = {}) => {
-      job.log.push({ at: new Date().toISOString(), text: String(text), ...(o.say ? { say: o.say } : {}) });
+      // a card's line carries its title in `say`, so the page can name the card it words
+      const say = o.say && o.title && !('title' in o.say) ? { ...o.say, title: o.title } : o.say;
+      job.log.push({ at: new Date().toISOString(), text: String(text), ...(say ? { say } : {}) });
       if (job.log.length > LOG_LIMIT) job.log.splice(0, job.log.length - LOG_LIMIT);
       const key = o.slot != null ? `${o.set ?? ''}:${o.slot}` : o.title && CARD_STATUSES.has(o.status ?? '') ? `card:${o.title}` : null;
       if (key) {
-        items.set(key, { ...items.get(key), set: o.set ?? null, slot: o.slot ?? null, cardId: o.cardId ?? items.get(key)?.cardId ?? null, title: o.title ?? '', status: o.status ?? '', spent: o.spent ?? 0 });
+        const attempt = o.say?.k === 'attempt' ? { stage: o.say.stage, n: o.say.n, of: o.say.of } : items.get(key)?.attempt;
+        items.set(key, { ...items.get(key), set: o.set ?? null, slot: o.slot ?? null, cardId: o.cardId ?? items.get(key)?.cardId ?? null, title: o.title ?? '', status: o.status ?? '', spent: o.spent ?? 0, attempt: o.status === 'start' ? attempt : undefined });
         job.items = [...items.values()];
         job.spent = (base ?? 0) + job.items.reduce((s, i) => s + (i.spent ?? 0), 0);
       }

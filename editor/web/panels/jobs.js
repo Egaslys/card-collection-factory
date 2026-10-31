@@ -3,7 +3,7 @@
 // (the top bar shows what has been spent). One scroll: the sheet's own. A running job that supports it can be stopped.
 import { cancelJob, jobs, onEvent } from '../api.js';
 import { lang, words } from '../i18n.js';
-import { attempt, esc, I, itemWords, jobCount, jobEnd, jobTitle, openSheet } from '../ui.js';
+import { attempt, esc, I, itemSay, jobCount, jobEnd, jobTitle, openSheet } from '../ui.js';
 
 const t = words({
   ru: {
@@ -31,7 +31,7 @@ function section(j) {
   const done = (j.items ?? []).filter((/** @type {any} */ i) => i.status === 'made' || i.status === 'kept').length;
   const items = j.items?.length ? `<ul class="qitems">${j.items.map((/** @type {any} */ i) => `<li class="qitem"><span class="qitem__img">${I.image}</span>
       <span class="qitem__text"><span class="qitem__name">${i.slot != null ? `<span class="data ink-3">${String(i.slot).padStart(2, '0')}</span> ` : ''}${esc(i.title)}</span>
-      <span class="qitem__say qitem__say--${ITEM_DOT[i.status] ?? 'idle'}"><i class="dot dot--${ITEM_DOT[i.status] ?? 'idle'}"></i>${esc(itemWords(i.status))}</span></span></li>`).join('')}</ul>` : '';
+      <span class="qitem__say qitem__say--${ITEM_DOT[i.status] ?? 'idle'}"><i class="dot dot--${ITEM_DOT[i.status] ?? 'idle'}"></i>${esc(itemSay(i))}</span></span></li>`).join('')}</ul>` : '';
   return `<section class="qjob" data-job="${esc(j.id)}">
     <div class="qjob__head"><span class="qjob__title">${esc(jobTitle(j))}</span>${st === 'running' && j.cancellable ? `<button type="button" class="btn btn--secondary btn--s" data-cancel="${esc(j.id)}">${I.stop}<span>${esc(t('stop'))}</span></button>` : ''}</div>
     <p class="qjob__say qjob__say--${JOB_DOT[st]}"><i class="dot dot--${JOB_DOT[st]}"></i><span>${esc(jobEnd(j))}</span></p>

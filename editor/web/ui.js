@@ -13,6 +13,7 @@ const t = words({
     sayFail: 'Есть проблемы', sayWarn: 'Стоит взглянуть', sayFailed: 'Не получилась',
     close: 'Закрыть', more: 'Подробнее', starting: 'Начинаю…', planning: 'Пишу план', generating: 'Генерируется картинка «{title}»',
     generatingMore: 'Генерируется картинка «{title}» и ещё {n}', generatingOne: 'Генерируется картинка', retry: 'Не получилось, пробую ещё раз ({n} из {of})',
+    retryCard: '«{title}»: не получилось, пробую ещё раз ({n} из {of})',
     processing: 'Обрабатываю и проверяю картинку', stopping: 'Останавливаю: доделываю начатый шаг', doneOf: 'Готово: {done} из {total}', doneN: 'Готово: {done}',
     jobDone: 'Готово', jobWarn: 'Готово, но есть замечания', jobFailed: 'Не получилось', jobCancelled: 'Остановлено',
     itemStart: 'Генерируется картинка', itemMade: 'Готово', itemKept: 'Уже была готова', itemSkipped: 'Пропущена: потолок расходов',
@@ -30,6 +31,7 @@ const t = words({
     sayFail: 'Has problems', sayWarn: 'Worth a look', sayFailed: 'Did not work out',
     close: 'Close', more: 'Details', starting: 'Starting…', planning: 'Writing the plan', generating: 'Drawing “{title}”',
     generatingMore: 'Drawing “{title}” and {n} more', generatingOne: 'Drawing the picture', retry: 'Did not work, trying again ({n} of {of})',
+    retryCard: '“{title}”: did not work, trying again ({n} of {of})',
     processing: 'Processing and checking the picture', stopping: 'Stopping: finishing the step under way', doneOf: 'Done: {done} of {total}', doneN: 'Done: {done}',
     jobDone: 'Done', jobWarn: 'Done, with remarks', jobFailed: 'Did not work', jobCancelled: 'Stopped',
     itemStart: 'Drawing', itemMade: 'Done', itemKept: 'Was already done', itemSkipped: 'Skipped: spend cap',
@@ -175,11 +177,21 @@ export const itemWords = status => {
   return key ? t(key) : status;
 };
 
+/** A card row being made tries again: its attempt is past the first. @param {any} i */
+const retrying = i => i.status === 'start' && i.attempt?.stage === 'generate' && i.attempt.n > 1;
+
+/** A card row of a job in words: its status, or its attempt while it is drawn again. @param {any} i */
+export const itemSay = i => (retrying(i) ? t('retry', { n: i.attempt.n, of: i.attempt.of }) : i.status === 'start' && i.attempt?.stage === 'process' ? t('processing') : itemWords(i.status));
+
 /** What a running job is doing now, in a sentence. @param {any} j */
 export function jobStep(j) {
   const drawing = (j.items ?? []).filter((/** @type {any} */ i) => i.status === 'start');
   const last = [...(j.log ?? [])].reverse().find((/** @type {any} */ l) => l.say)?.say;
   if (last?.k === 'stopping') return t('stopping');
+  // a card drawn again says so first: the latest such line, by the card's title
+  const again = last?.k === 'attempt' && last.stage === 'generate' && last.n > 1 && last.title ? last : null;
+  const retry = again ? drawing.find((/** @type {any} */ i) => i.title === again.title && retrying(i)) : drawing.find(retrying);
+  if (retry) return t('retryCard', { title: retry.title, n: retry.attempt.n, of: retry.attempt.of });
   if (drawing.length) return drawing.length > 1 ? t('generatingMore', { title: drawing[0].title, n: drawing.length - 1 }) : t('generating', { title: drawing[0].title });
   if (last?.k === 'attempt') {
     if (last.stage === 'process') return t('processing');

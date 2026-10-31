@@ -27,6 +27,7 @@ body.has-sheet { overflow: hidden; }
   border-radius: var(--rounded-full); color: var(--color-ink-2); white-space: nowrap; cursor: default;
   font: var(--type-button-sm-weight) var(--type-button-sm-size)/var(--type-button-sm-line) var(--type-button-sm-family); }
 .tb__text[hidden] { display: none; }
+.tb__short { display: none; }
 button.tb__text { cursor: pointer; transition: background-color var(--motion-t1) var(--motion-ease); }
 button.tb__text:hover { background: var(--color-surface-sunken); }
 .tb__text--fail, button.tb__text--fail:hover { background: var(--color-error-tint); color: var(--color-error-ink); }
@@ -217,6 +218,10 @@ button.tb__text:hover { background: var(--color-surface-sunken); }
 .att__err { color: var(--color-error-ink); }
 
 /* ---------- narrower screens ---------- */
+/* the top bar on a tablet: export and settings by their icons */
+@media (max-width: 900px) {
+  .tb .btn--export span, .tb [data-open-settings] .hide-s, .tb__word { display: none; }
+}
 @media (max-width: 1100px) {
   .hide-m { display: none; }
   .cols { grid-template-columns: minmax(0, 1fr); }
@@ -232,6 +237,11 @@ button.tb__text:hover { background: var(--color-surface-sunken); }
   .hide-s { display: none; }
   .bar { padding-top: var(--spacing-s2); }
   .tb .btn--export span, .tb [data-spend] { display: none; }
+  /* a phone has no room for theme and language in the bar: they stay in Settings → Вид */
+  .tb--view { display: none; }
+  /* statuses by their dots: the generation by its number, a working key by its green dot; a missing key keeps its words */
+  .tb__long { display: none; }
+  .tb__short { display: inline; }
   .screen { padding-top: var(--spacing-s5); }
   .head { flex-direction: column; align-items: stretch; }
   .ctiles { grid-template-columns: minmax(0, 1fr); }

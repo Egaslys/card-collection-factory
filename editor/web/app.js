@@ -126,7 +126,7 @@ function spendStatus() {
   if (!sp) return '<span class="tb__text" data-spend hidden></span>';
   const whose = spent?.scope ? t('spentCollection') : t('spentFactory');
   const label = `${whose}: ${t('images')} ${usd(sp.images)}, ${t('text')} ${usd(sp.text)}, ${t('vision')} ${usd(sp.vision)}`;
-  return `<span class="tb__text has-bubble" data-spend tabindex="0" role="status" aria-label="${esc(label)}">${esc(t('spent'))} <span class="data">${usd(sp.total)}</span>
+  return `<span class="tb__text has-bubble" data-spend tabindex="0" role="status" aria-label="${esc(label)}"><span class="tb__word">${esc(t('spent'))}</span> <span class="data">${usd(sp.total)}</span>
     <span class="bubble bubble--right" aria-hidden="true"><b>${esc(whose)}</b><dl><dt>${esc(t('images'))}</dt><dd>${usd(sp.images)}</dd><dt>${esc(t('text'))}</dt><dd>${usd(sp.text)}</dd><dt>${esc(t('vision'))}</dt><dd>${usd(sp.vision)}</dd></dl>${sp.unknown ? `<span class="ink-3">${esc(t('unknown', { n: sp.unknown }))}</span>` : ''}</span></span>`;
 }
 let spendTimer = /** @type {number|undefined} */ (undefined);
@@ -138,14 +138,14 @@ addEventListener(SPENT_EVENT, spendSoon);
 function topbar() {
   const theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
   return `<header class="bar">
-    <div class="bar__side"><div class="tb glass"><button type="button" class="btn btn--export" data-shell-export>${I.download}<span>${esc(t('export'))}</span></button></div></div>
+    <div class="bar__side"><div class="tb glass"><button type="button" class="btn btn--export" data-shell-export aria-label="${esc(t('export'))}">${I.download}<span>${esc(t('export'))}</span></button></div></div>
     <div class="bar__side">
       <div class="tb glass" data-status>${statusBlock()}</div>
-      <div class="tb glass">
+      <div class="tb glass tb--view">
         <div class="seg seg--icon" role="group" aria-label="${esc(t('theme'))}"><button type="button" data-theme-pick="light" aria-pressed="${theme === 'light'}" aria-label="${esc(t('light'))}">${I.sun}</button><button type="button" data-theme-pick="dark" aria-pressed="${theme === 'dark'}" aria-label="${esc(t('dark'))}">${I.moon}</button></div>
         <div class="seg seg--lang" role="group" aria-label="${esc(t('language'))}">${LANGS.map(l => `<button type="button" data-lang="${l}" aria-pressed="${lang() === l}" lang="${l}">${l.toUpperCase()}</button>`).join('')}</div>
       </div>
-      <div class="tb glass"><button type="button" class="btn btn--secondary" data-open-settings>${I.gear}<span class="hide-s">${esc(t('settings'))}</span></button></div>
+      <div class="tb glass"><button type="button" class="btn btn--secondary" data-open-settings aria-label="${esc(t('settings'))}">${I.gear}<span class="hide-s">${esc(t('settings'))}</span></button></div>
     </div></header>`;
 }
 
@@ -154,7 +154,7 @@ function statusBlock() {
   const running = [...jobs.values()].filter(j => j.status === 'running').length;
   const failed = [...jobs.values()].some(j => j.status === 'failed' && !j.seen);
   const gen = running || jobs.size
-    ? `<button type="button" class="tb__text${running ? ' tb__text--work' : ''}" data-open-jobs aria-label="${esc(t('queue'))}"><i class="dot ${running ? 'dot--work' : failed ? 'dot--fail' : 'dot--done'}"></i>${esc(running ? t('generationN', { n: running }) : t('generation'))}</button><span class="tb__sep"></span>`
+    ? `<button type="button" class="tb__text${running ? ' tb__text--work' : ''}" data-open-jobs aria-label="${esc(t('queue'))}"><i class="dot ${running ? 'dot--work' : failed ? 'dot--fail' : 'dot--done'}"></i><span class="tb__long">${esc(running ? t('generationN', { n: running }) : t('generation'))}</span>${running ? `<span class="tb__short data">${running}</span>` : ''}</button><span class="tb__sep"></span>`
     : '';
   return `${gen}${spendStatus()}${keyStatus()}`;
 }
@@ -164,7 +164,7 @@ function keyStatus() {
   const word = !app.online ? t('offline') : k.source === 'none' ? t('noKey') : k.source === 'temporary' ? t('tempKey') : t('key');
   const bad = !app.online || k.source === 'none';
   const tip = !app.online ? t('offlineTip') : k.source === 'none' ? t('noKeyTip', { envVar: k.envVar }) : k.source === 'temporary' ? t('tempKeyTip', { envVar: k.envVar }) : t('keyTip', { envVar: k.envVar });
-  return `<button type="button" class="tb__text has-bubble${bad ? ' tb__text--fail' : ''}" data-open-settings="key" aria-label="${esc(tip)}"><i class="dot ${bad ? 'dot--fail' : 'dot--done'}"></i>${esc(word)}<span class="bubble bubble--right" aria-hidden="true">${esc(tip)}</span></button>`;
+  return `<button type="button" class="tb__text has-bubble${bad ? ' tb__text--fail' : ''}" data-open-settings="key" aria-label="${esc(tip)}"><i class="dot ${bad ? 'dot--fail' : 'dot--done'}"></i><span${bad ? '' : ' class="tb__long"'}>${esc(word)}</span><span class="bubble bubble--right" aria-hidden="true">${esc(tip)}</span></button>`;
 }
 
 /** Redraws only the status block of the top bar (generation, spend, key) without touching the screen. */

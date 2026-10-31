@@ -195,3 +195,21 @@ test('ключ редактора: временный — только в пам
   assert.equal(currentKey(v), null);
   assert.equal(keyStatus(v).source, 'none');
 });
+
+test('задачи: строка карточки помнит попытку, пока карточка рисуется; строка журнала называет карточку', async () => {
+  const { createJobs } = await import('../editor/server/jobs.js');
+  const jobs = createJobs(() => {});
+  /** @type {(text: string, o?: any) => void} */
+  let progress = () => {};
+  /** @type {() => void} */
+  let finish = () => {};
+  const job = jobs.start({ op: 'makeSet', title: 'Набор', run: ctx => { progress = ctx.progress; return new Promise(r => { finish = () => r(null); }); } });
+  await new Promise(r => setImmediate(r));
+  const say = { k: 'attempt', stage: 'generate', n: 2, done: 1, of: 3 };
+  progress('попытка 2', { set: 's', slot: 1, title: 'Dust Mask', status: 'start', spent: 0.04, say });
+  assert.deepEqual(job.items?.[0].attempt, { stage: 'generate', n: 2, of: 3 });
+  assert.deepEqual(job.log.at(-1)?.say, { ...say, title: 'Dust Mask' });
+  progress('готово', { set: 's', slot: 1, title: 'Dust Mask', status: 'made', spent: 0.08 });
+  assert.equal(job.items?.[0].attempt, undefined);
+  finish();
+});
