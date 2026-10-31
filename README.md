@@ -1,5 +1,7 @@
 # card-collection-factory
 
+https://github.com/user-attachments/assets/1af58977-3d07-4b69-bd25-e77fdd36f560
+
 [English](README.md) | [Русский](README.ru.md)
 
 A factory of collectible card collections. You name a theme and say what you would like, and the factory draws the cards in one art style and lays them out into sets: a collection holds 16 sets, a set is 10 cards in a game window. You can work in the web editor yourself, or ask an AI agent (Claude Code or Codex) to make a set for you; the agent can do everything the editor does.
