@@ -32,7 +32,8 @@
  * @property {string} title
  * @property {string} status  start | made | kept | skipped | failed | cancelled …, as core/set reports it
  * @property {number} spent
- * @property {{stage: string, n: number|null, of: number}} [attempt]  the card's attempt under way (its last `attempt` say)
+ * @property {{stage: string, k: number, of: number}} [attempt]  the card's attempt under way: the k-th of this run's `of`
+ *   (from its last `attempt` say: `done` + 1 — not `n`, the card's version number, which counts earlier runs too)
  */
 
 /**
@@ -93,7 +94,7 @@ export function createJobs(emit) {
       if (job.log.length > LOG_LIMIT) job.log.splice(0, job.log.length - LOG_LIMIT);
       const key = o.slot != null ? `${o.set ?? ''}:${o.slot}` : o.title && CARD_STATUSES.has(o.status ?? '') ? `card:${o.title}` : null;
       if (key) {
-        const attempt = o.say?.k === 'attempt' ? { stage: o.say.stage, n: o.say.n, of: o.say.of } : items.get(key)?.attempt;
+        const attempt = o.say?.k === 'attempt' ? { stage: o.say.stage, k: o.say.done + 1, of: o.say.of } : items.get(key)?.attempt;
         items.set(key, { ...items.get(key), set: o.set ?? null, slot: o.slot ?? null, cardId: o.cardId ?? items.get(key)?.cardId ?? null, title: o.title ?? '', status: o.status ?? '', spent: o.spent ?? 0, attempt: o.status === 'start' ? attempt : undefined });
         job.items = [...items.values()];
         job.spent = (base ?? 0) + job.items.reduce((s, i) => s + (i.spent ?? 0), 0);

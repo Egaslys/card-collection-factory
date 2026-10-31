@@ -196,7 +196,7 @@ test('ключ редактора: временный — только в пам
   assert.equal(keyStatus(v).source, 'none');
 });
 
-test('задачи: строка карточки помнит попытку, пока карточка рисуется; строка журнала называет карточку', async () => {
+test('задачи: строка карточки помнит номер попытки в этом запуске (не номер версии), пока карточка рисуется; строка журнала называет карточку', async () => {
   const { createJobs } = await import('../editor/server/jobs.js');
   const jobs = createJobs(() => {});
   /** @type {(text: string, o?: any) => void} */
@@ -207,9 +207,12 @@ test('задачи: строка карточки помнит попытку, �
   await new Promise(r => setImmediate(r));
   const say = { k: 'attempt', stage: 'generate', n: 2, done: 1, of: 3 };
   progress('попытка 2', { set: 's', slot: 1, title: 'Dust Mask', status: 'start', spent: 0.04, say });
-  assert.deepEqual(job.items?.[0].attempt, { stage: 'generate', n: 2, of: 3 });
+  assert.deepEqual(job.items?.[0].attempt, { stage: 'generate', k: 2, of: 3 });
   assert.deepEqual(job.log.at(-1)?.say, { ...say, title: 'Dust Mask' });
   progress('готово', { set: 's', slot: 1, title: 'Dust Mask', status: 'made', spent: 0.08 });
   assert.equal(job.items?.[0].attempt, undefined);
+  // a regenerate: the card's 4th version is this run's first attempt of 1, not «4 of 1»
+  progress('попытка 4', { set: 's', slot: 2, title: 'Storm Tent', status: 'start', say: { k: 'attempt', stage: 'generate', n: 4, done: 0, of: 1 } });
+  assert.deepEqual(job.items?.[1].attempt, { stage: 'generate', k: 1, of: 1 });
   finish();
 });

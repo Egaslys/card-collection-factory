@@ -177,11 +177,19 @@ export const itemWords = status => {
   return key ? t(key) : status;
 };
 
-/** A card row being made tries again: its attempt is past the first. @param {any} i */
-const retrying = i => i.status === 'start' && i.attempt?.stage === 'generate' && i.attempt.n > 1;
+/** A card row being made tries again: its attempt in this run is past the first. @param {any} i */
+const retrying = i => i.status === 'start' && i.attempt?.stage === 'generate' && i.attempt.k > 1;
+
+/**
+ * The attempt under way in this run, from core/card's progress: `done` attempts are finished, so this is the
+ * (done + 1)-th of `of`. Not `n`: that is the card's version number and counts earlier runs (a regenerate's first
+ * attempt may be version 4).
+ * @param {{done: number}} say
+ */
+const runAttempt = say => say.done + 1;
 
 /** A card row of a job in words: its status, or its attempt while it is drawn again. @param {any} i */
-export const itemSay = i => (retrying(i) ? t('retry', { n: i.attempt.n, of: i.attempt.of }) : i.status === 'start' && i.attempt?.stage === 'process' ? t('processing') : itemWords(i.status));
+export const itemSay = i => (retrying(i) ? t('retry', { n: i.attempt.k, of: i.attempt.of }) : i.status === 'start' && i.attempt?.stage === 'process' ? t('processing') : itemWords(i.status));
 
 /** What a running job is doing now, in a sentence. @param {any} j */
 export function jobStep(j) {
@@ -189,13 +197,13 @@ export function jobStep(j) {
   const last = [...(j.log ?? [])].reverse().find((/** @type {any} */ l) => l.say)?.say;
   if (last?.k === 'stopping') return t('stopping');
   // a card drawn again says so first: the latest such line, by the card's title
-  const again = last?.k === 'attempt' && last.stage === 'generate' && last.n > 1 && last.title ? last : null;
+  const again = last?.k === 'attempt' && last.stage === 'generate' && runAttempt(last) > 1 && last.title ? last : null;
   const retry = again ? drawing.find((/** @type {any} */ i) => i.title === again.title && retrying(i)) : drawing.find(retrying);
-  if (retry) return t('retryCard', { title: retry.title, n: retry.attempt.n, of: retry.attempt.of });
+  if (retry) return t('retryCard', { title: retry.title, n: retry.attempt.k, of: retry.attempt.of });
   if (drawing.length) return drawing.length > 1 ? t('generatingMore', { title: drawing[0].title, n: drawing.length - 1 }) : t('generating', { title: drawing[0].title });
   if (last?.k === 'attempt') {
     if (last.stage === 'process') return t('processing');
-    if (last.stage === 'generate') return last.n > 1 ? t('retry', { n: last.n, of: last.of }) : t('generatingOne');
+    if (last.stage === 'generate') return runAttempt(last) > 1 ? t('retry', { n: runAttempt(last), of: last.of }) : t('generatingOne');
   }
   if (/^(plan|build)/.test(j.op) && !(j.items ?? []).length) return t('planning');
   return t('starting');
