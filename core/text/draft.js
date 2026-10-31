@@ -6,6 +6,7 @@
 // The prompt's words live in the settings (text.help), the model is the factory's text model (textModel below).
 import { apiOf, presetOf } from '../providers/preset.js';
 import * as factoryStore from '../store/index.js';
+import { saidError } from '../say.js';
 
 /**
  * @typedef {object} TextHelpSettings  settings/defaults.json → text.help
@@ -82,7 +83,7 @@ export function draftPrompt({ kind, notes, context = {}, help, language = 'Russi
 export async function draftText({ kind, notes, context = {}, language = 'ru', collectionId = null, settings, apiKey, complete, store = factoryStore }) {
   const rough = typeof notes === 'string' ? notes.trim() : '';
   const help = /** @type {TextHelpSettings} */ (settings.text.help);
-  if (!rough && !contextLines(context, help).length) throw new Error('Поле пустое, и предложить текст не из чего: напишите мысли как есть, модель сформулирует из них текст.');
+  if (!rough && !contextLines(context, help).length) throw saidError('Поле пустое, и предложить текст не из чего: напишите мысли как есть, модель сформулирует из них текст.', 'text.empty');
   const languages = /** @type {Record<string, string>} */ (settings.card.fix.languages);
   if (!rough && !languages[language]) throw new Error(`Язык «${language}» не знаком помощи с текстом: есть ${Object.keys(languages).join(', ')}.`);
   const prompt = draftPrompt({ kind, notes: rough, context, help, language: languages[language] });
@@ -103,6 +104,6 @@ export async function draftText({ kind, notes, context = {}, language = 'ru', co
   }
   await store.recordSpend(collectionId, { kind: 'text', what: 'text-help', model: m.model, usd: r.cost });
   const text = r.text.trim().replace(/^```[a-z]*\n?|\n?```$/g, '').replace(/^«(.*)»$/s, '$1').trim();
-  if (!text) throw new Error('Текстовая модель ответила пустым текстом: попробуйте ещё раз.');
+  if (!text) throw saidError('Текстовая модель ответила пустым текстом: попробуйте ещё раз.', 'text.noAnswer');
   return { text, model: m.model, cost: r.cost };
 }

@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { said } from '../say.js';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 /** @type {Record<string, string>} */
@@ -29,10 +30,11 @@ const MIME_BY_EXT = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image
 export class ProviderError extends Error {
   /**
    * @param {string} message
-   * @param {{status?: number, providerMessage?: string, cost?: number|null, kind?: ErrorKind, service?: string}} [info]  cost: USD of a
-   *   call that was answered and paid but is of no use (no image, no text); null = not known or nothing paid
+   * @param {{status?: number, providerMessage?: string, cost?: number|null, kind?: ErrorKind, service?: string, said?: import('../say.js').Said}} [info]
+   *   cost: USD of a call that was answered and paid but is of no use (no image, no text); null = not known or nothing
+   *   paid; said: the message as data for the editor's page (core/say.js)
    */
-  constructor(message, { status = 0, providerMessage = '', cost = null, kind = 'other', service } = {}) {
+  constructor(message, { status = 0, providerMessage = '', cost = null, kind = 'other', service, said } = {}) {
     super(message);
     this.name = 'ProviderError';
     this.status = status;
@@ -40,8 +42,21 @@ export class ProviderError extends Error {
     this.cost = cost;
     this.kind = kind;
     if (service) this.service = service;
+    if (said) this.said = said;
   }
 }
+
+/** A failure to reach the service: it did not answer in time, or the network failed. @param {any} e @param {number} timeoutMs @param {string} route @param {string} apiKey */
+export function unreachable(e, timeoutMs, route, apiKey) {
+  const timedOut = e?.name === 'TimeoutError' || e?.name === 'AbortError';
+  const reason = redact(e?.message, apiKey);
+  return new ProviderError(timedOut ? `Провайдер не ответил за ${timeoutMs} мс (${route}).` : `Сеть: ${reason} (${route}).`,
+    { said: timedOut ? said('provider.timeout', { seconds: Math.round(timeoutMs / 1000) }) : said('provider.network', { reason }) });
+}
+
+/** The service answered with an error status. @param {number} status @param {string} route @param {string} providerMessage @param {ErrorKind} kind */
+export const httpFailure = (status, route, providerMessage, kind) => new ProviderError(`Провайдер вернул HTTP ${status} (${route}): ${providerMessage}`,
+  { status, providerMessage, kind, said: said('provider.http', { status, reply: providerMessage }) });
 
 /**
  * The kind of an HTTP error answer, from its status and body. Sources, checked 2026-10-31:
@@ -119,8 +134,7 @@ export async function request({ endpoint, apiKey, auth, method = 'GET', route, b
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (/** @type {any} */ e) {
-      const timedOut = e?.name === 'TimeoutError' || e?.name === 'AbortError';
-      throw new ProviderError(timedOut ? `Провайдер не ответил за ${timeoutMs} мс (${route}).` : `Сеть: ${redact(e?.message, apiKey)} (${route}).`);
+      throw unreachable(e, timeoutMs, route, apiKey);
     }
     const text = await res.text();
     let json = null;
@@ -134,7 +148,7 @@ export async function request({ endpoint, apiKey, auth, method = 'GET', route, b
       continue;
     }
     const providerMessage = redact(json?.error?.message || (text || '').slice(0, 300) || 'пустой ответ', apiKey);
-    throw new ProviderError(`Провайдер вернул HTTP ${res.status} (${route}): ${providerMessage}`, { status: res.status, providerMessage, kind });
+    throw httpFailure(res.status, route, providerMessage, kind);
   }
 }
 
@@ -175,7 +189,7 @@ export async function generateImage({ endpoint, apiKey, model, prompt, reference
   }
   const json = await request({ endpoint, apiKey, method: 'POST', route: '/images', body, ...net });
   const img = json.data?.[0];
-  if (!img?.b64_json) throw new ProviderError('Провайдер ответил без картинки.', { status: 200, providerMessage: redact(JSON.stringify(json.error || {}).slice(0, 300), apiKey), cost: usageCost(json) });
+  if (!img?.b64_json) throw new ProviderError('Провайдер ответил без картинки.', { said: said('provider.noImage'), status: 200, providerMessage: redact(JSON.stringify(json.error || {}).slice(0, 300), apiKey), cost: usageCost(json) });
   return { bytes: Buffer.from(img.b64_json, 'base64'), mime: img.media_type, model, cost: usageCost(json), usage: json.usage, raw: { created: json.created } };
 }
 
@@ -202,7 +216,7 @@ export async function askVision({ endpoint, apiKey, model, prompt, image, images
   const body = { model, temperature: 0, max_tokens: maxTokens, ...(reasoning ? { reasoning } : {}), messages: [{ role: 'user', content }] };
   const json = await request({ endpoint, apiKey, method: 'POST', route: '/chat/completions', body, ...net });
   const text = json.choices?.[0]?.message?.content;
-  if (typeof text !== 'string') throw new ProviderError('Провайдер ответил без текста.', { status: 200, providerMessage: redact(JSON.stringify(json.error || {}).slice(0, 300), apiKey), cost: usageCost(json) });
+  if (typeof text !== 'string') throw new ProviderError('Провайдер ответил без текста.', { said: said('provider.noText'), status: 200, providerMessage: redact(JSON.stringify(json.error || {}).slice(0, 300), apiKey), cost: usageCost(json) });
   return { text, model, cost: usageCost(json) };
 }
 

@@ -48,6 +48,7 @@ import { orderOutput, validateOrder } from '../style/card-order.js';
 import { OrderError, buildPrompt as styleBuildPrompt } from '../style/prompt.js';
 import { loadStyle, styleDirOf } from '../style/style.js';
 import * as factoryStore from '../store/index.js';
+import { said, saidError, textSaid } from '../say.js';
 import { ATTEMPT_FILES, FINAL_IMAGE, attemptCost, attemptDir, markBusy, readCardFile, reserveAttempt, updateCardFile } from './card-file.js';
 import { checkAttempt, styleChecker, styleDir, withLook } from './check.js';
 import { findingsOf, proposeWish, writeFix } from './fix.js';
@@ -105,20 +106,22 @@ import { textCallOptions } from '../text/draft.js';
 /**
  * What stopped a run on the key: `kind` auth (the key is not accepted) or billing (no money, no billing, a used-up
  * daily quota), `message` in Russian for a person, starting «С ключом проблема:»; for Codex (no key): not logged in,
- * not installed, or the subscription's limit is used up, its own message starting «Codex CLI».
- * @typedef {{kind: 'auth'|'billing', message: string}} KeyProblem
+ * not installed, or the subscription's limit is used up, its own message starting «Codex CLI». `said`: the same as data
+ * for the editor's page (core/say.js): key.auth / key.billing with the service's reply, or Codex's codex.* code.
+ * @typedef {{kind: 'auth'|'billing', message: string, said?: import('../say.js').Said}} KeyProblem
  */
 
 /**
  * A key problem from a provider's failure (its ErrorKind), or null. Codex has no key: its error already says what a
  * person must do (log in, wait for the subscription's limit), and that is the message.
- * @param {{kind?: string, message?: string, service?: string}|null|undefined} e @returns {KeyProblem|null}
+ * @param {{kind?: string, message?: string, service?: string, providerMessage?: string, said?: import('../say.js').Said}|null|undefined} e @returns {KeyProblem|null}
  */
 export function keyProblemOf(e) {
   if (e?.kind !== 'auth' && e?.kind !== 'billing') return null;
-  if (e.service === 'codex-cli') return { kind: e.kind, message: String(e.message ?? '') };
+  if (e.service === 'codex-cli') return { kind: e.kind, message: String(e.message ?? ''), ...(e.said ? { said: e.said } : {}) };
   const what = e.kind === 'billing' ? 'на счёте сервиса кончились деньги, не включена оплата или исчерпана дневная квота' : 'сервис не принял ключ (неверный, отозван или без доступа)';
-  return { kind: e.kind, message: `С ключом проблема: ${what}. Ответ сервиса: ${e.message ?? ''} Пополните счёт или замените ключ и запустите снова.` };
+  return { kind: e.kind, message: `С ключом проблема: ${what}. Ответ сервиса: ${e.message ?? ''} Пополните счёт или замените ключ и запустите снова.`,
+    said: said(`key.${e.kind}`, { reply: e.providerMessage || String(e.message ?? '') }) };
 }
 
 /**
@@ -516,7 +519,7 @@ async function pickByEye({ dir, card, ns, run, provider, settings, limits }) {
   // about one look per picture shown: the versions and the style's reference cards before them
   const hint = Math.max(0, ...versions.map(a => a.look?.cost ?? 0)) * (versions.length + (p.references ?? 0));
   if (run.spent + hint > limits.maxSpendUsd + EPSILON_USD) {
-    run.warnings.push(`Выбор лучшей версии смотрящей моделью пропущен: он не помещается в потолок расходов ($${limits.maxSpendUsd}); выбрано по проверкам.`);
+    run.warnings.push(textSaid(`Выбор лучшей версии смотрящей моделью пропущен: он не помещается в потолок расходов ($${limits.maxSpendUsd}); выбрано по проверкам.`, 'pick.cap', { cap: limits.maxSpendUsd }));
     return null;
   }
   const { record, prompt, text } = await pickVersion({
@@ -526,7 +529,7 @@ async function pickByEye({ dir, card, ns, run, provider, settings, limits }) {
   fs.writeFileSync(path.join(attemptDir(dir, holder.n), ATTEMPT_FILES.pick), JSON.stringify({ ...record, prompt, answer: text }, null, 1));
   holder.pick = record;
   run.spent += record.cost;
-  if (record.error) run.warnings.push(`Смотрящая модель не выбрала версию: ${record.error}`);
+  if (record.error) run.warnings.push(textSaid(`Смотрящая модель не выбрала версию: ${record.error}`, 'pick.failed', { reason: record.error }));
   return { best: record.best, attempt: holder };
 }
 
@@ -618,7 +621,7 @@ async function attemptsRun({ dir, card, request, mark = {}, failed = null, provi
     ...(output.crop ? { crop: (await styleChecker(order.style)).CARD_SIZE } : {}),
   };
   /** @param {any} e */
-  const failure = e => ({ message: String(e?.message ?? e), ...(e?.status ? { status: e.status } : {}), ...(keyProblemOf(e) ? { kind: e.kind } : {}) });
+  const failure = e => ({ message: String(e?.message ?? e), ...(e?.status ? { status: e.status } : {}), ...(keyProblemOf(e) ? { kind: e.kind } : {}), ...(e?.said ? { said: e.said } : {}) });
   /** @type {KeyProblem|null} */
   let keyProblem = null;
   /** @type {number[]} */
@@ -693,7 +696,7 @@ async function attemptsRun({ dir, card, request, mark = {}, failed = null, provi
     if (attempt.check && attempt.check.blocking === 0) { stop = 'passed'; break; }
   }
   tell('done', null);
-  return { ns, spent, stop: /** @type {StopReason} */ (stop), warnings: [...(keyProblem ? [keyProblem.message] : []), ...warnings], ...(keyProblem ? { keyProblem } : {}) };
+  return { ns, spent, stop: /** @type {StopReason} */ (stop), warnings: [...(keyProblem ? [keyProblem.said ? textSaid(keyProblem.message, keyProblem.said.code, keyProblem.said.params) : keyProblem.message] : []), ...warnings], ...(keyProblem ? { keyProblem } : {}) };
 }
 
 /**
@@ -910,7 +913,7 @@ export async function proposeCardWish({ dir, n, notes, language = 'ru', collecti
   const attempt = card.attempts.find(a => a.n === k);
   if (!attempt) throw new Error(k == null ? 'У карточки нет выбранной версии: укажите номер версии.' : `У карточки нет попытки ${k}.`);
   const findings = findingsOf(attempt);
-  if (!findings.length && !notes?.trim()) throw new Error('Проверки и смотрящая модель ничего не нашли у этой версии: напишите в поле, что хотите изменить, — модель сформулирует.');
+  if (!findings.length && !notes?.trim()) throw saidError('Проверки и смотрящая модель ничего не нашли у этой версии: напишите в поле, что хотите изменить, — модель сформулирует.', 'wish.nothingFound');
   /** @type {{text: string|null, cost: number|null, error?: string}} */
   let r;
   try {
@@ -921,14 +924,14 @@ export async function proposeCardWish({ dir, n, notes, language = 'ru', collecti
     throw e;
   }
   await store.recordSpend(collectionId, { kind: 'text', what: 'card-wish', model: text.model, usd: r.cost });
-  if (!r.text) throw new Error('Текстовая модель не предложила пожелание: попробуйте ещё раз.');
+  if (!r.text) throw saidError('Текстовая модель не предложила пожелание: попробуйте ещё раз.', 'wish.noAnswer');
   return { text: r.text, findings: findings.map(f => f.text), model: text.model, cost: r.cost };
 }
 
 /** @param {unknown} wish */
 function needWish(wish) {
   const text = typeof wish === 'string' ? wish.trim() : '';
-  if (!text) throw new Error('Пожелание пустое: напишите, что изменить.');
+  if (!text) throw saidError('Пожелание пустое: напишите, что изменить.', 'wish.empty');
   return text;
 }
 
@@ -1009,7 +1012,7 @@ async function autoProcessing({ order, attempt: a, adir, card, hero, settings })
  */
 export async function setCardTitle({ dir, title }) {
   const text = typeof title === 'string' ? title.trim() : '';
-  if (!text) throw new Error('Подпись пустая: напишите, как назвать карточку.');
+  if (!text) throw saidError('Подпись пустая: напишите, как назвать карточку.', 'title.empty');
   needCard(dir);
   updateCardFile(dir, c => {
     if (!c) throw new Error(`Нет карточки: ${dir} (нет card.json).`);

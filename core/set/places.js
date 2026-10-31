@@ -6,6 +6,7 @@
 // outside the grand window, a gold one in it) is not used, so switching the window kind back brings it back.
 import { normalizePlan } from './plan.js';
 import { loadSetRules, windowSkeleton } from './rules.js';
+import { saidError } from '../say.js';
 
 /**
  * @typedef {object} Place
@@ -146,7 +147,7 @@ export async function fillPlace({ collection, set: setId, slot, about, settings,
   const { collection: col } = await st.getCollection(collection);
   const set = await st.getSet(collection, setId);
   if (!Number.isInteger(slot) || slot < 0 || slot >= set.slots.length) throw new Error(`Место — целое от 1 до ${set.slots.length}.`);
-  if (set.slots[slot]) throw new Error(`Место ${slot + 1} занято: сначала уберите карточку из него.`);
+  if (set.slots[slot]) throw saidError(`Место ${slot + 1} занято: сначала уберите карточку из него.`, 'place.taken', { n: slot + 1 });
   const cards = await st.listCards(collection, { setId });
   const j = planFor(set, new Map(cards.map((/** @type {any} */ c) => [c.id, c.orderId ?? null])))[slot];
   if (j === slot) {
@@ -160,9 +161,9 @@ export async function fillPlace({ collection, set: setId, slot, about, settings,
     const make = makeCard ?? (await import('../card/make.js')).makeCard;
     progress(`место ${slot + 1}: «${order.title}» — генерация`, { set: setId, slot: slot + 1, title: order.title, status: 'start', spent: 0 });
     try {
-      const { cardSteps } = await import('./make.js');
+      const { cardSteps, rowFacts } = await import('./make.js');
       const r = await make({ order, collection, place: { setId, slot }, settings, provider, store: st, ...(signal ? { signal } : {}), onProgress: cardSteps(progress, { set: setId, slot: slot + 1, cardId: null, title: String(order.title) }) });
-      progress(`место ${slot + 1}: «${order.title}» — ${r.image ? 'готово' : 'картинки нет'}`, { set: setId, slot: slot + 1, cardId: r.id, title: order.title, status: 'made', spent: r.spent ?? 0 });
+      progress(`место ${slot + 1}: «${order.title}» — ${r.image ? 'готово' : 'картинки нет'}`, { set: setId, slot: slot + 1, cardId: r.id, title: order.title, status: 'made', spent: r.spent ?? 0, ...rowFacts({ image: r.image, stop: r.stop, blocking: r.chosenCheck?.blocking ?? null }) });
       return { spent: r.spent ?? 0, card: r.id, warnings: r.stop === 'key' && r.keyProblem ? [r.keyProblem.message] : [], errors: [] };
     } catch (/** @type {any} */ e) {
       return { spent: 0, card: null, warnings: [], errors: [String(e?.message ?? e)] };

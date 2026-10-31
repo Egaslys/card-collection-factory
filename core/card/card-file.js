@@ -32,6 +32,7 @@
 // collections/ is not tracked by Git (VISION.md «Устройство и стек»).
 import fs from 'node:fs';
 import path from 'node:path';
+import { saidError } from '../say.js';
 
 export const CARD_FILE = 'card.json';
 export const FINAL_IMAGE = 'card.png';
@@ -157,8 +158,9 @@ export const attemptSpend = a => ({ images: a.cost ?? 0, vision: (a.hero?.cost ?
  * @property {FixRecord} [fix]  the correction added at the end of `prompt`, written by the text model from the findings
  *   of an earlier attempt (core/card/fix.js)
  * @property {CheckSummary} [check]
- * @property {{stage: 'generate'|'process', message: string, status?: number, kind?: 'auth'|'billing'}} [error]  kind: the
- *   service refused the key or wants money (the run stopped, make.js StopReason "key")
+ * @property {{stage: 'generate'|'process', message: string, status?: number, kind?: 'auth'|'billing', said?: import('../say.js').Said}} [error]
+ *   kind: the service refused the key or wants money (the run stopped, make.js StopReason "key"); said: the message as
+ *   data for the editor's page (core/say.js)
  */
 
 /**
@@ -240,7 +242,7 @@ function lockCard(dir) {
       try { if (fs.readFileSync(file, 'utf8') === text) fs.rmSync(file, { force: true }); } catch { /* gone already */ }
       continue;
     }
-    if (Date.now() > until) throw new Error(`Карточку меняет другая операция дольше ${LOCK_WAIT_MS / 1000} с (${file}). Если её процесса уже нет, удалите этот файл.`);
+    if (Date.now() > until) throw saidError(`Карточку меняет другая операция дольше ${LOCK_WAIT_MS / 1000} с (${file}). Если её процесса уже нет, удалите этот файл.`, 'card.locked', { seconds: LOCK_WAIT_MS / 1000, file });
     sleepSync(LOCK_RETRY_MS);
   }
 }

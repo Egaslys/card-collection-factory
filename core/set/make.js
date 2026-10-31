@@ -4,6 +4,7 @@
 import { presetOf } from '../providers/preset.js';
 import { validatePlan, registryOf, normalizePlan } from './plan.js';
 import { cardBudget, loadSetRules } from './rules.js';
+import { saidError, saidOf, saidOfText, textSaid } from '../say.js';
 
 /** @typedef {import('./plan.js').SetPlan} SetPlan */
 /** @typedef {import('../card/make.js').CardReport} CardReport */
@@ -121,17 +122,33 @@ export async function saveSetPlan({ collection, plan: input, set, store, keepVer
 /**
  * A progress event of making a set, next to its text. status: start = the card loop began on the slot; made / failed
  * / skipped (the set's spend cap) / kept (already made) / cancelled (the signal stopped the queue before the slot).
- * @typedef {{set: string, slot: number, cardId: string|null, title: string, status: 'start'|'made'|'failed'|'skipped'|'kept'|'cancelled', spent: number, attempt?: CardStep}} SetProgressEvent
+ * @typedef {{set: string, slot: number, cardId: string|null, title: string, status: 'start'|'made'|'failed'|'skipped'|'kept'|'cancelled', spent: number, attempt?: CardStep} & RowFacts} SetProgressEvent
  *   attempt: while the card is made (status start), the step of its card loop
  */
 /**
+ * What the editor's page needs to word a card's line in the person's language (the text stays Russian): `image`
+ * whether a made card got a picture, `stop` why its run ended, `blocking` its FAILs, `why` of a skipped or cancelled
+ * card (cap: the spend cap; key: no access to the service), `error` of a failed one (as thrown).
+ * @typedef {{image?: boolean, stop?: string, blocking?: number|null, why?: 'cap'|'key', error?: string, errorSaid?: import('../say.js').Said}} RowFacts
+ *   errorSaid: the failed card's error as data, when it has one (core/say.js)
+ */
+/** A line the page words by its code (core/say.js), e.g. «the plan is ready, making the cards». @typedef {{say: ({k: 'note', code: string, number?: number, title?: string} & Record<string, unknown>) | ({k: 'said'} & import('../say.js').Said)}} NoteEvent */
+/**
  * A progress event of planning. status: planning = the model is asked for the set; planned = its plan has no
  * errors (saved when `set` is given); invalid = errors left after the repairs.
- * @typedef {{number?: number, title: string, status: 'planning'|'planned'|'invalid', set?: string}} PlanProgressEvent
+ * @typedef {{number?: number, title?: string, status: 'planning'|'planned'|'invalid', set?: string, errors?: number, error?: string, count?: number}} PlanProgressEvent
+ *   count: of a batch of loose cards, how many are planned; error: the first of the plan's errors (as the rules wrote it)
  */
 /** The spend of a run outside its cards (the planning), once it is known. @typedef {{total: number}} RunSpendEvent */
-/** @typedef {(text: string, event?: SetProgressEvent|PlanProgressEvent|RunSpendEvent) => void} Progress */
+/** @typedef {(text: string, event?: SetProgressEvent|PlanProgressEvent|RunSpendEvent|NoteEvent|(RunSpendEvent & NoteEvent)) => void} Progress */
 /** A step of one card's loop (core/card's onProgress without its spend): attempt `n` generating or processing, or `done` of at most `of`. @typedef {Omit<import('../card/make.js').Progress, 'spent'>} CardStep */
+
+/**
+ * A step of a card's loop in words (Russian, for the journal and the terminal): the attempt of this run (`done` + 1 of
+ * `of`), not `n` — the card's version number, which counts earlier runs too.
+ * @param {CardStep} e
+ */
+export const stepText = e => (e.stage === 'generate' ? `попытка ${e.done + 1} из ${e.of}: генерация` : e.stage === 'process' ? `попытка ${e.done + 1} из ${e.of}: обработка и проверки` : `попыток сделано ${e.done} из ${e.of}`);
 
 /**
  * A card loop's progress as a set's progress line of that card (its row stays «start»; `spent` is the card's so far).
@@ -140,7 +157,7 @@ export async function saveSetPlan({ collection, plan: input, set, store, keepVer
  */
 export const cardSteps = (progress, row) => ({ spent, ...attempt }) => {
   const where = 'slot' in row ? `слот ${row.slot}: ` : '';
-  const step = attempt.stage === 'generate' ? `попытка ${attempt.n}: генерация` : attempt.stage === 'process' ? `попытка ${attempt.n}: обработка и проверки` : `попыток сделано ${attempt.done} из ${attempt.of}`;
+  const step = stepText(attempt);
   progress(`${where}«${row.title}» — ${step}`, /** @type {any} */ ({ ...row, status: 'start', spent, attempt }));
 };
 
@@ -187,10 +204,10 @@ export async function makeSet({ collection, plan: input, set: setId, settings, p
   const cards = new Map((await st.listCards(collection, { setId: set.id })).map(c => [c.id, c]));
   /** @type {SlotReport[]} */
   const reports = [];
-  /** @param {SlotReport} r @param {string} text @param {SetProgressEvent['status']} [status] */
-  const report = (r, text, status = /** @type {any} */ (r.result)) => {
+  /** @param {SlotReport} r @param {string} text @param {SetProgressEvent['status']} [status] @param {RowFacts['why']} [why] @param {unknown} [thrown] */
+  const report = (r, text, status = /** @type {any} */ (r.result), why, thrown) => {
     reports.push(r);
-    progress(`слот ${r.slot}: «${r.title}» — ${text}`, { set: set.id, slot: r.slot, cardId: r.card, title: r.title, status, spent: r.spent });
+    progress(`слот ${r.slot}: «${r.title}» — ${text}`, { set: set.id, slot: r.slot, cardId: r.card, title: r.title, status, spent: r.spent, ...rowFacts(r, why, thrown) });
   };
   /** @type {number[]} */
   const queue = [];
@@ -215,7 +232,7 @@ export async function makeSet({ collection, plan: input, set: setId, settings, p
     // a new card's first call has no price of its own yet: the highest price seen in this set stands for it
     if (capHere <= 0 || (!free && capHere < budget.price)) {
       budget.done(capHere);
-      report({ slot: i + 1, title, card: existing, result: 'skipped', spent: 0 }, 'пропущена: потолок расходов набора');
+      report({ slot: i + 1, title, card: existing, result: 'skipped', spent: 0 }, 'пропущена: потолок расходов набора', 'skipped', 'cap');
       return;
     }
     /** @type {{spent: number, prices: number[]}} */
@@ -235,7 +252,7 @@ export async function makeSet({ collection, plan: input, set: setId, settings, p
         `${r.image ? `готово (блокирующих FAIL ${blocking ?? '—'})` : r.stop === 'key' ? 'картинки нет: нет доступа к сервису (ключ, вход в Codex или лимит)' : 'картинки нет'}, $${(r.spent ?? 0).toFixed(4)}`);
     } catch (/** @type {any} */ e) {
       keyProblem ??= await keyProblemOf(e);
-      report({ slot: i + 1, title, card: existing, result: 'failed', spent: 0, error: String(e?.message ?? e) }, `ошибка: ${e?.message ?? e}`);
+      report({ slot: i + 1, title, card: existing, result: 'failed', spent: 0, error: String(e?.message ?? e) }, `ошибка: ${e?.message ?? e}`, 'failed', undefined, e);
     } finally {
       budget.done(capHere, used.spent, used.prices);
     }
@@ -244,7 +261,7 @@ export async function makeSet({ collection, plan: input, set: setId, settings, p
     for (let i = queue.shift(); i !== undefined; i = queue.shift()) {
       if (signal?.aborted || keyProblem) {
         const s = plan.slots[i];
-        report({ slot: i + 1, title: String(s.order.title), card: set.slots[i] ?? null, result: 'cancelled', spent: 0 }, keyProblem ? 'не начата: нет доступа к сервису' : 'отменена');
+        report({ slot: i + 1, title: String(s.order.title), card: set.slots[i] ?? null, result: 'cancelled', spent: 0 }, keyProblem ? 'не начата: нет доступа к сервису' : 'отменена', 'cancelled', keyProblem ? 'key' : undefined);
         continue;
       }
       await one(i);
@@ -260,6 +277,12 @@ export async function makeSet({ collection, plan: input, set: setId, settings, p
 
 /** @typedef {import('../card/make.js').KeyProblem} KeyProblem */
 
+/** A planning stop as a line the page words, when its reason has a code. @param {{stoppedSaid?: import('../say.js').Said}} r @returns {[NoteEvent]|[]} */
+const stopSay = r => (r.stoppedSaid ? [{ say: { k: 'said', ...r.stoppedSaid } }] : []);
+
+/** A planning stop's reason as params of a warning: its code and params, when it has them (the page words it). @param {{stoppedSaid?: import('../say.js').Said}} r */
+const stopParams = r => (r.stoppedSaid ? { reasonCode: r.stoppedSaid.code, ...r.stoppedSaid.params } : {});
+
 /**
  * The key problem of a thrown error (core/card/make.js keyProblemOf, loaded only on this path), or undefined.
  * @param {unknown} e @returns {Promise<KeyProblem|undefined>}
@@ -267,7 +290,27 @@ export async function makeSet({ collection, plan: input, set: setId, settings, p
 const keyProblemOf = async e => (await import('../card/make.js')).keyProblemOf(/** @type {any} */ (e)) ?? undefined;
 
 /** The one message a run stopped on the key ends with. @param {KeyProblem} k */
-export const keyStopText = k => `${k.message} Готовое сохранено.`;
+export const keyStopText = k => (k.said ? textSaid(`${k.message} Готовое сохранено.`, k.said.code, { ...k.said.params, saved: true }) : `${k.message} Готовое сохранено.`);
+
+/**
+ * A set the run did not start, in words (`why`: cancelled / key: no access to the service / noPlan / cap: the run's
+ * spend cap). @param {{title: string, number: number}} s @param {'cancelled'|'key'|'noPlan'|'cap'} why
+ */
+const skippedSet = (s, why) => textSaid(`«${s.title}» (№${s.number}): ${{ cancelled: 'отменено', key: 'не начат — нет доступа к сервису', noPlan: 'нет плана', cap: 'исчерпан общий потолок расходов запуска' }[why]}`,
+  'set.skipped', { title: s.title, number: s.number, why });
+
+/** The warning of a skipped set (an entry of makeCollection's `skipped`). @param {string} s */
+const skippedWarning = s => { const k = saidOfText(s); return k ? textSaid(`Пропущен набор ${s}`, k.code, k.params) : `Пропущен набор ${s}`; };
+
+/**
+ * A card report's facts for its progress line (RowFacts); `thrown` is what a failed card threw.
+ * @param {{image?: string|null, stop?: string, blocking?: number|null, error?: string}} r @param {RowFacts['why']} [why] @param {unknown} [thrown]
+ * @returns {RowFacts}
+ */
+export const rowFacts = (r, why, thrown) => ({
+  ...('image' in r ? { image: !!r.image } : {}), ...(r.stop ? { stop: r.stop } : {}), ...(r.blocking != null ? { blocking: r.blocking } : {}),
+  ...(why ? { why } : {}), ...(r.error ? { error: r.error } : {}), ...(saidOf(thrown) ? { errorSaid: /** @type {import('../say.js').Said} */ (saidOf(thrown)) } : {}),
+});
 
 /**
  * Makes the sets of a collection in their order (by number; variants of one number one after another), or only the
@@ -299,12 +342,12 @@ export async function makeCollection({ collection, numbers, sets: only, settings
   /** @type {KeyProblem|undefined} */
   let keyProblem;
   for (const s of chosen) {
-    if (signal?.aborted) { skipped.push(`«${s.title}» (№${s.number}): отменено`); continue; }
-    if (keyProblem) { skipped.push(`«${s.title}» (№${s.number}): не начат — нет доступа к сервису`); continue; }
-    if (!s.plan) { skipped.push(`«${s.title}» (№${s.number}): нет плана`); continue; }
+    if (signal?.aborted) { skipped.push(skippedSet(s, 'cancelled')); continue; }
+    if (keyProblem) { skipped.push(skippedSet(s, 'key')); continue; }
+    if (!s.plan) { skipped.push(skippedSet(s, 'noPlan')); continue; }
     const left = limits.maxSpendUsd === undefined ? undefined : limits.maxSpendUsd - spent;
-    if (left !== undefined && left <= 0 && !(provider.free && !provider.fallback)) { skipped.push(`«${s.title}» (№${s.number}): исчерпан общий потолок расходов запуска`); continue; }
-    progress(`набор №${s.number} «${s.title}»`);
+    if (left !== undefined && left <= 0 && !(provider.free && !provider.fallback)) { skipped.push(skippedSet(s, 'cap')); continue; }
+    progress(`набор №${s.number} «${s.title}»`, { say: { k: 'note', code: 'setStart', number: s.number, title: s.title } });
     const r = await makeSet({
       collection, set: s.id, settings, provider, store: st, makeCard, progress, signal,
       limits: { ...limits, maxSpendUsd: left === undefined ? undefined : Math.min(left, settings.set.maxSpendUsd) },
@@ -353,7 +396,7 @@ async function planningModel({ settings, apiKey, model }) {
  * @param {SetStore & Pick<typeof import('../store/index.js'), 'createCollection'>} [o.store]
  * @param {AbortSignal} [o.signal]  once aborted, no new call of the model
  * @param {Progress} [o.progress]
- * @returns {Promise<{plans: PlannedSet[], spent: number, calls: number, stopped?: string, keyProblem?: KeyProblem}>}  stopped: why planning
+ * @returns {Promise<{plans: PlannedSet[], spent: number, calls: number, stopped?: string, stoppedSaid?: import('../say.js').Said, keyProblem?: KeyProblem}>}  stopped: why planning
  *   ended early (planner.js planSet); the plans finished before it are saved and the spend is recorded all the same
  */
 export async function planSetInto({ collection, theme, wishes, variants, window, scenes, template, save = !!collection, settings, apiKey, model, maxSpendUsd, store, signal, progress = () => {} }) {
@@ -384,11 +427,11 @@ export async function planSetInto({ collection, theme, wishes, variants, window,
       try { item.set = (await saveSetPlan({ collection, plan: p.plan, store: st })).set.id; } catch (/** @type {any} */ e) { item.errors.push(String(e?.message ?? e)); }
     }
     const title = p.plan?.title ?? theme;
-    progress(`«${title}»: ${item.errors.length ? `ошибок ${item.errors.length}` : item.set ? `план сохранён (${item.set})` : 'план готов'}`, { title, status: item.errors.length ? 'invalid' : 'planned', ...(item.set ? { set: item.set } : {}) });
+    progress(`«${title}»: ${item.errors.length ? `ошибок ${item.errors.length}` : item.set ? `план сохранён (${item.set})` : 'план готов'}`, { title, status: item.errors.length ? 'invalid' : 'planned', errors: item.errors.length, ...(item.set ? { set: item.set } : {}) });
     plans.push(item);
   }
-  if (r.stopped) progress(r.stopped);
-  return { plans, spent: r.spent, calls: r.calls, ...(r.stopped ? { stopped: r.stopped } : {}), ...(r.keyProblem ? { keyProblem: r.keyProblem } : {}) };
+  if (r.stopped) progress(r.stopped, ...stopSay(r));
+  return { plans, spent: r.spent, calls: r.calls, ...(r.stopped ? { stopped: r.stopped } : {}), ...(r.stoppedSaid ? { stoppedSaid: r.stoppedSaid } : {}), ...(r.keyProblem ? { keyProblem: r.keyProblem } : {}) };
 }
 
 /**
@@ -432,7 +475,7 @@ export const missingPlaces = (sets, count) => {
  * @param {SetStore & Pick<typeof import('../store/index.js'), 'createCollection'>} [o.store]
  * @param {AbortSignal} [o.signal]  once aborted, no new call of the model
  * @param {Progress} [o.progress]
- * @returns {Promise<{collection: string, themes: {title: string, kind: string, angle: string, examples: string[]}[], sets: (PlannedSet & {number?: number})[], errors: string[], warnings: string[], spent: number, calls: number, stopped?: string, keyProblem?: KeyProblem}>}
+ * @returns {Promise<{collection: string, themes: {title: string, kind: string, angle: string, examples: string[]}[], sets: (PlannedSet & {number?: number})[], errors: string[], warnings: string[], spent: number, calls: number, stopped?: string, stoppedSaid?: import('../say.js').Said, keyProblem?: KeyProblem}>}
  */
 export async function planCollectionInto({ collection, title, theme, wishes, variants, only, mode = 'missing', settings, apiKey, model, maxSpendUsd, store, signal, progress = () => {} }) {
   const st = /** @type {SetStore & Pick<typeof import('../store/index.js'), 'createCollection'>} */ (store ?? await defaultStore());
@@ -465,10 +508,10 @@ export async function planCollectionInto({ collection, title, theme, wishes, var
     style: col.style, theme, wishes, variants, only: places, existing, extend, signal,
     model: await planningModel({ settings, apiKey, model }),
     limits: { repairs: settings.set.plan.repairs, retries: settings.set.plan.retries, maxSpendUsd: maxSpendUsd ?? settings.set.plan.maxSpendUsd },
-    progress: text => progress(text),
+    progress: (text, event) => progress(text, event),
   });
   await recordPlanSpend(st, id, settings, r);
-  if (r.stopped && !r.plans.length) throw new Error(r.stopped);
+  if (r.stopped && !r.plans.length) throw Object.assign(new Error(r.stopped), r.stoppedSaid ? { said: r.stoppedSaid } : {});
   /** @type {(PlannedSet & {number?: number})[]} */
   const out = [];
   for (const p of r.plans) {
@@ -478,14 +521,14 @@ export async function planCollectionInto({ collection, title, theme, wishes, var
       try { item.set = (await saveSetPlan({ collection: id, plan: p.plan, store: st })).set.id; } catch (/** @type {any} */ e) { item.errors.push(String(e?.message ?? e)); }
     }
     const t = p.plan?.title ?? `№${item.number}`;
-    progress(`№${item.number} «${t}»: ${item.set ? `план сохранён (${item.set})` : `ошибок ${item.errors.length}`}`, { number: item.number, title: t, status: item.set ? 'planned' : 'invalid', ...(item.set ? { set: item.set } : {}) });
+    progress(`№${item.number} «${t}»: ${item.set ? `план сохранён (${item.set})` : `ошибок ${item.errors.length}`}`, { number: item.number, title: t, status: item.set ? 'planned' : 'invalid', errors: item.errors.length, ...(item.set ? { set: item.set } : {}) });
     out.push(item);
   }
-  if (r.stopped) progress(r.stopped);
+  if (r.stopped) progress(r.stopped, ...stopSay(r));
   // a set made one by one has no number or group in its plan: its place and group are the store's
   const plans = (await st.getCollection(id)).sets.flatMap(s => storedPlan(s) ?? []);
   const whole = validateCollection(plans, { complete: !only });
-  return { collection: id, themes: r.themes, sets: out, errors: whole.errors, warnings: whole.warnings, spent: r.spent, calls: r.calls, ...(r.stopped ? { stopped: r.stopped } : {}), ...(r.keyProblem ? { keyProblem: r.keyProblem } : {}) };
+  return { collection: id, themes: r.themes, sets: out, errors: whole.errors, warnings: whole.warnings, spent: r.spent, calls: r.calls, ...(r.stopped ? { stopped: r.stopped } : {}), ...(r.stoppedSaid ? { stoppedSaid: r.stoppedSaid } : {}), ...(r.keyProblem ? { keyProblem: r.keyProblem } : {}) };
 }
 
 /**
@@ -518,21 +561,26 @@ export const runCap = (settings, sets, maxSpendUsd) => maxSpendUsd ?? Math.round
 export async function buildSet({ collection, theme, wishes, variants, window, scenes, template, settings, provider, apiKey, model, maxSpendUsd, planMaxSpendUsd, limits = {}, signal, store, makeCard, progress = () => {} }) {
   const plan = await planSetInto({ collection, theme, wishes, variants, window, scenes, template, settings, apiKey, model, maxSpendUsd: planMaxSpendUsd, store, signal, progress });
   const ids = plan.plans.flatMap(p => (p.set ? [p.set] : []));
-  if (plan.keyProblem && !ids.length) throw new Error(plan.keyProblem.message);
-  if (!ids.length) throw new Error(`План не получился: ${plan.plans.flatMap(p => p.errors).slice(0, 3).join('; ') || plan.stopped || 'модель не дала плана'}`);
+  if (plan.keyProblem && !ids.length) throw Object.assign(new Error(plan.keyProblem.message), plan.keyProblem.said ? { said: plan.keyProblem.said } : {});
+  if (!ids.length) {
+    const reasons = plan.plans.flatMap(p => p.errors).slice(0, 3).join('; ') || plan.stopped || 'модель не дала плана';
+    throw saidError(`План не получился: ${reasons}`, 'plan.failed', { reasons });
+  }
   // a variant whose plan kept failing the rules is not made: say so, not only in the journal
   const warnings = [
-    ...plan.plans.filter(p => !p.set).map(p => `Вариант «${p.plan?.title ?? theme}» не получился: ${p.errors[0] ?? 'модель не дала плана'}`),
-    ...(plan.stopped && !plan.keyProblem ? [`Планирование прервано (вариантов с планом ${ids.length} из ${variants ?? 1}): ${plan.stopped}`] : []),
+    ...plan.plans.filter(p => !p.set).map(p => textSaid(`Вариант «${p.plan?.title ?? theme}» не получился: ${p.errors[0] ?? 'модель не дала плана'}`,
+      'plan.variantFailed', { title: p.plan?.title ?? theme, reason: p.errors[0] ?? null })),
+    ...(plan.stopped && !plan.keyProblem ? [textSaid(`Планирование прервано (вариантов с планом ${ids.length} из ${variants ?? 1}): ${plan.stopped}`,
+      'plan.interrupted', { planned: ids.length, of: variants ?? 1, reason: plan.stopped, ...stopParams(plan) })] : []),
   ];
   for (const w of warnings) progress(w);
   const cap = runCap(settings, ids.length, maxSpendUsd);
   // the key failed while planning: no card is started on it; the plans are saved
   if (plan.keyProblem) return { plan, sets: [], skipped: [], spent: plan.spent, maxSpendUsd: cap, warnings: [keyStopText(plan.keyProblem), ...warnings], keyProblem: plan.keyProblem };
-  progress('План готов — делаю карточки', { total: plan.spent });
+  progress('План готов — делаю карточки', { total: plan.spent, say: { k: 'note', code: 'planDone' } });
   const made = await makeCollection({ collection, sets: ids, settings, provider, limits: { ...limits, maxSpendUsd: cap }, signal, store, makeCard, progress });
   // after a key stop its one message says it all; the sets it left are in `skipped`
-  if (!made.keyProblem) warnings.push(...made.skipped.map(s => `Пропущен набор ${s}`));
+  if (!made.keyProblem) warnings.push(...made.skipped.map(skippedWarning));
   return { plan, sets: made.sets, skipped: made.skipped, spent: plan.spent + made.spent, maxSpendUsd: cap, warnings: [...made.warnings, ...warnings], ...(made.keyProblem ? { keyProblem: made.keyProblem } : {}) };
 }
 
@@ -558,7 +606,7 @@ export async function buildCollection({ collection, title, theme, wishes, varian
   const ids = plan.sets.flatMap(s => (s.set ? [s.set] : []));
   const cap = runCap(settings, ids.length, maxSpendUsd);
   // the key failed while planning: no card is started on it; the plans are saved
-  if (!plan.keyProblem) progress('План коллекции готов — делаю карточки', { total: plan.spent });
+  if (!plan.keyProblem) progress('План коллекции готов — делаю карточки', { total: plan.spent, say: { k: 'note', code: 'collectionPlanDone' } });
   /** @type {Awaited<ReturnType<typeof makeCollection>>} */
   const made = ids.length && !plan.keyProblem
     ? await makeCollection({ collection: plan.collection, sets: ids, settings, provider, limits: { ...limits, maxSpendUsd: cap }, signal, store, makeCard, progress })
@@ -566,9 +614,10 @@ export async function buildCollection({ collection, title, theme, wishes, varian
   const keyProblem = plan.keyProblem ?? made.keyProblem;
   const warnings = [
     ...(keyProblem ? [keyStopText(keyProblem)] : []),
-    ...plan.sets.filter(s => !s.set).map(s => `Набор №${s.number ?? '?'} «${s.plan?.title ?? ''}» не спланирован: ${s.errors[0] ?? 'модель не дала плана'}`),
-    ...(plan.stopped && !plan.keyProblem ? [`Планирование прервано: ${plan.stopped}`] : []),
-    ...plan.errors, ...(keyProblem ? [] : made.skipped.map(s => `Пропущен набор ${s}`)),
+    ...plan.sets.filter(s => !s.set).map(s => textSaid(`Набор №${s.number ?? '?'} «${s.plan?.title ?? ''}» не спланирован: ${s.errors[0] ?? 'модель не дала плана'}`,
+      'plan.setFailed', { number: s.number ?? null, title: s.plan?.title ?? null, reason: s.errors[0] ?? null })),
+    ...(plan.stopped && !plan.keyProblem ? [textSaid(`Планирование прервано: ${plan.stopped}`, 'plan.interrupted', { reason: plan.stopped, ...stopParams(plan) })] : []),
+    ...plan.errors, ...(keyProblem ? [] : made.skipped.map(skippedWarning)),
   ];
   return { collection: plan.collection, plan, made, spent: plan.spent + made.spent, maxSpendUsd: cap, warnings, ...(keyProblem ? { keyProblem } : {}) };
 }

@@ -10,7 +10,8 @@ import { presetOf } from '../providers/preset.js';
 import { normalizePlan, slotLookErrors, wishWarnings } from './plan.js';
 import { answerParts, glue, parseAnswer, setFragment, slotFromAnswer } from './planner.js';
 import { cardBudget, kindKey, loadSetRules, rowCategories, stagingRow } from './rules.js';
-import { cardSteps, keyStopText } from './make.js';
+import { cardSteps, keyStopText, rowFacts } from './make.js';
+import { saidError } from '../say.js';
 
 /** @typedef {import('./plan.js').SlotPlan} LooseCard  a planned card: kind, wishes, props, hue, order (no stars or frame) */
 /** @typedef {import('./planner.js').TextModel} TextModel */
@@ -128,8 +129,8 @@ export function validateCards(input, { style, count, scenes, wishes }) {
  * @returns {Promise<CardsPlan & {spent: number, calls: number}>}
  */
 export async function planCards({ style, theme, wishes, collectionTheme, count, scenes = 0, language, model, limits }) {
-  if (!Number.isInteger(count) || count < 1 || count > limits.maxCount) throw new Error(`Сколько карточек: целое число от 1 до ${limits.maxCount} за один запуск (настройки set.cards.maxCount).`);
-  if (!Number.isInteger(scenes) || scenes < 0 || scenes > count) throw new Error(`Сцен с персонажами: целое от 0 до ${count}.`);
+  if (!Number.isInteger(count) || count < 1 || count > limits.maxCount) throw saidError(`Сколько карточек: целое число от 1 до ${limits.maxCount} за один запуск (настройки set.cards.maxCount).`, 'cards.count', { max: limits.maxCount });
+  if (!Number.isInteger(scenes) || scenes < 0 || scenes > count) throw saidError(`Сцен с персонажами: целое от 0 до ${count}.`, 'cards.scenes', { max: count });
   const { rules } = loadSetRules(style);
   const messages = cardsPrompt({ style, theme, wishes, collectionTheme, count, scenes, language });
   let spent = 0, calls = 0;
@@ -139,7 +140,7 @@ export async function planCards({ style, theme, wishes, collectionTheme, count, 
     if (spent >= limits.maxSpendUsd) { out.errors.push(`планирование остановлено: потрачено $${spent.toFixed(4)} при потолке $${limits.maxSpendUsd}`); break; }
     const answer = await model(messages);
     calls++;
-    if (answer.cost == null) throw new Error('Текстовая модель не сообщила цену — потолок расходов не соблюсти, планирование остановлено.');
+    if (answer.cost == null) throw saidError('Текстовая модель не сообщила цену — потолок расходов не соблюсти, планирование остановлено.', 'plan.noPrice');
     spent += answer.cost;
     messages.push({ role: 'assistant', content: answer.text });
     try {
@@ -195,7 +196,7 @@ export async function makeCardsInto({ collection, theme, wishes, count, scenes =
   }
   const n10 = count % 10, n100 = count % 100;
   const word = n10 === 1 && n100 !== 11 ? 'карточка' : n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14) ? 'карточки' : 'карточек';
-  progress(`план: ${count} ${word} «${theme}»`, { status: 'planning' });
+  progress(`план: ${count} ${word} «${theme}»`, { title: theme, status: 'planning', count });
   /** @param {unknown} e */
   const keyProblemOf = async e => (await import('../card/make.js')).keyProblemOf(/** @type {any} */ (e)) ?? undefined;
   // what the planning calls cost, also when one throws (a paid answer of no use carries its ProviderError cost)
@@ -228,21 +229,21 @@ export async function makeCardsInto({ collection, theme, wishes, count, scenes =
     for (let i = 0; i < paid.unknown; i++) await st.recordSpend(collection, { kind: 'text', what: 'plan', model: textModel, usd: null });
     // the text model refused the key or wants money: say what a person must do
     const k = await keyProblemOf(e);
-    throw k ? new Error(k.message) : e;
+    throw k ? Object.assign(new Error(k.message), k.said ? { said: k.said } : {}) : e;
   }
   const { spent: planSpent, calls, ...plan } = p;
   if (calls) await st.recordSpend(collection, { kind: 'text', what: 'plan', model: presetOf(settings.provider).textModel, usd: planSpent });
   if (plan.errors.length) {
-    progress(`план не прошёл проверку (${plan.errors.length}): ${plan.errors[0]}`, { status: 'invalid' });
+    progress(`план не прошёл проверку (${plan.errors.length}): ${plan.errors[0]}`, { status: 'invalid', errors: plan.errors.length, error: plan.errors[0] });
     return { plan, cards: [], spent: planSpent, planSpent, warnings: [] };
   }
-  progress('план готов — делаю карточки', { status: 'planned' });
+  progress('план готов — делаю карточки', { status: 'planned', say: { k: 'note', code: 'planDone' } });
   const cap = maxSpendUsd ?? settings.set.maxSpendUsd;
   const budget = cardBudget(cap, settings.card.maxSpendUsd);
   /** @type {LooseReport[]} */
   const reports = [];
-  /** @param {LooseReport} r @param {string} msg */
-  const report = (r, msg) => { reports.push(r); progress(`«${r.title}» — ${msg}`, { cardId: r.card, title: r.title, status: r.result, spent: r.spent }); };
+  /** @param {LooseReport} r @param {string} msg @param {import('./make.js').RowFacts['why']} [why] @param {unknown} [thrown] */
+  const report = (r, msg, why, thrown) => { reports.push(r); progress(`«${r.title}» — ${msg}`, { cardId: r.card, title: r.title, status: r.result, spent: r.spent, ...rowFacts(r, why, thrown) }); };
   const queue = plan.cards.map((_, i) => i);
   /** the service refused the key or wants money: no new card starts, the ones in flight finish */
   /** @type {import('../card/make.js').KeyProblem|undefined} */
@@ -252,7 +253,7 @@ export async function makeCardsInto({ collection, theme, wishes, count, scenes =
     const order = plan.cards[i].order, title = String(order.title);
     const capHere = await budget.take();
     // a card's first call has no price of its own yet: the highest price seen in this run stands for it
-    if (capHere <= 0 || (!(provider.free && !provider.fallback) && capHere < budget.price)) { budget.done(capHere); report({ title, card: null, result: 'skipped', spent: 0 }, 'пропущена: потолок расходов'); return; }
+    if (capHere <= 0 || (!(provider.free && !provider.fallback) && capHere < budget.price)) { budget.done(capHere); report({ title, card: null, result: 'skipped', spent: 0 }, 'пропущена: потолок расходов', 'cap'); return; }
     /** @type {{spent: number, prices: number[]}} */
     const used = { spent: 0, prices: [] };
     progress(`«${title}» — генерация`, { title, status: 'start', spent: 0 });
@@ -266,14 +267,14 @@ export async function makeCardsInto({ collection, theme, wishes, count, scenes =
         `${r.image ? `готово (блокирующих FAIL ${blocking ?? '—'})` : r.stop === 'key' ? 'картинки нет: нет доступа к сервису (ключ, вход в Codex или лимит)' : 'картинки нет'}, $${(r.spent ?? 0).toFixed(4)}`);
     } catch (/** @type {any} */ e) {
       keyProblem ??= await keyProblemOf(e);
-      report({ title, card: null, result: 'failed', spent: 0, error: String(e?.message ?? e) }, `ошибка: ${e?.message ?? e}`);
+      report({ title, card: null, result: 'failed', spent: 0, error: String(e?.message ?? e) }, `ошибка: ${e?.message ?? e}`, undefined, e);
     } finally {
       budget.done(capHere, used.spent, used.prices);
     }
   };
   await Promise.all(Array.from({ length: Math.min(Math.max(1, settings.set.parallel), queue.length) }, async () => {
     for (let i = queue.shift(); i !== undefined; i = queue.shift()) {
-      if (signal?.aborted || keyProblem) report({ title: String(plan.cards[i].order.title), card: null, result: 'cancelled', spent: 0 }, keyProblem ? 'не начата: нет доступа к сервису' : 'отменена');
+      if (signal?.aborted || keyProblem) report({ title: String(plan.cards[i].order.title), card: null, result: 'cancelled', spent: 0 }, keyProblem ? 'не начата: нет доступа к сервису' : 'отменена', keyProblem ? 'key' : undefined);
       else await one(i);
     }
   }));

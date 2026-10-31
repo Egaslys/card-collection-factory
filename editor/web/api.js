@@ -1,5 +1,6 @@
 // The page's link to the editor server: operations (POST /api/op/<name>), jobs and live events (SSE).
 import { words } from './i18n.js';
+import { saidText } from './said.js';
 
 const t = words({
   ru: { offline: 'Редактор не отвечает: возможно, его остановили. Запустите его снова и обновите страницу.', restarted: 'Редактор перезапущен: страница обновляется.', error: 'Ошибка {status}' },
@@ -23,7 +24,7 @@ export async function call(op, args = {}) {
   }
   if (res.status === 403) { reloadForNewToken(); throw new Error(t('restarted')); }
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error ?? t('error', { status: res.status }));
+  if (!res.ok) throw new Error(saidText(body.said, body.error ?? t('error', { status: res.status })));
   return body.job ? { job: body.job } : body.result;
 }
 
@@ -31,7 +32,7 @@ export async function call(op, args = {}) {
 export async function cancelJob(id) {
   const res = await fetch(`/api/jobs/${id}/cancel`, { method: 'POST', headers: HEADERS });
   const body = await res.json();
-  if (!res.ok) throw new Error(body.error);
+  if (!res.ok) throw new Error(saidText(body.said, body.error));
   return body;
 }
 

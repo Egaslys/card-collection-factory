@@ -149,6 +149,13 @@ test('выгрузка всех коллекций (в _export), выбранн�
   await assert.rejects(store.exportItems({ setIds: [lake] }), /из одной коллекции/);
   const withPool = await store.exportItems({});
   assert.ok(fs.readdirSync(withPool.path, { recursive: true }).map(String).includes(path.join('Горы', 'Хранилище', 'Пик.png')));
+  // the names a person reads inside follow the exporter's language (the editor passes the page's); titles stay as written
+  const en = fs.readdirSync((await store.exportItems({ originals: true, language: 'en' })).path, { recursive: true }).map(String);
+  assert.ok(en.includes(path.join('Горы', 'Pool', 'Пик.png')));
+  assert.ok(en.includes(path.join('Летняя рыбалка', '01 Озеро утро', '04 Поплавок (original).jpg')));
+  const cards = fs.readdirSync((await store.exportItems({ collectionId: other, cardIds: ['g'], language: 'en' })).path, { recursive: true }).map(String);
+  assert.ok(cards.includes(path.join('Горы', 'Cards', 'Пик.png')));
+  await assert.rejects(store.exportItems({ language: 'de' }), /Язык выгрузки «de» неизвестен/);
 });
 
 test('выгрузка ZIP: тот же порядок папок, имена в UTF-8, содержимое и CRC сходятся', async t => {

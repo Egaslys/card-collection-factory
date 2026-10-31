@@ -103,7 +103,7 @@ An id is the folder name: a slug of the title (Cyrillic transliterated, lower ca
 
 ## Export
 
-`exportItems({ collectionId, setIds?, cardIds?, pool?, format: 'png'|'zip', name? })` → `{ path, files, skipped }`.
+`exportItems({ collectionId?, setIds?, cardIds?, pool?, originals?, format: 'png'|'zip', name?, language? })` → `{ path, files, skipped }`.
 
 ```
 collections/<c>/export/<name>/            (or <name>.zip with the same tree inside)
@@ -114,6 +114,7 @@ collections/<c>/export/<name>/            (or <name>.zip with the same tree insi
 ```
 
 - No `setIds`, no `cardIds` and no `pool` — every set of the collection, in the collection's order, and the pool (a collection of loose cards only exports its pool). `pool: true` adds the pool to the chosen sets or cards (the editor's collection export: the chosen variant of each set and the pool). Only `cardIds` — only the «Карточки» folder.
+- `language` — `ru` (default, the terminal) or `en`: the names inside the export a person reads (`EXPORT_NAMES` in `layout.js`: «Хранилище» / «Pool», «Карточки» / «Cards», «(оригинал)» / «(original)»). The editor passes the page's language.
 - `name` — default: local time `YYYY-MM-DD HH-MM-SS`. A name already in `export/` gets ` (2)`; an export never overwrites another.
 - File names are the titles a person reads: characters that file systems refuse are replaced, length ≤ 80, repeats get ` (2)`.
 - Cards without `card.png` are skipped and listed in `skipped`. Nothing to export → an error.

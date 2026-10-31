@@ -208,7 +208,7 @@ test('задачи: строка карточки помнит номер поп
   const say = { k: 'attempt', stage: 'generate', n: 2, done: 1, of: 3 };
   progress('попытка 2', { set: 's', slot: 1, title: 'Dust Mask', status: 'start', spent: 0.04, say });
   assert.deepEqual(job.items?.[0].attempt, { stage: 'generate', k: 2, of: 3 });
-  assert.deepEqual(job.log.at(-1)?.say, { ...say, title: 'Dust Mask' });
+  assert.deepEqual(job.log.at(-1)?.say, { ...say, title: 'Dust Mask', slot: 1 });
   progress('готово', { set: 's', slot: 1, title: 'Dust Mask', status: 'made', spent: 0.08 });
   assert.equal(job.items?.[0].attempt, undefined);
   // a regenerate: the card's 4th version is this run's first attempt of 1, not «4 of 1»

@@ -14,6 +14,7 @@ import { openJobs } from './panels/jobs.js';
 import { openCard } from './panels/card.js';
 import { openExport } from './panels/export.js';
 import { app } from './state.js';
+import { saidText } from './said.js';
 
 const t = words({
   ru: {
@@ -222,8 +223,8 @@ onEvent(e => {
     if (j.status !== 'running') spendSoon();
     const title = jobTitle(j);
     if (j.status === 'done' && !j.warnings?.length) toast(t('done', { title }), { kind: 'done' });
-    if (j.status === 'done' && j.warnings?.length) toast(t('doneWarn', { title, warning: j.warnings[0] }), { kind: 'fail', action: { label: t('details'), run: openJobs } });
-    if (j.status === 'failed') toast(t('failed', { title, error: j.error ?? '' }), { kind: 'fail', action: { label: t('details'), run: openJobs } });
+    if (j.status === 'done' && j.warnings?.length) toast(t('doneWarn', { title, warning: saidText(j.warningSaid?.[0], j.warnings[0]) }), { kind: 'fail', action: { label: t('details'), run: openJobs } });
+    if (j.status === 'failed') toast(t('failed', { title, error: saidText(j.errorSaid, j.error ?? '') }), { kind: 'fail', action: { label: t('details'), run: openJobs } });
     if (j.status === 'cancelled') toast(t('cancelled', { title }));
     const line = appEl.querySelector(`[data-jobline="${j.id}"]`);
     if (line && j.status === 'running') line.replaceWith(fromHtml(jobline(j)));

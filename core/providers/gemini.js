@@ -13,6 +13,7 @@
 // Google's docs now recommend the Interactions API for new projects and call generateContent legacy but fully
 // supported; both models of the preset list generateContent in GET /v1beta/models (supportedGenerationMethods).
 import { ProviderError, readImage, request } from './openrouter.js';
+import { said } from '../say.js';
 
 /** @typedef {import('./openrouter.js').NetOptions} NetOptions */
 /** @typedef {import('./openrouter-text.js').ChatMessage} ChatMessage */
@@ -98,7 +99,7 @@ export async function generateImage({ endpoint, apiKey, model, prompt, reference
   // the price first: an answer without an image is paid too, and the error carries what it cost
   const cost = costOf(json.usageMetadata, priceOf(prices, model));
   const img = answerParts(json).filter(p => p.inlineData?.data).at(-1);
-  if (!img) throw new ProviderError(`Провайдер ответил без картинки (${redact(why(json), apiKey)}).`, { status: 200, providerMessage: redact(why(json), apiKey), cost });
+  if (!img) throw new ProviderError(`Провайдер ответил без картинки (${redact(why(json), apiKey)}).`, { said: said('provider.noImage', { reply: redact(why(json), apiKey) }), status: 200, providerMessage: redact(why(json), apiKey), cost });
   return { bytes: Buffer.from(img.inlineData.data, 'base64'), mime: img.inlineData.mimeType, model, cost, usage: json.usageMetadata, raw: {} };
 }
 
@@ -111,7 +112,7 @@ export async function generateImage({ endpoint, apiKey, model, prompt, reference
 function textOf(json, apiKey, what, prices, model) {
   const cost = costOf(json.usageMetadata, priceOf(prices, model));
   const text = answerParts(json).map(p => p.text ?? '').join('');
-  if (!text.trim()) throw new ProviderError(`${what} ответила без текста (${redact(why(json), apiKey)}).`, { status: 200, providerMessage: redact(why(json), apiKey), cost });
+  if (!text.trim()) throw new ProviderError(`${what} ответила без текста (${redact(why(json), apiKey)}).`, { said: said('provider.noText', { reply: redact(why(json), apiKey) }), status: 200, providerMessage: redact(why(json), apiKey), cost });
   return { text, model, cost };
 }
 

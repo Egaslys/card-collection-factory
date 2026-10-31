@@ -5,6 +5,7 @@
 // to disk or logged: the editor's operations hand the key in use (currentKey) to core explicitly, and the browser sees
 // only whether there is one and of which kind. Switching the preset never carries a key over to another variable.
 import { loadApiKey } from '../../core/providers/openrouter.js';
+import { saidError } from '../../core/say.js';
 
 /** @type {{envVar: string, keys: Map<string, {permanent: string|null, temporary: string|null}>}} */
 const state = { envVar: '', keys: new Map() };
@@ -35,8 +36,8 @@ export function initKey(envVar) {
  */
 export function setTemporaryKey(key, envVar = state.envVar) {
   const k = String(key ?? '').trim();
-  if (!k) throw new Error('Пустой ключ: вставьте ключ целиком.');
-  if (/\s/.test(k)) throw new Error('В ключе есть пробелы или переносы строк: вставьте ключ одной строкой.');
+  if (!k) throw saidError('Пустой ключ: вставьте ключ целиком.', 'key.empty');
+  if (/\s/.test(k)) throw saidError('В ключе есть пробелы или переносы строк: вставьте ключ одной строкой.', 'key.spaces');
   slot(envVar).temporary = k;
 }
 

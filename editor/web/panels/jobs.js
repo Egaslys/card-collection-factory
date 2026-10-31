@@ -4,6 +4,7 @@
 import { cancelJob, jobs, onEvent } from '../api.js';
 import { lang, words } from '../i18n.js';
 import { attempt, esc, I, itemSay, jobCount, jobEnd, jobTitle, openSheet } from '../ui.js';
+import { logText, saidText } from '../said.js';
 
 const t = words({
   ru: {
@@ -36,12 +37,12 @@ function section(j) {
     <div class="qjob__head"><span class="qjob__title">${esc(jobTitle(j))}</span>${st === 'running' && j.cancellable ? `<button type="button" class="btn btn--secondary btn--s" data-cancel="${esc(j.id)}">${I.stop}<span>${esc(t('stop'))}</span></button>` : ''}</div>
     <p class="qjob__say qjob__say--${JOB_DOT[st]}"><i class="dot dot--${JOB_DOT[st]}"></i><span>${esc(jobEnd(j))}</span></p>
     ${j.about?.codex ? `<p class="qjob__count">${esc(t('codex'))}</p>` : ''}
-    ${j.error ? `<p class="qjob__error">${esc(j.error)}</p>` : ''}
-    ${(j.warnings ?? []).map((/** @type {string} */ w) => `<p class="qjob__error">${esc(w)}</p>`).join('')}
+    ${j.error ? `<p class="qjob__error">${esc(saidText(j.errorSaid, j.error))}</p>` : ''}
+    ${(j.warnings ?? []).map((/** @type {string} */ w, /** @type {number} */ k) => `<p class="qjob__error">${esc(saidText(j.warningSaid?.[k], w))}</p>`).join('')}
     ${total ? `<div class="progress${st === 'done' ? ' progress--done' : st === 'failed' ? ' progress--fail' : ''}"><i style="--p:${Math.round(100 * done / total)}%"></i></div>` : ''}
     ${count ? `<p class="qjob__count">${esc(count)}</p>` : ''}
     ${items}
-    ${j.log.length ? `<details class="disclose" data-log><summary>${I.chev}${esc(t('log'))}</summary><div><ol class="qlog">${j.log.map((/** @type {any} */ l) => `<li><time>${time(l.at)}</time> · ${esc(l.text)}</li>`).join('')}</ol></div></details>` : ''}
+    ${j.log.length ? `<details class="disclose" data-log><summary>${I.chev}${esc(t('log'))}</summary><div><ol class="qlog">${j.log.map((/** @type {any} */ l) => `<li><time>${time(l.at)}</time> · ${esc(logText(l))}</li>`).join('')}</ol></div></details>` : ''}
   </section>`;
 }
 

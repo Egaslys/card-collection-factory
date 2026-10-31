@@ -3,7 +3,7 @@
 // in full size, PNG files or one ZIP; then «Открыть папку экспорта». One core operation for the editor and
 // `ccf.mjs export` (core/store exportItems).
 import { call } from '../api.js';
-import { plural, words } from '../i18n.js';
+import { lang, plural, words } from '../i18n.js';
 import { attempt, esc, I, openSheet } from '../ui.js';
 import { app } from '../state.js';
 
@@ -101,7 +101,7 @@ export async function openExport({ cardId, cardTitle } = {}) {
     const btn = /** @type {HTMLButtonElement} */ (target.closest('[data-submit]'));
     btn.disabled = true;
     result.innerHTML = `<p class="field__hint">${esc(t('working'))}</p>`;
-    const r = await attempt(() => call('exportItems', { ...args, originals, format }));
+    const r = await attempt(() => call('exportItems', { ...args, originals, format, language: lang() }));
     btn.disabled = false;
     result.innerHTML = '';
     if (!r) return;

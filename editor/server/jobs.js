@@ -4,6 +4,8 @@
 // operation that does not take a signal stops only at its next check, so cancelling is offered only where the
 // operation supports it.
 
+import { saidError, saidOf, saidOfText } from '../../core/say.js';
+
 /**
  * @typedef {object} Job
  * @property {string} id
@@ -21,7 +23,10 @@
  * @property {JobItem[]} [items]  one row per card being made, when the operation reports cards
  * @property {unknown} [result]
  * @property {string} [error]
+ * @property {import('../../core/say.js').Said} [errorSaid]  the error as data, for the page to say it in the person's language
  * @property {string[]} [warnings]  what did not work in a job that finished (the result's `warnings`)
+ * @property {(import('../../core/say.js').Said|null)[]} [warningSaid]  the warnings as data, where core gave one;
+ *   null = the page shows the warning's text
  */
 
 /**
@@ -48,11 +53,39 @@
 /**
  * A journal line as data: a step of a card's run (core/card's progress: generating or processing attempt `n` of at
  * most `of`), or the job stopping on a person's request.
- * @typedef {{k: 'attempt', stage: string, n: number|null, done: number, of: number, title?: string} | {k: 'stopping'}} Say
+ * @typedef {{k: 'attempt', stage: string, n: number|null, done: number, of: number, title?: string} | {k: 'stopping'} | CardSay | PlanSay
+ *   | {k: 'note', code: string, number?: number, title?: string} | ({k: 'said'} & import('../../core/say.js').Said)} Say
  */
+/**
+ * A card's line: its status and what the page needs to word it (core/set's RowFacts).
+ * @typedef {{k: 'card', status: string, title: string, slot?: number, image?: boolean, stop?: string, blocking?: number, why?: string, error?: string,
+ *   errorSaid?: import('../../core/say.js').Said, spent?: number}} CardSay
+ */
+/** A planning line. @typedef {{k: 'plan', status: string, title?: string, number?: number, errors?: number, error?: string, count?: number, set?: string}} PlanSay */
 
 /** The statuses of a card row (core/set's progress); others (planning, planned, invalid) are lines of the plan. */
 const CARD_STATUSES = new Set(['start', 'made', 'kept', 'skipped', 'failed', 'cancelled']);
+const PLAN_STATUSES = new Set(['planning', 'planned', 'invalid']);
+
+/** Drops the fields that are not set. @param {Record<string, unknown>} o */
+const defined = o => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== null));
+
+/**
+ * A journal line as data: what core said with it (`o.say`; a card's attempt gets the card's title and slot), else
+ * what the page can tell from a card's or a plan's progress event, else what core remembered of the text (a warning,
+ * core/say.js textSaid), else nothing (the page shows the text).
+ * @param {string} text @param {any} o @returns {Say|undefined}
+ */
+function sayOf(text, o) {
+  if (o.say) return o.say.k === 'attempt' ? { ...defined({ title: o.title, slot: o.slot }), ...o.say } : o.say;
+  if (o.title && CARD_STATUSES.has(o.status)) {
+    return /** @type {CardSay} */ ({ k: 'card', ...defined({ status: o.status, title: o.title, slot: o.slot, image: o.image, stop: o.stop, blocking: o.blocking, why: o.why, error: o.error, errorSaid: o.errorSaid, spent: o.status === 'made' ? o.spent : undefined }) });
+  }
+  if (PLAN_STATUSES.has(o.status)) return /** @type {PlanSay} */ ({ k: 'plan', ...defined({ status: o.status, title: o.title, number: o.number, errors: o.errors, error: o.error, count: o.count, set: o.set }) });
+  const s = saidOfText(text);
+  return s ? { k: 'said', ...s } : undefined;
+}
+
 
 const LOG_LIMIT = 200;
 const KEEP_FINISHED = 30;
@@ -88,8 +121,7 @@ export function createJobs(emit) {
      * @param {string} text @param {{set?: string, slot?: number, cardId?: string|null, title?: string, status?: string, spent?: number, total?: number, say?: Say}} [o]
      */
     const progress = (text, o = {}) => {
-      // a card's line carries its title in `say`, so the page can name the card it words
-      const say = o.say && o.title && !('title' in o.say) ? { ...o.say, title: o.title } : o.say;
+      const say = sayOf(text, o);
       job.log.push({ at: new Date().toISOString(), text: String(text), ...(say ? { say } : {}) });
       if (job.log.length > LOG_LIMIT) job.log.splice(0, job.log.length - LOG_LIMIT);
       const key = o.slot != null ? `${o.set ?? ''}:${o.slot}` : o.title && CARD_STATUSES.has(o.status ?? '') ? `card:${o.title}` : null;
@@ -111,11 +143,18 @@ export function createJobs(emit) {
         const spent = spentOf?.(job.result);
         if (typeof spent === 'number') job.spent = spent;
         const warnings = /** @type {any} */ (job.result)?.warnings;
-        if (Array.isArray(warnings) && warnings.length) job.warnings = warnings.map(String);
+        if (Array.isArray(warnings) && warnings.length) {
+          job.warnings = warnings.map(String);
+          // what core remembered of them (core/say.js textSaid)
+          const ws = job.warnings.map(saidOfText);
+          if (ws.some(Boolean)) job.warningSaid = ws;
+        }
         job.status = abort.signal.aborted ? 'cancelled' : 'done';
       } catch (/** @type {any} */ e) {
         job.status = abort.signal.aborted ? 'cancelled' : 'failed';
         job.error = String(e?.message ?? e);
+        const s = saidOf(e);
+        if (s) job.errorSaid = s;
       }
       job.endedAt = new Date().toISOString();
       send(job);
@@ -134,8 +173,8 @@ export function createJobs(emit) {
   /** @param {string} id */
   function cancel(id) {
     const j = jobs.get(id);
-    if (!j) throw new Error('Такой задачи нет: возможно, редактор перезапускали.');
-    if (!j.job.cancellable) throw new Error('Эту задачу нельзя остановить на ходу: дождитесь конца.');
+    if (!j) throw saidError('Такой задачи нет: возможно, редактор перезапускали.', 'job.notFound');
+    if (!j.job.cancellable) throw saidError('Эту задачу нельзя остановить на ходу: дождитесь конца.', 'job.notCancellable');
     if (j.job.status === 'running') { j.abort.abort(); j.job.log.push({ at: new Date().toISOString(), text: 'Остановка: доделываю начатый шаг…', say: { k: 'stopping' } }); send(j.job); }
     return j.job;
   }

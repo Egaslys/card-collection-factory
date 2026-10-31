@@ -9,6 +9,7 @@ import { styleDirOf } from '../style/style.js';
 import { normalizePlan, registryOf, validatePlan } from './plan.js';
 import { matches } from '../style/assembly.js';
 import { expandStaging, loadSetRules, seenPatterns, windowSkeleton } from './rules.js';
+import { said, saidError, saidOf } from '../say.js';
 
 /** @typedef {import('./plan.js').SetPlan} SetPlan */
 /** @typedef {import('./plan.js').SlotPlan} SlotPlan */
@@ -205,8 +206,8 @@ function guarded(model, cap, { signal, spent = 0 } = {}) {
   const state = { spent, calls: 0, unknown: 0 };
   /** @type {TextModel} */
   const call = async messages => {
-    if (signal?.aborted) throw new Error('Планирование остановлено по просьбе: новых вызовов модели нет.');
-    if (state.spent >= cap) throw new Error(`Планирование остановлено: потрачено $${state.spent.toFixed(4)} при потолке $${cap} (настройки set.plan.maxSpendUsd).`);
+    if (signal?.aborted) throw saidError('Планирование остановлено по просьбе: новых вызовов модели нет.', 'plan.cancelled');
+    if (state.spent >= cap) throw saidError(`Планирование остановлено: потрачено $${state.spent.toFixed(4)} при потолке $${cap} (настройки set.plan.maxSpendUsd).`, 'plan.cap', { spent: Number(state.spent.toFixed(4)), cap });
     /** @type {{text: string, cost: number|null}} */
     let answer;
     try { answer = await model(messages); } catch (e) {
@@ -216,7 +217,7 @@ function guarded(model, cap, { signal, spent = 0 } = {}) {
       throw e;
     }
     state.calls++;
-    if (answer.cost == null) { state.unknown++; throw new Error('Текстовая модель не сообщила цену — потолок расходов не соблюсти, планирование остановлено.'); }
+    if (answer.cost == null) { state.unknown++; throw saidError('Текстовая модель не сообщила цену — потолок расходов не соблюсти, планирование остановлено.', 'plan.noPrice'); }
     state.spent += answer.cost;
     return answer;
   };
@@ -230,11 +231,13 @@ const messageOf = e => String(/** @type {any} */ (e)?.message ?? e);
  * Why a refused or failed call ends planning: its message, or — when the service refused the key or wants money —
  * the key problem (core/card/make.js keyProblemOf; loaded only on this path) and its message for a person.
  * @param {unknown} e
- * @returns {Promise<{stopped: string, keyProblem?: import('../card/make.js').KeyProblem}>}
+ * @returns {Promise<{stopped: string, stoppedSaid?: import('../say.js').Said, keyProblem?: import('../card/make.js').KeyProblem}>}
+ *   stoppedSaid: the same reason as data for the editor's page, when it has one
  */
 async function stopOf(e) {
   const keyProblem = (await import('../card/make.js')).keyProblemOf(/** @type {any} */ (e));
-  return keyProblem ? { stopped: keyProblem.message, keyProblem } : { stopped: messageOf(e) };
+  const s = keyProblem?.said ?? saidOf(e);
+  return { stopped: keyProblem ? keyProblem.message : messageOf(e), ...(s ? { stoppedSaid: s } : {}), ...(keyProblem ? { keyProblem } : {}) };
 }
 
 /**
@@ -258,7 +261,7 @@ async function stopOf(e) {
  *   cannot be read as a plan is asked for again, this many times per variant (and per self-check), before it counts as
  *   an error; spent: what the run spent before this set (a collection's), counted against maxSpendUsd
  * @param {AbortSignal} [o.signal]  checked before every call
- * @returns {Promise<{plans: PlanReport[], spent: number, calls: number, unknown: number, stopped?: string, keyProblem?: import('../card/make.js').KeyProblem}>}
+ * @returns {Promise<{plans: PlanReport[], spent: number, calls: number, unknown: number, stopped?: string, stoppedSaid?: import('../say.js').Said, keyProblem?: import('../card/make.js').KeyProblem}>}
  *   stopped: why planning ended early (the signal, the spend cap, an answer without a price, a failed call; keyProblem
  *   when the service refused the key or wants money); the plans before it
  *   are kept, a variant cut in the middle of its repairs comes with its errors (or as the plan that passed before)
@@ -283,6 +286,8 @@ export async function planSet(o) {
   const out = [];
   /** @type {string|undefined} */
   let stopped;
+  /** @type {import('../say.js').Said|undefined} */
+  let stoppedSaid;
   /** @type {import('../card/make.js').KeyProblem|undefined} */
   let keyProblem;
   for (let k = 1; k <= count && !stopped; k++) {
@@ -301,7 +306,7 @@ export async function planSet(o) {
     for (let round = 0; round <= o.limits.repairs;) {
       /** @type {{text: string, cost: number|null}} */
       let answer;
-      try { answer = await call(messages); } catch (e) { ({ stopped, keyProblem } = await stopOf(e)); break; }
+      try { answer = await call(messages); } catch (e) { ({ stopped, stoppedSaid, keyProblem } = await stopOf(e)); break; }
       rounds++;
       /** @type {SetPlan|null} */
       let plan;
@@ -328,7 +333,7 @@ export async function planSet(o) {
         const r = await selfCheck(call, g, brief, answer.text, retries);
         rounds += r.calls;
         const found = r.problems.map(p => `самопроверка: ${p}`);
-        if (r.stopped) { stopped = r.stopped; keyProblem = r.keyProblem; report = { plan, errors, warnings: [...warnings, ...r.warnings], rounds }; break; }
+        if (r.stopped) { ({ stopped, stoppedSaid, keyProblem } = r); report = { plan, errors, warnings: [...warnings, ...r.warnings], rounds }; break; }
         if (found.length && round < o.limits.repairs) {
           passed = { plan, errors: [], warnings: [...warnings, ...found] };
           messages.push(repair(r.problems));
@@ -346,7 +351,7 @@ export async function planSet(o) {
     if (passed && (!report || report.errors.length)) report = { ...passed, rounds };
     if (report) out.push(report);
   }
-  return { plans: out, spent: state.spent - before, calls: state.calls, unknown: state.unknown, ...(stopped ? { stopped } : {}), ...(keyProblem ? { keyProblem } : {}) };
+  return { plans: out, spent: state.spent - before, calls: state.calls, unknown: state.unknown, ...(stopped ? { stopped } : {}), ...(stoppedSaid ? { stoppedSaid } : {}), ...(keyProblem ? { keyProblem } : {}) };
 }
 
 /**
@@ -355,7 +360,7 @@ export async function planSet(o) {
  * cannot be read is asked for again `retries` times, then left as a warning.
  * @param {TextModel} call @param {Record<string, string>} g  prompt glue @param {string} brief @param {string} planText
  * @param {number} retries
- * @returns {Promise<{problems: string[], warnings: string[], calls: number, stopped?: string, keyProblem?: import('../card/make.js').KeyProblem}>}
+ * @returns {Promise<{problems: string[], warnings: string[], calls: number, stopped?: string, stoppedSaid?: import('../say.js').Said, keyProblem?: import('../card/make.js').KeyProblem}>}
  */
 async function selfCheck(call, g, brief, planText, retries) {
   /** @type {ChatMessage[]} */
@@ -389,8 +394,8 @@ async function selfCheck(call, g, brief, planText, retries) {
  * @param {{repairs: number, maxSpendUsd: number, retries?: number}} o.limits  maxSpendUsd: the whole run (the split and
  *   every set); retries: as planSet, also for the split
  * @param {AbortSignal} [o.signal]  checked before every call
- * @param {(msg: string) => void} [o.progress]
- * @returns {Promise<{themes: {title: string, kind: string, angle: string, examples: string[]}[], plans: PlanReport[], spent: number, calls: number, unknown: number, stopped?: string, keyProblem?: import('../card/make.js').KeyProblem}>}
+ * @param {(msg: string, event?: {say: {k: 'note', code: string} & Record<string, unknown>}) => void} [o.progress]  event: the line as data for the editor's page
+ * @returns {Promise<{themes: {title: string, kind: string, angle: string, examples: string[]}[], plans: PlanReport[], spent: number, calls: number, unknown: number, stopped?: string, stoppedSaid?: import('../say.js').Said, keyProblem?: import('../card/make.js').KeyProblem}>}
  *   stopped: why planning ended early (as planSet; also a split the model did not get right after the repairs, then
  *   with no themes and no plans); the sets planned before it are kept
  */
@@ -401,7 +406,7 @@ export async function planCollection(o) {
   const g = rules.prompt.glue;
   const retries = o.limits.retries ?? 0;
   const places = Array.from({ length: count }, (_, i) => i + 1).filter(n => !o.only || o.only.includes(n));
-  /** @param {{stopped: string, keyProblem?: import('../card/make.js').KeyProblem}} stop */
+  /** @param {{stopped: string, stoppedSaid?: import('../say.js').Said, keyProblem?: import('../card/make.js').KeyProblem}} stop */
   const early = stop => ({ themes: [], plans: [], spent: state.spent, calls: state.calls, unknown: state.unknown, ...stop });
   /** @type {any[]} */
   let themes = [];
@@ -428,7 +433,7 @@ export async function planCollection(o) {
       }
       messages.push({ role: 'assistant', content: answer.text });
       if (!problems.length) break;
-      if (round === o.limits.repairs) return early({ stopped: `Модель не разбила тему коллекции на наборы: ${problems.join('; ')}` });
+      if (round === o.limits.repairs) return early({ stopped: `Модель не разбила тему коллекции на наборы: ${problems.join('; ')}`, stoppedSaid: said('plan.splitFailed', { reasons: problems.join('; ') }) });
       messages.push({ role: 'user', content: glue(g.repair, { errors: problems.map(e => `- ${e}`).join('\n') }) });
       round++;
     }
@@ -438,6 +443,8 @@ export async function planCollection(o) {
   const done = [...(o.existing ?? [])];
   /** @type {string|undefined} */
   let stopped;
+  /** @type {import('../say.js').Said|undefined} */
+  let stoppedSaid;
   /** @type {import('../card/make.js').KeyProblem|undefined} */
   let keyProblem;
   for (const number of places) {
@@ -446,7 +453,8 @@ export async function planCollection(o) {
     const pos = rules.collection.reference_positions[number - 1];
     const layout = ext?.layout ?? pos.window, scenes = ext?.scenes ?? pos.scenes;
     const group = ext?.group;
-    o.progress?.(`набор ${number} из ${count}: «${ext?.theme ?? t.title}»${ext ? ' — ещё вариант' : ''} (окно ${layout}, сцен ${scenes})`);
+    o.progress?.(`набор ${number} из ${count}: «${ext?.theme ?? t.title}»${ext ? ' — ещё вариант' : ''} (окно ${layout}, сцен ${scenes})`,
+      { say: { k: 'note', code: 'setPlanning', number, of: count, title: ext?.theme ?? t.title, variant: !!ext, layout, scenes } });
     const r = await planSet({
       style: o.style, theme: ext?.theme ?? t.title, angle: ext ? undefined : t.angle, wishes: o.wishes, collectionTheme: o.theme,
       window: layout, scenes, grand: layout === 'grand', number, variants: o.variants, model: o.model, signal: o.signal,
@@ -460,9 +468,9 @@ export async function planCollection(o) {
     state.unknown += r.unknown;
     for (const p of r.plans) { if (p.plan && t?.kind) p.plan.themeKind ??= t.kind; plans.push(p); }
     done.push(...r.plans.flatMap(p => (p.plan ? [p.plan] : [])));
-    if (r.stopped) { stopped = r.stopped; keyProblem = r.keyProblem; break; }
+    if (r.stopped) { ({ stopped, stoppedSaid, keyProblem } = r); break; }
   }
-  return { themes, plans, spent: state.spent, calls: state.calls, unknown: state.unknown, ...(stopped ? { stopped } : {}), ...(keyProblem ? { keyProblem } : {}) };
+  return { themes, plans, spent: state.spent, calls: state.calls, unknown: state.unknown, ...(stopped ? { stopped } : {}), ...(stoppedSaid ? { stoppedSaid } : {}), ...(keyProblem ? { keyProblem } : {}) };
 }
 
 /**

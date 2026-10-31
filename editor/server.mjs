@@ -22,6 +22,7 @@ import { COLLECTIONS_DIR, SLOT_COUNT } from '../core/store/layout.js';
 import { createJobs } from './server/jobs.js';
 import { presetOf } from '../core/providers/preset.js';
 import { initKey, keyStatus } from './server/key.js';
+import { saidOf } from '../core/say.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /** CCF_EDITOR_FILE replaces the discovery file and exists for tests only (a command line run against a fake editor). */
@@ -119,6 +120,9 @@ export function fileUrl(p) {
   try { v = Math.round(fs.statSync(p).mtimeMs); } catch { /* the file may be gone; the URL still names it */ }
   return '/files/' + rel.split(path.sep).map(encodeURIComponent).join('/') + `?v=${v}`;
 }
+
+/** An error answer: its Russian text, and its message as data when core gave one (core/say.js). @param {any} e */
+const errorBody = e => ({ error: String(e?.message ?? e), ...(saidOf(e) ? { said: saidOf(e) } : {}) });
 
 /**
  * Adds `<key>Url` next to every string field that is an image file inside collections/ (card summaries carry
@@ -247,7 +251,7 @@ export async function startEditor({ port, quiet = false, discovery = true, onSto
           if (jm[2] === 'wait' && req.method === 'GET') {
             // waits at most `timeout` ms (default and cap WAIT_MS) and returns the job as it is then: a caller loops
             const w = jobs.wait(jm[1]);
-            if (!w) { sendJson(res, 404, { error: 'Такой задачи нет: возможно, редактор перезапускали.' }); return; }
+            if (!w) { sendJson(res, 404, { error: 'Такой задачи нет: возможно, редактор перезапускали.', said: { code: 'job.notFound' } }); return; }
             const ms = Math.min(WAIT_MS, Math.max(0, Number(url.searchParams.get('timeout') ?? WAIT_MS) || 0));
             /** @type {NodeJS.Timeout|undefined} */
             let timer;
@@ -256,7 +260,7 @@ export async function startEditor({ port, quiet = false, discovery = true, onSto
             sendJson(res, 200, withUrls(jobs.get(jm[1])));
             return;
           }
-        } catch (/** @type {any} */ e) { sendJson(res, 400, { error: String(e?.message ?? e) }); return; }
+        } catch (/** @type {any} */ e) { sendJson(res, 400, errorBody(e)); return; }
       }
       const om = p.match(/^\/api\/op\/(\w+)$/);
       if (om && req.method === 'POST') {
@@ -277,7 +281,7 @@ export async function startEditor({ port, quiet = false, discovery = true, onSto
           sendJson(res, 200, { result: withUrls(result ?? null) });
           if (KEY_OPS.has(om[1])) broadcast({ type: 'key', key: keyStatus() });
         } catch (/** @type {any} */ e) {
-          sendJson(res, 400, { error: String(e?.message ?? e) });
+          sendJson(res, 400, errorBody(e));
         }
         return;
       }

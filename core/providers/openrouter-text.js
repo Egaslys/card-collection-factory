@@ -3,7 +3,8 @@
 // {type: "json_object"}; usage.cost in the answer).
 // The editor's planning model writes set plans with it (core/set/planner.js). Every value comes from the caller.
 // The HTTP call mirrors `request` of openrouter.js, which does not export it; when it does, this file should use it.
-import { ProviderError, errorKind } from './openrouter.js';
+import { ProviderError, errorKind, httpFailure, unreachable } from './openrouter.js';
+import { said } from '../say.js';
 
 /** @typedef {import('./openrouter.js').NetOptions} NetOptions */
 /** @typedef {{role: 'system'|'user'|'assistant', content: string}} ChatMessage */
@@ -46,8 +47,7 @@ export async function complete({ endpoint, apiKey, model, messages, maxTokens, t
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (/** @type {any} */ e) {
-      const timedOut = e?.name === 'TimeoutError' || e?.name === 'AbortError';
-      throw new ProviderError(timedOut ? `Провайдер не ответил за ${timeoutMs} мс (${route}).` : `Сеть: ${redact(e?.message, apiKey)} (${route}).`);
+      throw unreachable(e, timeoutMs, route, apiKey);
     }
     const raw = await res.text();
     let answer = null;
@@ -55,7 +55,7 @@ export async function complete({ endpoint, apiKey, model, messages, maxTokens, t
     if (res.ok && answer) {
       const text = answer.choices?.[0]?.message?.content;
       const cost = typeof answer.usage?.cost === 'number' ? answer.usage.cost : null;
-      if (typeof text !== 'string' || !text.trim()) throw new ProviderError('Текстовая модель ответила без текста.', { status: 200, providerMessage: redact(JSON.stringify(answer.error || {}).slice(0, 300), apiKey), cost });
+      if (typeof text !== 'string' || !text.trim()) throw new ProviderError('Текстовая модель ответила без текста.', { said: said('provider.noText'), status: 200, providerMessage: redact(JSON.stringify(answer.error || {}).slice(0, 300), apiKey), cost });
       return { text, model, cost };
     }
     const kind = errorKind(res.status, answer);
@@ -65,6 +65,6 @@ export async function complete({ endpoint, apiKey, model, messages, maxTokens, t
       continue;
     }
     const providerMessage = redact(answer?.error?.message || (raw || '').slice(0, 300) || 'пустой ответ', apiKey);
-    throw new ProviderError(`Провайдер вернул HTTP ${res.status} (${route}): ${providerMessage}`, { status: res.status, providerMessage, kind });
+    throw httpFailure(res.status, route, providerMessage, kind);
   }
 }

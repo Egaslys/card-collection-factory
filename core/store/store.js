@@ -9,11 +9,12 @@ import { attemptCost, attemptDir, attemptSpend, busyOf, readCardFile } from '../
 import { exists, readJson, subdirs, writeJsonAtomic } from './files.js';
 import { checkId, reserveId, slugify } from './ids.js';
 import {
-  CARDS_DIR, CARD_FILE, COLLECTIONS_DIR, COLLECTION_FILE, DEFAULT_STYLE, EXPORT_CARDS_FOLDER, EXPORT_DIR, EXPORT_POOL_FOLDER, FACTORY_EXPORT_DIR, FINAL_IMAGE, SETS_DIR,
+  CARDS_DIR, CARD_FILE, COLLECTIONS_DIR, COLLECTION_FILE, DEFAULT_STYLE, EXPORT_DIR, EXPORT_NAMES, FACTORY_EXPORT_DIR, FINAL_IMAGE, SETS_DIR,
   SET_FILE, SLOT_COUNT, SPEND_FILE, windowKinds, windowTemplates,
 } from './layout.js';
 import { watchStore } from './watch.js';
 import { writeZip } from './zip.js';
+import { saidError } from '../say.js';
 
 /**
  * @typedef {object} Collection  collection.json
@@ -136,7 +137,7 @@ function text(what, v) {
 
 /** @param {unknown} v */
 function title(v) {
-  if (typeof v !== 'string' || !v.trim()) throw new Error('Нужно название (непустая строка).');
+  if (typeof v !== 'string' || !v.trim()) throw saidError('Нужно название (непустая строка).', 'store.noTitle');
   return v.trim();
 }
 
@@ -224,7 +225,7 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
   /** @param {string} c @returns {Collection} */
   function readCollection(c) {
     const file = path.join(collectionDir(c), COLLECTION_FILE);
-    if (!exists(file)) throw new Error(`Коллекции «${c}» нет (${file}).`);
+    if (!exists(file)) throw saidError(`Коллекции «${c}» нет (${file}).`, 'store.noCollection', { id: c });
     return readJson(file);
   }
   /** @param {Collection} col */
@@ -233,7 +234,7 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
   /** @param {string} c @param {string} s @returns {CardSet} */
   function readSet(c, s) {
     const file = path.join(setDir(c, s), SET_FILE);
-    if (!exists(file)) throw new Error(`Набора «${s}» в коллекции «${c}» нет.`);
+    if (!exists(file)) throw saidError(`Набора «${s}» в коллекции «${c}» нет.`, 'store.noSet', { id: s });
     return readJson(file);
   }
   /** @param {string} c @param {CardSet} set */
@@ -334,7 +335,7 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
   async function toTrash(p) {
     // Only inside the collections folder, never the folder itself.
     const r = (await loadTrash())([p], { root, roots: [root], move: trashMove });
-    if (!r.ok) throw new Error('Не удалось убрать в корзину:\n' + r.lines.join('\n'));
+    if (!r.ok) throw saidError('Не удалось убрать в корзину:\n' + r.lines.join('\n'), 'store.trashFailed', { lines: r.lines.join('\n') });
   }
 
   /**
@@ -527,7 +528,7 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
      * @returns {Promise<CardSummary>}
      */
     async moveCard(collectionId, cardId, to) {
-      if (!exists(cardDir(collectionId, cardId))) throw new Error(`Карточки «${cardId}» в коллекции «${collectionId}» нет.`);
+      if (!exists(cardDir(collectionId, cardId))) throw saidError(`Карточки «${cardId}» в коллекции «${collectionId}» нет.`, 'store.noCard', { id: cardId });
       const sets = allSets(collectionId);
       const from = placesOf(sets).get(cardId);
       /** @type {Map<string, (string|null)[]>} */
@@ -556,7 +557,7 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
     /** Removes the card from its set and trashes its folder (with every attempt). @param {string} collectionId @param {string} cardId */
     async deleteCard(collectionId, cardId) {
       const dir = cardDir(collectionId, cardId);
-      if (!exists(dir)) throw new Error(`Карточки «${cardId}» в коллекции «${collectionId}» нет.`);
+      if (!exists(dir)) throw saidError(`Карточки «${cardId}» в коллекции «${collectionId}» нет.`, 'store.noCard', { id: cardId });
       const sets = allSets(collectionId);
       const from = placesOf(sets).get(cardId);
       if (from) {
@@ -634,15 +635,18 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
      * false, its pool; `pool: true` alone is the pool alone. No collectionId = every collection of the factory, each
      * whole, into the factory's export folder (FACTORY_EXPORT_DIR); a collection's own export goes to its export/.
      * `originals`: next to each card the image as its chosen version's model returned it («… (оригинал).<ext>»).
+     * `language`: of the names a person reads inside (EXPORT_NAMES: «Хранилище» / «Pool» …), Russian by default.
      * Cards without an image are skipped and listed.
-     * @param {{collectionId?: string, setIds?: string[], cardIds?: string[], pool?: boolean, originals?: boolean, format?: 'png'|'zip', name?: string}} o
+     * @param {{collectionId?: string, setIds?: string[], cardIds?: string[], pool?: boolean, originals?: boolean, format?: 'png'|'zip', name?: string, language?: string}} o
      * @returns {Promise<{path: string, files: number, skipped: {id: string, reason: string}[]}>}
      */
-    async exportItems({ collectionId, setIds, cardIds: chosen, pool, originals = false, format = 'png', name }) {
+    async exportItems({ collectionId, setIds, cardIds: chosen, pool, originals = false, format = 'png', name, language = 'ru' }) {
       if (format !== 'png' && format !== 'zip') throw new Error(`Формат выгрузки «${format}» неизвестен: png или zip.`);
+      if (!Object.hasOwn(EXPORT_NAMES, language)) throw new Error(`Язык выгрузки «${language}» неизвестен: ${Object.keys(EXPORT_NAMES).join(' или ')}.`);
+      const names = EXPORT_NAMES[/** @type {keyof typeof EXPORT_NAMES} */ (language)];
       if (collectionId == null && (setIds || chosen)) throw new Error('Наборы и карточки выгружаются из одной коллекции: назовите её.');
       const ids = collectionId != null ? [collectionId] : subdirs(root).filter(c => exists(path.join(root, c, COLLECTION_FILE)));
-      if (!ids.length) throw new Error('Коллекций пока нет: выгружать нечего.');
+      if (!ids.length) throw saidError('Коллекций пока нет: выгружать нечего.', 'export.noCollections');
       /** @type {{name: string, source: string}[]} */
       const entries = [];
       /** @type {{id: string, reason: string}[]} */
@@ -661,7 +665,7 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
           if (!s.image) { skipped.push({ id: k, reason: 'нет готовой картинки' }); return; }
           entries.push({ name: `${top}/${folder}/${uniqueName(used, fileName(prefix + s.title, k), '.png')}`, source: s.image });
           const original = originals ? originalOf(c, k) : null;
-          if (original) entries.push({ name: `${top}/${folder}/${uniqueName(used, fileName(`${prefix}${s.title} (оригинал)`, k), path.extname(original).toLowerCase())}`, source: original });
+          if (original) entries.push({ name: `${top}/${folder}/${uniqueName(used, fileName(`${prefix}${s.title} (${names.original})`, k), path.extname(original).toLowerCase())}`, source: original });
         };
         for (const s of pickSets) {
           const set = sets.find(x => x.id === s) ?? readSet(c, s);
@@ -672,12 +676,12 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
         if (pool === true || (whole && pool !== false)) {
           const places = placesOf(sets);
           const loose = cardIds(c).filter(k => !places.has(k));
-          const folder = uniqueName(folders, EXPORT_POOL_FOLDER);
+          const folder = uniqueName(folders, names.pool);
           const used = new Set();
           for (const k of loose) add(folder, used, k, '');
         }
         if (chosen?.length) {
-          const folder = uniqueName(folders, EXPORT_CARDS_FOLDER);
+          const folder = uniqueName(folders, names.cards);
           const used = new Set();
           for (const k of chosen) {
             if (!exists(cardDir(c, k))) throw new Error(`Карточки «${k}» в коллекции «${c}» нет.`);
@@ -685,7 +689,7 @@ export function createStore({ root = COLLECTIONS_DIR, trashMove, spawn = nodeSpa
           }
         }
       }
-      if (!entries.length) throw new Error('Выгружать нечего: у выбранных карточек нет готовых картинок.');
+      if (!entries.length) throw saidError('Выгружать нечего: у выбранных карточек нет готовых картинок.', 'export.nothing');
 
       const exportDir = collectionId != null ? path.join(collectionDir(collectionId), EXPORT_DIR) : path.join(root, FACTORY_EXPORT_DIR);
       fs.mkdirSync(exportDir, { recursive: true });

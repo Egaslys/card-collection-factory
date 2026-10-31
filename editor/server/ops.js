@@ -10,6 +10,8 @@ import { loadSettings, readLocalSettings, saveLocalSettings, ROOT } from '../../
 import { readCardFile, attemptDir, attemptSpend, ATTEMPT_FILES } from '../../core/card/card-file.js';
 import { PRESETS, PRESET_TITLES, apiOf, presetOf, runSettings } from '../../core/providers/preset.js';
 import { clearTemporaryKey, currentKey, initKey, keyStatus, setTemporaryKey } from './key.js';
+import { stepText } from '../../core/set/make.js';
+import { saidError } from '../../core/say.js';
 
 /**
  * @typedef {object} Op
@@ -44,7 +46,7 @@ const keysOf = s => Object.fromEntries(PRESETS.map(n => [n, { ...keyStatus(prese
 function keyOrThrow(provider = settings().provider) {
   const p = presetOf(provider);
   const key = currentKey(p.keyEnvVar);
-  if (!key) throw new Error(`Нет ключа ${PRESET_TITLES[p.name]}: введите временный ключ в настройках редактора или положите постоянный в файл .env проекта (${p.keyEnvVar}=…).`);
+  if (!key) throw saidError(`Нет ключа ${PRESET_TITLES[p.name]}: введите временный ключ в настройках редактора или положите постоянный в файл .env проекта (${p.keyEnvVar}=…).`, 'key.none', { service: PRESET_TITLES[p.name], envVar: p.keyEnvVar });
   return key;
 }
 
@@ -66,7 +68,7 @@ const cardDirOf = a => store.cardDir(need('collectionId', a.collectionId), need(
 
 /** core/card's progress of a run as a journal line, with the step as data the page words. @param {(t: string, o?: any) => void} progress */
 const cardProgress = progress => (/** @type {{stage: string, n: number|null, done: number, of: number, spent: number}} */ e) =>
-  progress(e.stage === 'generate' ? `попытка ${e.n}: генерация` : e.stage === 'process' ? `попытка ${e.n}: обработка и проверки` : `попыток сделано ${e.done} из ${e.of}`,
+  progress(stepText(e),
     { total: e.spent, say: { k: 'attempt', stage: e.stage, n: e.n, done: e.done, of: e.of } });
 
 /**
@@ -94,7 +96,7 @@ function insideCollection(collectionId, target) {
 async function getCard(a) {
   const dir = cardDirOf(a);
   const file = readCardFile(dir);
-  if (!file) throw new Error(`Карточки «${a.cardId}» нет в коллекции.`);
+  if (!file) throw saidError(`Карточки «${a.cardId}» нет в коллекции.`, 'store.noCard', { id: a.cardId });
   const summary = (await store.listCards(a.collectionId)).find(c => c.id === a.cardId) ?? null;
   const attempts = file.attempts.map(x => {
     const adir = attemptDir(dir, x.n);
@@ -163,7 +165,7 @@ export const OPS = {
         const models = await api.listImageModels({ endpoint: o.endpoint, apiKey: keyOrThrow(p), net });
         return { key: keyStatus(o.keyEnvVar), credits: null, models: models.length, hasModel: models.some(m => m.id === o.model) };
       } catch (/** @type {any} */ e) {
-        if (e?.status === 400 || e?.status === 401 || e?.status === 403) throw new Error(`Ключ не подошёл: ${o.endpoint} его не принял. Проверьте, что ключ вставлен целиком и не отозван.`);
+        if (e?.status === 400 || e?.status === 401 || e?.status === 403) throw saidError(`Ключ не подошёл: ${o.endpoint} его не принял. Проверьте, что ключ вставлен целиком и не отозван.`, 'key.rejected', { endpoint: o.endpoint });
         throw e;
       }
     },
@@ -178,7 +180,7 @@ export const OPS = {
       const at = `${o.name} ${o.endpoint}`;
       if (refresh || !modelCache.has(at)) {
         const key = currentKey(o.keyEnvVar);
-        if (!key && o.name !== 'openrouter') throw new Error(`Список моделей ${PRESET_TITLES[o.name]} приходит только с ключом: введите ключ, а пока впишите id модели сами.`);
+        if (!key && o.name !== 'openrouter') throw saidError(`Список моделей ${PRESET_TITLES[o.name]} приходит только с ключом: введите ключ, а пока впишите id модели сами.`, 'models.needKey', { service: PRESET_TITLES[o.name] });
         const { listModels, modelsFor } = await import('../../core/providers/catalog.js');
         const all = listModels(o.name, { endpoint: o.endpoint, apiKey: key ?? '', net: { timeoutMs: 15000 } });
         const slim = (/** @type {import('../../core/providers/catalog.js').CatalogModel[]} */ ms) => ms.map(m => ({ id: m.id, ...(m.name ? { name: m.name } : {}) }));
@@ -243,10 +245,12 @@ export const OPS = {
   },
   deleteCard: { run: async ({ collectionId, cardId }) => store.deleteCard(need('collectionId', collectionId), need('cardId', cardId)) },
   listCards: { run: async ({ collectionId, setId, pool }) => store.listCards(need('collectionId', collectionId), { ...(setId ? { setId } : {}), ...(pool ? { pool: true } : {}) }) },
-  // no collectionId: every collection; pool: true / false / absent (core/store exportItems)
+  // no collectionId: every collection; pool: true / false / absent; language: of the folder names inside, the page's
+  // (core/store exportItems)
   exportItems: {
-    run: async ({ collectionId, setIds, cardIds, pool, originals, format, name }) => store.exportItems({
+    run: async ({ collectionId, setIds, cardIds, pool, originals, format, name, language }) => store.exportItems({
       ...(collectionId ? { collectionId } : {}), setIds, cardIds, ...(typeof pool === 'boolean' ? { pool } : {}), originals: !!originals, format: format ?? 'png', ...(name ? { name } : {}),
+      ...(language ? { language } : {}),
     }),
   },
   // exports: the export folder (of the collection, or of the factory without one); else a path inside the collection
@@ -347,7 +351,7 @@ export const OPS = {
       const run = (/** @type {string} */ file) => importImage({ image: file, ...where, settings: s, vision: visionFrom(s.provider, { apiKey: currentKey(presetOf(s.provider).keyEnvVar) }) });
       if (image) return run(path.resolve(String(image)));
       const m = String(need('data', data)).match(/^data:image\/(png|jpeg|webp);base64,(.+)$/);
-      if (!m) throw new Error('Картинка должна быть PNG, JPEG или WebP.');
+      if (!m) throw saidError('Картинка должна быть PNG, JPEG или WebP.', 'image.badType');
       const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ccf-import-'));
       const file = path.join(tmp, `image.${m[1] === 'jpeg' ? 'jpg' : m[1]}`);
       try {

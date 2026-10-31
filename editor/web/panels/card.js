@@ -11,6 +11,7 @@ import { call, jobs, onEvent } from '../api.js';
 import { attempt, bindTextHelp, confirmDialog, esc, fromHtml, I, jobline, modelName, openSheet, textHelp, tip, toast, usd, verdict } from '../ui.js';
 import { lang, plural, words } from '../i18n.js';
 import { app } from '../state.js';
+import { saidText } from '../said.js';
 import { openExport } from './export.js';
 
 const t = words({
@@ -198,7 +199,7 @@ export async function openCard(collectionId, cardId, { version, wish: typed = ''
     if (!a) return '';
     const state = stateOf(a);
     if (state === 'failed') return `<section class="csum csum--problem"><div class="csum__head"><span class="csum__icon">${I.alert}</span><div><p class="csum__title">${esc(t('failed'))}</p><p class="csum__sub">${esc(t('failedSub'))}</p></div></div>
-      <ul class="reasons"><li><span>${esc(a.error.message)}</span></li></ul></section>`;
+      <ul class="reasons"><li><span>${esc(saidText(a.error.said, a.error.message))}</span></li></ul></section>`;
     if (state === 'none') return `<p class="ink-3">${esc(t('noChecks'))}</p>`;
     const kind = state === 'problem' ? 'problem' : state === 'look' ? 'look' : 'ok';
     const icon = { problem: I.alert, look: I.eye, ok: I.check }[kind];

@@ -58,7 +58,16 @@ export function windowTemplates(style, kind) {
 }
 /** A new collection's style when the caller names none. */
 export const DEFAULT_STYLE = 'scapes';
-/** The folder of chosen single cards inside an export. */
-export const EXPORT_CARDS_FOLDER = 'Карточки';
-/** The folder of the pool's cards (the cards in no set) inside an export: the editor calls the pool «Хранилище». */
-export const EXPORT_POOL_FOLDER = 'Хранилище';
+/**
+ * The names a person reads inside an export, by language (the editor passes the page's; the terminal exports in
+ * Russian): `cards` the folder of chosen single cards, `pool` the folder of the pool's cards (the cards in no set;
+ * the editor calls the pool «Хранилище» / «Pool»), `original` the mark of a model's original next to its card.
+ */
+export const EXPORT_NAMES = /** @type {const} */ ({
+  ru: { cards: 'Карточки', pool: 'Хранилище', original: 'оригинал' },
+  en: { cards: 'Cards', pool: 'Pool', original: 'original' },
+});
+/** The folder of chosen single cards inside a Russian export. */
+export const EXPORT_CARDS_FOLDER = EXPORT_NAMES.ru.cards;
+/** The folder of the pool's cards inside a Russian export. */
+export const EXPORT_POOL_FOLDER = EXPORT_NAMES.ru.pool;
