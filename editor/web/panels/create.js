@@ -145,7 +145,8 @@ async function bindCost(sheet, what) {
 /** A segmented control. @param {string} name @param {[string|number, string, boolean?][]} opts  value, label, disabled @param {string|number} cur @param {string} [cls] */
 const seg = (name, opts, cur, cls = '') => `<div class="seg ${cls}" role="group" data-seg="${esc(name)}">${opts.map(([v, l, off]) => `<button type="button" data-v="${esc(v)}" aria-pressed="${String(v) === String(cur)}" ${off ? 'disabled' : ''}>${l}</button>`).join('')}</div>`;
 /** @param {number} n */
-const variantsSeg = (n = 1) => seg('variants', [[1, '1'], [2, '2'], [3, '3']], n);
+/** The task asks a set's order for 3–5 variants, each a whole set; a collection's «per set» keeps up to 3 (16 sets each). */
+const variantsSeg = (n = 1, max = 3) => seg('variants', Array.from({ length: max }, (_, i) => [i + 1, String(i + 1)]), n);
 /** @param {HTMLElement} root @param {string} name */
 const segValue = (root, name) => /** @type {HTMLElement|null} */ (root.querySelector(`[data-seg="${name}"] [aria-pressed="true"]`))?.dataset.v;
 /** Segmented controls and swatches under `root` keep one pressed button; `onPick(name, value)` hears each change. @param {HTMLElement} root @param {(name: string, v: string) => void} [onPick] */
@@ -224,7 +225,7 @@ export async function openCreateSet(col, sets) {
       <p class="lead">${esc(t('genLead'))}</p>
       <div class="field"><span class="field__label">${esc(t('theme'))}</span><input class="input" name="theme" autofocus placeholder="${esc(t('themePh'))}">${textHelp('setTheme')}</div>
       <div class="field"><span class="field__label">${esc(t('wishes'))}</span><textarea class="input" name="wishes" rows="3" placeholder="${esc(t('setWishesPh'))}"></textarea>${textHelp('wishes')}</div>
-      <div class="field"><span class="field__label">${esc(t('variants'))}</span>${variantsSeg(1)}<span class="field__hint">${esc(t('variantsHint'))}</span></div>
+      <div class="field"><span class="field__label">${esc(t('variants'))}</span>${variantsSeg(1, 5)}<span class="field__hint">${esc(t('variantsHint'))}</span></div>
       <div data-cost></div>
     </form>`;
   const own = `<form class="form" data-tab="own" hidden>
